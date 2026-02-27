@@ -1,6 +1,6 @@
 # Obsidian Headless
 
-Headless client for [Obsidian](https://obsidian.md) Sync.
+Headless client for [Obsidian Sync](https://obsidian.md/sync).
 Sync your vaults from the command line without the desktop app.
 
 Requires Node.js 22 or later.
