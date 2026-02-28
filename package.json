@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-headless",
-	"version": "0.0.2",
+	"version": "0.0.3",
 	"description": "Headless client for Obsidian services",
 	"main": "cli.js",
 	"bin": {
@@ -40,7 +40,6 @@
 	"license": "UNLICENSED",
 	"dependencies": {
 		"better-sqlite3": "12.6.2",
-		"commander": "14.0.3",
-		"keytar": "7.9.0"
+		"commander": "14.0.3"
 	}
 }
