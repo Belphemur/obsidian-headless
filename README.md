@@ -21,16 +21,6 @@ ob login
 
 If already logged in, `ob login` displays your account info. To switch accounts, pass `--email` and/or `--password` to log in again.
 
-### Environment variable
-
-For non-interactive use (CI, scripts, servers), set the `OBSIDIAN_AUTH_TOKEN` environment variable instead of using `ob login`:
-
-```bash
-export OBSIDIAN_AUTH_TOKEN="your-auth-token"
-```
-
-When set, all commands that require authentication will use this token automatically.
-
 ## Quick start
 
 ```bash
@@ -132,6 +122,7 @@ Run with no options to display the current configuration.
 | Option | Description |
 |---|---|
 | `--path` | Local vault path (default: current directory) |
+| `--mode` | Sync mode: `bidirectional` (default), `pull-only` (only download, ignore local changes), or `mirror-remote` (only download, revert local changes) |
 | `--conflict-strategy` | `merge` or `conflict` |
 | `--file-types` | Attachment types to sync: `image`, `audio`, `video`, `pdf`, `unsupported` (comma-separated, empty to clear) |
 | `--configs` | Config categories to sync: `app`, `appearance`, `appearance-data`, `hotkey`, `core-plugin`, `core-plugin-data`, `community-plugin`, `community-plugin-data` (comma-separated, empty to disable config syncing) |
