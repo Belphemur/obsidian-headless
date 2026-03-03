@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.5
+
+- Added new sync modes "pull-only" (only download, ignore local changes) and "mirror-remote" (only download, revert local changes).
+- Print the vault config when starting a sync session.
+
 ## 0.0.4
 
 - Fixed version command always gave "1.0.0".
