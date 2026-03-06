@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.6
+
+- Fixed default value of file type configuration not properly applied, causing images to not sync.
+
 ## 0.0.5
 
 - Added new sync modes "pull-only" (only download, ignore local changes) and "mirror-remote" (only download, revert local changes).
