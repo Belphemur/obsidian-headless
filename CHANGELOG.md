@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.8
+
+- Add publish support.
+
 ## 0.0.7
 
 - Fixed lock failure on file systems returning floating point modified times.
