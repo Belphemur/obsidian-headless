@@ -1,7 +1,7 @@
 # Obsidian Headless
 
-Headless client for [Obsidian Sync](https://obsidian.md/sync).
-Sync your vaults from the command line without the desktop app.
+Headless client for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish).
+Sync and publish your vaults from the command line without the desktop app.
 
 Requires Node.js 22 or later.
 
@@ -144,6 +144,76 @@ Disconnect a vault from sync and remove stored credentials.
 
 ```
 ob sync-unlink [--path <local-path>]
+```
+
+### `ob publish-list-sites`
+
+List all publish sites available to your account, including shared sites.
+
+### `ob publish-create-site`
+
+Create a new publish site.
+
+```
+ob publish-create-site --slug <slug>
+```
+
+| Option | Description |
+|---|---|
+| `--slug` | Site slug used in the publish URL (required) |
+
+### `ob publish-setup`
+
+Connect a local vault to a publish site.
+
+```
+ob publish-setup --site <id-or-slug> [--path <local-path>]
+```
+
+| Option | Description |
+|---|---|
+| `--site` | Site ID or slug (required) |
+| `--path` | Local vault path (default: current directory) |
+
+### `ob publish`
+
+Publish vault changes to a connected site. Scans for changes by comparing local file hashes against the remote site, then uploads new/changed files and removes deleted ones.
+
+Files are selected for publishing based on: frontmatter `publish: true/false` flag (highest priority), excluded/included folders (configured via `publish-config`), and the `--all` flag for untagged files.
+
+```
+ob publish [--path <local-path>] [--dry-run] [--yes] [--all]
+```
+
+| Option | Description |
+|---|---|
+| `--path` | Local vault path (default: current directory) |
+| `--dry-run` | Show changes without publishing |
+| `--yes` | Publish without prompting for confirmation |
+| `--all` | Include files without a publish flag |
+
+### `ob publish-config`
+
+View or change publish settings for a vault.
+
+```
+ob publish-config [--path <local-path>] [--includes <folders>] [--excludes <folders>]
+```
+
+Run with no options to display the current configuration.
+
+| Option | Description |
+|---|---|
+| `--path` | Local vault path (default: current directory) |
+| `--includes` | Folders to include, comma-separated (empty string to clear) |
+| `--excludes` | Folders to exclude, comma-separated (empty string to clear) |
+
+### `ob publish-unlink`
+
+Disconnect a vault from a publish site.
+
+```
+ob publish-unlink [--path <local-path>]
 ```
 
 ## Native modules
