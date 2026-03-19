@@ -208,6 +208,35 @@ Run with no options to display the current configuration.
 | `--includes` | Folders to include, comma-separated (empty string to clear) |
 | `--excludes` | Folders to exclude, comma-separated (empty string to clear) |
 
+### `ob publish-site-options`
+
+View or update remote site options (appearance, navigation, etc.). Run with no options to display the current settings.
+
+```
+ob publish-site-options [--path <local-path>] [options]
+```
+
+| Option | Description |
+|---|---|
+| `--path` | Local vault path (default: current directory) |
+| `--site-name <name>` | Site name |
+| `--index-file <path>` | Home page file path |
+| `--logo <path>` | Logo file path (empty string to clear) |
+| `--default-theme <theme>` | Default theme: `light` or `dark` |
+| `--show-navigation <bool>` | Show navigation sidebar |
+| `--show-graph <bool>` | Show graph view |
+| `--show-outline <bool>` | Show table of contents |
+| `--show-search <bool>` | Show search |
+| `--show-backlinks <bool>` | Show backlinks |
+| `--show-hover-preview <bool>` | Show hover preview |
+| `--show-theme-toggle <bool>` | Show theme toggle |
+| `--readable-line-length <bool>` | Readable line length |
+| `--strict-line-breaks <bool>` | Strict line breaks |
+| `--hide-title <bool>` | Hide inline title |
+| `--sliding-window <bool>` | Sliding window mode |
+| `--nav-order <paths>` | Navigation ordering, comma-separated paths in display order (empty string to clear) |
+| `--nav-hidden <items>` | Navigation hidden items, comma-separated paths (empty string to clear) |
+
 ### `ob publish-unlink`
 
 Disconnect a vault from a publish site.
