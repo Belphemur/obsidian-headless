@@ -67,7 +67,7 @@ export function debounce(
     invoke();
   };
 
-  const debounced: DebouncedFn = function (this: unknown, ...args: unknown[]) {
+  const debounced = function (this: unknown, ...args: unknown[]) {
     savedThis = this;
     savedArgs = args;
     const now = Date.now();
@@ -89,7 +89,7 @@ export function debounce(
     return debounced;
   } as DebouncedFn;
 
-  debounced.cancel = () => {
+  (debounced as DebouncedFn).cancel = () => {
     if (timerId) {
       api.clearTimeout(timerId);
       timerId = null;
