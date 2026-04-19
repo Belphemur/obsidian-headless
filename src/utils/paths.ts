@@ -156,7 +156,8 @@ const ILLEGAL_ON_OTHER = "\\/:" + ILLEGAL_ON_ANDROID;
 const ILLEGAL_ON_WIN = '*"\\/<>:|?';
 
 const ILLEGAL_CHARS = IS_WIN ? ILLEGAL_ON_WIN : ILLEGAL_ON_OTHER;
-const ILLEGAL_RE = new RegExp("[" + escapeRegex(ILLEGAL_CHARS) + "]");
+const ILLEGAL_RE = new RegExp("[" + escapeRegex(ILLEGAL_CHARS) + "]", "g");
+const ILLEGAL_TEST_RE = new RegExp("[" + escapeRegex(ILLEGAL_CHARS) + "]");
 const RESERVED_WIN = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 
 function escapeRegex(s: string): string {
@@ -189,7 +190,7 @@ export function validateFilename(path: string): void {
       throw new Error("File name is forbidden: " + name);
     }
   }
-  if (path.split("/").some((seg) => ILLEGAL_RE.test(seg))) {
+  if (path.split("/").some((seg) => ILLEGAL_TEST_RE.test(seg))) {
     throw new Error(
       "File name cannot contain any of the following characters: " +
         ILLEGAL_CHARS.split("").join("\u00A0"),
@@ -206,7 +207,7 @@ export function sanitizeFilename(
 ): string {
   let result = name.trim();
   if (result) {
-    result = name.replace(ILLEGAL_RE, replacement);
+    result = result.replace(ILLEGAL_RE, replacement);
     if (replacement.length === 1) {
       const esc = escapeRegex(replacement);
       result = result.replace(new RegExp(`${esc}{2,}`, "g"), replacement);
