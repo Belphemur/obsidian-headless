@@ -23,6 +23,10 @@ import {
   setPublishSlug,
   getPublishSlugs,
   ApiError,
+  type Vault,
+  type Region,
+  type PublishSite,
+  type SlugMapping,
 } from "../api/client.js";
 import {
   getAuthToken,
@@ -53,10 +57,12 @@ import {
   computeKeyHash,
   createEncryptionProvider,
 } from "../encryption/index.js";
+import type { EncryptionVersion } from "../encryption/types.js";
 import {
   bufferToHex,
   base64ToBuffer,
   bufferToBase64,
+  toArrayBuffer,
 } from "../utils/encoding.js";
 import { SyncEngine } from "../sync/engine.js";
 import { FileLock, LockError } from "../sync/lock.js";
@@ -67,14 +73,17 @@ import { PublishEngine } from "../publish/engine.js";
 // ---------------------------------------------------------------------------
 
 const PROGRAM_NAME = "ob";
-const MAX_ENCRYPTION_VERSION = 3;
 const SUPPORTED_ENCRYPTION_VERSION = 3;
 
 // ---------------------------------------------------------------------------
 // Version from package.json
 // ---------------------------------------------------------------------------
 
-const pkgPath = path.join(path.dirname(process.argv[1] || "."), "..", "package.json");
+const pkgPath = path.join(
+  path.dirname(process.argv[1] || "."),
+  "..",
+  "package.json",
+);
 const { version } = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
 
 // ---------------------------------------------------------------------------
@@ -118,7 +127,7 @@ function requireAuth(): string {
  * @returns The user-entered string
  */
 function promptInput(message: string, showInput = false): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     process.stdout.write(message);
 
     if (!process.stdin.isTTY) {
@@ -197,7 +206,11 @@ function checkBtimeModule(): void {
 
   try {
     // Attempt to load the native btime module
-    const btimePath = path.join(__dirname, "..", "..", "btime");
+    const btimePath = path.join(
+      path.dirname(process.argv[1] || "."),
+      "..",
+      "btime",
+    );
     require(btimePath);
   } catch {
     console.warn(
@@ -213,12 +226,13 @@ function checkBtimeModule(): void {
  */
 function printSyncConfig(config: SyncConfig): void {
   const modeLabels: Record<string, string> = {
-    bidirectional: "bidirectional",
-    "pull-only": "pull-only",
-    "mirror-remote": "mirror-remote",
+    "": "bidirectional",
+    pull: "pull-only",
+    mirror: "mirror-remote",
   };
 
-  const mode = modeLabels[config.syncMode ?? "bidirectional"] ?? config.syncMode ?? "bidirectional";
+  const mode =
+    modeLabels[config.syncMode ?? ""] ?? config.syncMode ?? "bidirectional";
   const conflict = config.conflictStrategy ?? "merge";
   const device = config.deviceName ?? getDefaultDeviceName();
   const configDir = config.configDir ?? ".obsidian";
@@ -364,23 +378,24 @@ program
 /**
  * **sync-list-remote** — List all remote vaults associated with the account.
  *
- * Displays vault ID, name, and region for each remote vault.
+ * Displays vault ID, name, and host for each remote vault.
  */
 program
   .command("sync-list-remote")
   .description("List remote vaults")
   .action(async () => {
     const token = requireAuth();
-    const vaults = await listVaults(token, SUPPORTED_ENCRYPTION_VERSION);
+    const response = await listVaults(token, SUPPORTED_ENCRYPTION_VERSION);
+    const vaults = (response as Record<string, unknown>).vaults as Vault[] | undefined;
 
-    if (vaults.length === 0) {
+    if (!vaults || vaults.length === 0) {
       console.log("No remote vaults found.");
       return;
     }
 
     console.log("Remote vaults:");
     for (const vault of vaults) {
-      console.log(`  ${vault.id}  ${vault.name}  (${vault.region ?? "default"})`);
+      console.log(`  ${vault.id}  ${vault.name}  (${vault.host ?? "default"})`);
     }
   });
 
@@ -394,16 +409,21 @@ program
   .command("sync-list-local")
   .description("List locally configured vaults")
   .action(async () => {
-    const configs = listLocalVaults();
+    const vaultIds = listLocalVaults();
 
-    if (configs.length === 0) {
+    if (vaultIds.length === 0) {
       console.log("No locally configured vaults.");
       return;
     }
 
     console.log("Local vaults:");
-    for (const config of configs) {
-      console.log(`  ${config.path}  (${config.host ?? "default"})`);
+    for (const id of vaultIds) {
+      const config = readSyncConfig(id);
+      if (config) {
+        console.log(
+          `  ${config.vaultPath}  (${config.host ?? "default"})`,
+        );
+      }
     }
   });
 
@@ -428,7 +448,7 @@ program
   .action(async (opts) => {
     const token = requireAuth();
 
-    let password = opts.password;
+    let password = opts.password as string | undefined;
     if (opts.encryption !== "standard" && !password) {
       password = await promptInput("Encryption password: ");
       const confirm = await promptInput("Confirm password: ");
@@ -440,46 +460,51 @@ program
 
     // Validate region
     if (opts.region) {
-      const regions = await getRegions(token);
-      const valid = regions.some(
-        (r: { id?: string; name?: string }) =>
-          r.id === opts.region || r.name === opts.region,
-      );
-      if (!valid) {
-        console.error(
-          `Invalid region "${opts.region}". Available: ${regions.map((r: { id?: string; name?: string }) => r.id ?? r.name).join(", ")}`,
+      const regionsResponse = await getRegions(token);
+      const regions = (regionsResponse as Record<string, unknown>)
+        .regions as Region[] | undefined;
+      if (regions) {
+        const valid = regions.some(
+          (r) => r.id === opts.region || r.name === opts.region,
         );
-        process.exit(1);
+        if (!valid) {
+          console.error(
+            `Invalid region "${opts.region}". Available: ${regions.map((r) => r.id).join(", ")}`,
+          );
+          process.exit(1);
+        }
       }
     }
 
-    let keyHash: string | undefined;
-    let salt: string | undefined;
-
-    if (opts.encryption !== "standard" && password) {
-      // Generate random 16-byte salt
-      salt = bufferToHex(crypto.randomBytes(16));
-      const key = await deriveKey(password, salt);
-      keyHash = await computeKeyHash(key);
-    }
+    let keyHash = "";
+    let salt = "";
 
     const encVersion =
       opts.encryption === "standard" ? 0 : SUPPORTED_ENCRYPTION_VERSION;
 
-    const vault = await createVault(token, {
-      name: opts.name,
-      encryptionVersion: encVersion,
+    if (opts.encryption !== "standard" && password) {
+      // Generate random 16-byte salt
+      salt = bufferToHex(toArrayBuffer(crypto.randomBytes(16)));
+      const key = await deriveKey(password, salt);
+      keyHash = await computeKeyHash(
+        key,
+        salt,
+        encVersion as EncryptionVersion,
+      );
+    }
+
+    const vaultResponse = await createVault(
+      token,
+      opts.name as string,
       keyHash,
       salt,
-      region: opts.region,
-    });
+      opts.region ?? "",
+      encVersion,
+    );
 
     console.log(`Vault created successfully.`);
-    console.log(`  ID: ${vault.id}`);
-    console.log(`  Name: ${vault.name}`);
-    if (vault.region) {
-      console.log(`  Region: ${vault.region}`);
-    }
+    console.log(`  ID: ${(vaultResponse as Record<string, unknown>).id ?? "unknown"}`);
+    console.log(`  Name: ${opts.name}`);
   });
 
 /**
@@ -503,12 +528,19 @@ program
   .option("--config-dir <dir>", "Config directory name", ".obsidian")
   .action(async (opts) => {
     const token = requireAuth();
-    const vaults = await listVaults(token, SUPPORTED_ENCRYPTION_VERSION);
+    const vaultsResponse = await listVaults(
+      token,
+      SUPPORTED_ENCRYPTION_VERSION,
+    );
+    const allVaults = [
+      ...((vaultsResponse as Record<string, unknown>).vaults as Vault[] ?? []),
+      ...((vaultsResponse as Record<string, unknown>).shared as Vault[] ?? []),
+    ];
 
     // Find vault by ID or name
-    let vault = vaults.find((v) => v.id === opts.vault);
+    let vault = allVaults.find((v) => v.id === opts.vault);
     if (!vault) {
-      const byName = vaults.filter((v) => v.name === opts.vault);
+      const byName = allVaults.filter((v) => v.name === opts.vault);
       if (byName.length > 1) {
         console.error(
           `Ambiguous vault name "${opts.vault}". Multiple vaults found. Use the vault ID instead.`,
@@ -527,11 +559,12 @@ program
     }
 
     const localPath = path.resolve(opts.path);
-    let encKey: string | undefined;
-    let keySalt: string | undefined;
+    let encKey = "";
+    let keySalt = "";
+    const encVersion = vault.encryption_version ?? 0;
 
     // Handle encryption
-    if (vault.encryptionVersion && vault.encryptionVersion > 0) {
+    if (encVersion > 0) {
       const password =
         opts.password ?? (await promptInput("Encryption password: "));
 
@@ -542,11 +575,22 @@ program
 
       keySalt = vault.salt;
       const key = await deriveKey(password, vault.salt);
-      const keyHash = await computeKeyHash(key);
+      const keyHash = await computeKeyHash(
+        key,
+        vault.salt,
+        encVersion as EncryptionVersion,
+      );
 
       // Validate access using the derived key
-      const valid = await validateAccess(token, vault.id, keyHash);
-      if (!valid) {
+      try {
+        await validateAccess(
+          token,
+          vault.uid ?? vault.id,
+          keyHash,
+          vault.host,
+          encVersion,
+        );
+      } catch {
         console.error("Invalid encryption password.");
         process.exit(1);
       }
@@ -554,19 +598,21 @@ program
       encKey = bufferToBase64(key);
     }
 
-    const deviceName = opts.deviceName ?? getDefaultDeviceName();
+    const deviceName =
+      (opts.deviceName as string | undefined) ?? getDefaultDeviceName();
     ensureSyncDir(vault.id);
 
     const config: SyncConfig = {
       vaultId: vault.id,
-      name: vault.name,
-      path: localPath,
-      host: vault.host ?? undefined,
-      encryptionVersion: vault.encryptionVersion ?? 0,
-      key: encKey,
-      salt: keySalt,
+      vaultName: vault.name,
+      vaultPath: localPath,
+      host: vault.host,
+      encryptionVersion: encVersion,
+      encryptionKey: encKey,
+      encryptionSalt: keySalt,
+      conflictStrategy: "merge",
       deviceName,
-      configDir: opts.configDir,
+      configDir: opts.configDir as string,
     };
 
     writeSyncConfig(vault.id, config);
@@ -599,12 +645,21 @@ program
   .command("sync-config")
   .description("Update sync configuration")
   .option("--path <path>", "Vault path", ".")
-  .option("--conflict-strategy <strategy>", "Conflict strategy: merge or conflict")
-  .option("--excluded-folders <folders>", "Comma-separated folders to exclude")
+  .option(
+    "--conflict-strategy <strategy>",
+    "Conflict strategy: merge or conflict",
+  )
+  .option(
+    "--excluded-folders <folders>",
+    "Comma-separated folders to exclude",
+  )
   .option("--file-types <types>", "Comma-separated file types to sync")
   .option("--configs <categories>", "Comma-separated config categories")
   .option("--device-name <name>", "Device name")
-  .option("--mode <mode>", "Sync mode: bidirectional, pull-only, or mirror-remote")
+  .option(
+    "--mode <mode>",
+    "Sync mode: bidirectional, pull-only, or mirror-remote",
+  )
   .option("--config-dir <dir>", "Config directory name")
   .action(async (opts) => {
     const localPath = path.resolve(opts.path);
@@ -620,35 +675,42 @@ program
     let changed = false;
 
     if (opts.conflictStrategy !== undefined) {
-      config.conflictStrategy = opts.conflictStrategy;
+      config.conflictStrategy = opts.conflictStrategy as string;
       changed = true;
     }
     if (opts.excludedFolders !== undefined) {
-      config.excludedFolders = opts.excludedFolders
+      config.ignoreFolders = (opts.excludedFolders as string)
         .split(",")
         .map((f: string) => f.trim())
         .filter(Boolean);
       changed = true;
     }
     if (opts.fileTypes !== undefined) {
-      config.fileTypes = parseFileTypes(opts.fileTypes);
+      config.allowTypes = parseFileTypes(opts.fileTypes as string);
       changed = true;
     }
     if (opts.configs !== undefined) {
-      config.configs = parseConfigCategories(opts.configs);
+      config.allowSpecialFiles = parseConfigCategories(
+        opts.configs as string,
+      );
       changed = true;
     }
     if (opts.deviceName !== undefined) {
-      config.deviceName = opts.deviceName;
+      config.deviceName = opts.deviceName as string;
       changed = true;
     }
     if (opts.mode !== undefined) {
-      config.mode = opts.mode;
+      const modeMap: Record<string, string> = {
+        bidirectional: "",
+        "pull-only": "pull",
+        "mirror-remote": "mirror",
+      };
+      config.syncMode = modeMap[opts.mode as string] ?? (opts.mode as string);
       changed = true;
     }
     if (opts.configDir !== undefined) {
-      validateConfigDir(opts.configDir);
-      config.configDir = opts.configDir;
+      validateConfigDir(opts.configDir as string);
+      config.configDir = opts.configDir as string;
       changed = true;
     }
 
@@ -709,7 +771,7 @@ program
     }
 
     removeSyncConfig(config.vaultId);
-    console.log(`Vault "${config.name}" unlinked from sync.`);
+    console.log(`Vault "${config.vaultName}" unlinked from sync.`);
   });
 
 /**
@@ -743,14 +805,19 @@ program
     }
 
     // Setup encryption provider
-    let encryptionProvider;
-    if (config.encryptionVersion && config.encryptionVersion > 0 && config.key) {
-      const keyBuffer = base64ToBuffer(config.key);
-      encryptionProvider = createEncryptionProvider(
-        config.encryptionVersion,
-        keyBuffer,
-      );
-    }
+    const encVersion = config.encryptionVersion ?? 0;
+    const encryption =
+      encVersion > 0 && config.encryptionKey
+        ? await createEncryptionProvider(
+            encVersion as EncryptionVersion,
+            base64ToBuffer(config.encryptionKey),
+            config.encryptionSalt,
+          )
+        : await createEncryptionProvider(
+            0 as EncryptionVersion,
+            new ArrayBuffer(0),
+            "",
+          );
 
     // Setup log file
     const logPath = getLogPath(config.vaultId);
@@ -761,7 +828,7 @@ program
 
     // Acquire file lock
     const lockPath = getLockPath(config.vaultId);
-    const lock = new FileLock(lockPath);
+    const lock = new FileLock(fs, path, lockPath);
 
     try {
       lock.acquire();
@@ -779,7 +846,7 @@ program
     const engine = new SyncEngine({
       token,
       config,
-      encryptionProvider,
+      encryption,
       continuous: opts.continuous ?? false,
     });
 
@@ -789,7 +856,7 @@ program
       if (stopping) return;
       stopping = true;
       console.log("\nStopping sync...");
-      await engine.stop();
+      engine.resolveStop?.();
     };
 
     process.on("SIGINT", shutdown);
@@ -800,7 +867,7 @@ program
       printSyncConfig(config);
       console.log("");
 
-      await engine.run();
+      await engine.sync();
     } finally {
       lock.release();
       process.removeListener("SIGINT", shutdown);
@@ -818,20 +885,24 @@ program
   .description("List publish sites")
   .action(async () => {
     const token = requireAuth();
-    const sites = await listPublishSites(token);
+    const response = await listPublishSites(token);
+    const allSites = [...(response.sites ?? []), ...(response.shared ?? [])];
 
-    if (sites.length === 0) {
+    if (allSites.length === 0) {
       console.log("No publish sites found.");
       return;
     }
 
-    const slugs = await getPublishSlugs(token);
+    // Get slugs for all sites
+    const siteIds = allSites.map((s) => s.id);
+    const slugsResponse = await getPublishSlugs(token, siteIds);
+    const slugMap = slugsResponse as Record<string, unknown>;
 
     console.log("Publish sites:");
-    for (const site of sites) {
-      const slug = slugs.find((s) => s.siteId === site.id);
-      const slugDisplay = slug ? ` (${slug.slug})` : "";
-      console.log(`  ${site.id}  ${site.name ?? "Untitled"}${slugDisplay}`);
+    for (const site of allSites) {
+      const slug = (slugMap as Record<string, string>)[site.id] ?? site.slug;
+      const slugDisplay = slug ? ` (${slug})` : "";
+      console.log(`  ${site.id}${slugDisplay}  host: ${site.host}`);
     }
   });
 
@@ -849,10 +920,16 @@ program
   .requiredOption("--slug <slug>", "Site slug (URL path)")
   .action(async (opts) => {
     const token = requireAuth();
-    const site = await createPublishSite(token);
-    await setPublishSlug(token, site.id, opts.slug);
+    const siteResponse = await createPublishSite(token);
+    const siteId = (siteResponse as Record<string, unknown>).id as string;
+    const siteHost = (siteResponse as Record<string, unknown>).host as string;
+
+    if (siteId && siteHost) {
+      await setPublishSlug(token, siteId, siteHost, opts.slug as string);
+    }
+
     console.log(`Publish site created.`);
-    console.log(`  ID: ${site.id}`);
+    console.log(`  ID: ${siteId ?? "unknown"}`);
     console.log(`  Slug: ${opts.slug}`);
   });
 
@@ -872,18 +949,15 @@ program
   .option("--path <path>", "Local vault directory", ".")
   .action(async (opts) => {
     const token = requireAuth();
-    const sites = await listPublishSites(token);
-    const slugs = await getPublishSlugs(token);
+    const response = await listPublishSites(token);
+    const allSites = [...(response.sites ?? []), ...(response.shared ?? [])];
 
     // Find site by ID first
-    let site = sites.find((s) => s.id === opts.site);
+    let site = allSites.find((s) => s.id === opts.site);
 
     // Fallback to slug lookup
     if (!site) {
-      const slugEntry = slugs.find((s) => s.slug === opts.site);
-      if (slugEntry) {
-        site = sites.find((s) => s.id === slugEntry.siteId);
-      }
+      site = allSites.find((s) => s.slug === opts.site);
     }
 
     if (!site) {
@@ -892,16 +966,17 @@ program
     }
 
     const localPath = path.resolve(opts.path);
-    const siteSlug = slugs.find((s) => s.siteId === site!.id);
 
     const config: PublishConfig = {
       siteId: site.id,
-      slug: siteSlug?.slug,
-      path: localPath,
+      host: site.host,
+      vaultPath: localPath,
     };
 
     writePublishConfig(site.id, config);
-    console.log(`Publish configured for site "${siteSlug?.slug ?? site.id}".`);
+    console.log(
+      `Publish configured for site "${site.slug ?? site.id}".`,
+    );
     console.log(`  Path: ${localPath}`);
   });
 
@@ -936,13 +1011,8 @@ program
       process.exit(1);
     }
 
-    const engine = new PublishEngine({
-      token,
-      config,
-      all: opts.all ?? false,
-    });
-
-    const changes = await engine.scan();
+    const engine = new PublishEngine(token, config);
+    const changes = await engine.scanForChanges(opts.all ?? false);
 
     const newFiles = changes.filter((c) => c.type === "new");
     const modified = changes.filter((c) => c.type === "changed");
@@ -990,7 +1060,7 @@ program
     }
 
     console.log("Publishing...");
-    await engine.apply(changes, (progress, total) => {
+    await engine.publish(changes, (progress: number, total: number) => {
       process.stdout.write(`\r  Progress: ${progress}/${total}`);
     });
     process.stdout.write("\n");
@@ -1025,14 +1095,14 @@ program
     let changed = false;
 
     if (opts.includes !== undefined) {
-      config.includes = opts.includes
+      config.includes = (opts.includes as string)
         .split(",")
         .map((p: string) => p.trim())
         .filter(Boolean);
       changed = true;
     }
     if (opts.excludes !== undefined) {
-      config.excludes = opts.excludes
+      config.excludes = (opts.excludes as string)
         .split(",")
         .map((p: string) => p.trim())
         .filter(Boolean);
@@ -1071,7 +1141,7 @@ program
     }
 
     removePublishConfig(config.siteId);
-    console.log(`Publish site "${config.slug ?? config.siteId}" unlinked.`);
+    console.log(`Publish site "${config.siteId}" unlinked.`);
   });
 
 // ---------------------------------------------------------------------------

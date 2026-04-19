@@ -67,42 +67,42 @@ export function debounce(
     invoke();
   };
 
-  const debounced = function (this: unknown, ...args: unknown[]) {
-    savedThis = this;
-    savedArgs = args;
-    const now = Date.now();
+  const debounced: DebouncedFn = Object.assign(
+    function (this: unknown, ...args: unknown[]) {
+      savedThis = this;
+      savedArgs = args;
+      const now = Date.now();
 
-    if (timerId) {
-      if (keepAlive) {
-        pendingTime = deadlineTime = now + delayMs;
-      } else if (api !== getTimerAPI() && deadlineTime <= now) {
-        api.clearTimeout(timerId);
+      if (timerId) {
+        if (keepAlive) {
+          pendingTime = deadlineTime = now + delayMs;
+        } else if (api !== getTimerAPI() && deadlineTime <= now) {
+          api.clearTimeout(timerId);
+          api = getTimerAPI();
+          timerId = api.setTimeout(check, 0);
+        }
+      } else {
         api = getTimerAPI();
-        timerId = api.setTimeout(check, 0);
+        deadlineTime = now + delayMs;
+        timerId = api.setTimeout(check, delayMs);
       }
-    } else {
-      api = getTimerAPI();
-      deadlineTime = now + delayMs;
-      timerId = api.setTimeout(check, delayMs);
-    }
-
-    return debounced;
-  } as DebouncedFn;
-
-  (debounced as DebouncedFn).cancel = () => {
-    if (timerId) {
-      api.clearTimeout(timerId);
-      timerId = null;
-    }
-  };
-
-  debounced.run = () => {
-    if (timerId) {
-      api.clearTimeout(timerId);
-      timerId = null;
-      invoke();
-    }
-  };
+    },
+    {
+      cancel() {
+        if (timerId) {
+          api.clearTimeout(timerId);
+          timerId = null;
+        }
+      },
+      run() {
+        if (timerId) {
+          api.clearTimeout(timerId);
+          timerId = null;
+          invoke();
+        }
+      },
+    },
+  );
 
   return debounced;
 }
