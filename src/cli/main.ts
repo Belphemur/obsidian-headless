@@ -79,12 +79,19 @@ const SUPPORTED_ENCRYPTION_VERSION = 3;
 // Version from package.json
 // ---------------------------------------------------------------------------
 
-const pkgPath = path.join(
-  path.dirname(process.argv[1] || "."),
-  "..",
-  "package.json",
-);
-const { version } = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+function findPackageJson(): string {
+  let dir = path.dirname(process.argv[1] || ".");
+  while (true) {
+    const candidate = path.join(dir, "package.json");
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // reached root
+    dir = parent;
+  }
+  return path.join(".", "package.json"); // fallback
+}
+
+const { version } = JSON.parse(fs.readFileSync(findPackageJson(), "utf-8"));
 
 // ---------------------------------------------------------------------------
 // Program setup
