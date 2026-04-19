@@ -134,7 +134,7 @@ function requireAuth(): string {
  * @returns The user-entered string
  */
 function promptInput(message: string, showInput = false): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     process.stdout.write(message);
 
     if (!process.stdin.isTTY) {
@@ -147,6 +147,7 @@ function promptInput(message: string, showInput = false): Promise<string> {
       process.stdin.on("end", () => {
         resolve(data.trim());
       });
+      process.stdin.on("error", reject);
       process.stdin.resume();
       return;
     }
@@ -509,9 +510,10 @@ program
       encVersion,
     );
 
+    const vaultData = vaultResponse as Record<string, unknown>;
     console.log(`Vault created successfully.`);
-    console.log(`  ID: ${(vaultResponse as Record<string, unknown>).id ?? "unknown"}`);
-    console.log(`  Name: ${opts.name}`);
+    console.log(`  ID: ${vaultData.id ?? "unknown"}`);
+    console.log(`  Name: ${(vaultData.name as string) ?? opts.name}`);
   });
 
 /**
