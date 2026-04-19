@@ -10,6 +10,8 @@
  * - Single recursive scan using `readdir({ recursive: true })`
  * - Debounced watch events to batch rapid changes
  * - In-memory index avoids redundant stat calls
+ * - Inode-based rename detection (Linux/macOS) avoids treating renames
+ *   as delete+create, saving re-hash and re-upload of unchanged content
  */
 
 import fs from "node:fs";
@@ -36,6 +38,8 @@ export interface FileStat {
   ctime?: number;
   mtime?: number;
   size?: number;
+  /** Inode number (Linux/macOS). Used for rename detection. */
+  ino?: number;
 }
 
 /** Handler callback signature for file change events. */
@@ -47,6 +51,23 @@ export type FileEventHandler = (
 ) => void;
 
 /* ------------------------------------------------------------------ */
+/*  Pending rename tracking                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Tracks a file that disappeared and may have been renamed rather than
+ * deleted.  If no matching creation (same inode) is found within
+ * {@link FileSystemAdapter.RENAME_DETECT_MS}, the entry is treated as
+ * a real deletion.
+ */
+interface PendingRename {
+  ino: number;
+  path: string;
+  entry: FileStat;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/* ------------------------------------------------------------------ */
 /*  FileSystemAdapter                                                  */
 /* ------------------------------------------------------------------ */
 
@@ -55,6 +76,13 @@ export type FileEventHandler = (
  *
  * Provides a unified interface for reading, writing, listing, watching,
  * and indexing files within an Obsidian vault directory.
+ *
+ * On Linux and macOS, inode numbers are tracked so that file renames can
+ * be detected as a single "renamed" event instead of a delete+create pair.
+ * This allows the sync engine to avoid re-hashing and re-uploading content
+ * that hasn't changed.  On Windows, inode tracking is disabled because NTFS
+ * file reference numbers can be reused after deletion, making them unreliable
+ * for rename detection.
  */
 export class FileSystemAdapter {
   /** In-memory file index mapping vault-relative paths to stat info. */
@@ -90,6 +118,34 @@ export class FileSystemAdapter {
   private static readonly WATCH_DEBOUNCE_MS = 50;
 
   /**
+   * Whether inode tracking is enabled for rename detection.
+   * Enabled on Linux and macOS where inodes are stable; disabled on Windows
+   * where NTFS file reference numbers may be reused.
+   */
+  private readonly inodeTrackingEnabled: boolean;
+
+  /**
+   * Reverse index: inode number → vault-relative path.
+   * Only populated when {@link inodeTrackingEnabled} is true.
+   */
+  private inodeToPath: Map<number, string> = new Map();
+
+  /**
+   * Files that recently disappeared and may be rename sources.
+   * Keyed by inode number. Each entry has a timer; if no matching
+   * creation arrives before it fires, a deletion event is emitted.
+   */
+  private pendingRenames: Map<number, PendingRename> = new Map();
+
+  /**
+   * How long (ms) to wait for a matching creation before treating a
+   * disappearance as a real deletion. Rename events from the kernel
+   * typically arrive as two events (old path disappears, new path appears)
+   * within a few milliseconds, so 150 ms provides a comfortable window.
+   */
+  private static readonly RENAME_DETECT_MS = 150;
+
+  /**
    * Create a new file system adapter.
    *
    * @param fsModule            - Node.js `fs` module.
@@ -116,6 +172,10 @@ export class FileSystemAdapter {
     this.btime = btime;
     this.resourcePathPrefix = resourcePathPrefix;
     this.basePath = pathModule.resolve(basePath);
+
+    // Inode tracking is reliable on Linux and macOS but not on Windows
+    this.inodeTrackingEnabled =
+      process.platform === "linux" || process.platform === "darwin";
 
     // Kill function placeholder (no-op; can be overridden externally)
     this.kill = () => {};
@@ -167,9 +227,12 @@ export class FileSystemAdapter {
    * Uses `fs.promises.readdir` with `{ recursive: true, withFileTypes: true }`
    * for a single kernel call that returns the entire tree, then stats only
    * regular files (directories don't need size/mtime).
+   *
+   * When inode tracking is enabled, also populates {@link inodeToPath}.
    */
   async listAll(): Promise<void> {
     this.files = {};
+    this.inodeToPath.clear();
 
     let entries: fs.Dirent[];
     try {
@@ -213,19 +276,23 @@ export class FileSystemAdapter {
     const BATCH_SIZE = 64;
     for (let i = 0; i < fileStatJobs.length; i += BATCH_SIZE) {
       const batch = fileStatJobs.slice(i, i + BATCH_SIZE);
-      const results = await Promise.allSettled(
+      await Promise.allSettled(
         batch.map(async ({ relativePath, fullPath }) => {
           const s = await fsp.stat(fullPath);
-          this.files[relativePath] = {
+          const fileStat: FileStat = {
             type: "file",
             realpath: fullPath,
             ctime: s.ctimeMs,
             mtime: s.mtimeMs,
             size: s.size,
           };
+          if (this.inodeTrackingEnabled) {
+            fileStat.ino = s.ino;
+            this.inodeToPath.set(s.ino, relativePath);
+          }
+          this.files[relativePath] = fileStat;
         }),
       );
-      // Silently skip files that disappeared between readdir and stat
     }
 
     this.thingsHappening();
@@ -282,13 +349,18 @@ export class FileSystemAdapter {
       await Promise.allSettled(
         batch.map(async ({ relativePath, entryFullPath }) => {
           const s = await fsp.stat(entryFullPath);
-          this.files[relativePath] = {
+          const fileStat: FileStat = {
             type: "file",
             realpath: entryFullPath,
             ctime: s.ctimeMs,
             mtime: s.mtimeMs,
             size: s.size,
           };
+          if (this.inodeTrackingEnabled) {
+            fileStat.ino = s.ino;
+            this.inodeToPath.set(s.ino, relativePath);
+          }
+          this.files[relativePath] = fileStat;
         }),
       );
     }
@@ -532,6 +604,12 @@ export class FileSystemAdapter {
       clearTimeout(timer);
     }
     this.pendingWatchEvents.clear();
+
+    // Flush any pending renames as deletions
+    for (const pending of this.pendingRenames.values()) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingRenames.clear();
   }
 
   /**
@@ -569,9 +647,8 @@ export class FileSystemAdapter {
       await fsp.access(fullPath);
     } catch {
       // File doesn't exist on disk — emit removal
-      const type = entry.type;
-      delete this.files[filePath];
-      if (type === "folder") {
+      this.removeFromIndex(filePath);
+      if (entry.type === "folder") {
         this.trigger("folder-removed", filePath);
       } else {
         this.trigger("file-removed", filePath);
@@ -580,7 +657,35 @@ export class FileSystemAdapter {
   }
 
   /* ---------------------------------------------------------------- */
-  /*  Private helpers                                                  */
+  /*  Private helpers — index management                               */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * Register a file in both the path index and the inode reverse index.
+   */
+  private addToIndex(relativePath: string, entry: FileStat): void {
+    this.files[relativePath] = entry;
+    if (this.inodeTrackingEnabled && entry.ino !== undefined) {
+      this.inodeToPath.set(entry.ino, relativePath);
+    }
+  }
+
+  /**
+   * Remove a file from both the path index and the inode reverse index.
+   */
+  private removeFromIndex(relativePath: string): void {
+    const entry = this.files[relativePath];
+    if (entry && this.inodeTrackingEnabled && entry.ino !== undefined) {
+      // Only remove from inode index if it still points to this path
+      if (this.inodeToPath.get(entry.ino) === relativePath) {
+        this.inodeToPath.delete(entry.ino);
+      }
+    }
+    delete this.files[relativePath];
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Private helpers — general                                        */
   /* ---------------------------------------------------------------- */
 
   /**
@@ -632,6 +737,10 @@ export class FileSystemAdapter {
     }
   }
 
+  /* ---------------------------------------------------------------- */
+  /*  Private helpers — watching                                       */
+  /* ---------------------------------------------------------------- */
+
   /**
    * Set up a file system watcher on a directory.
    *
@@ -681,6 +790,12 @@ export class FileSystemAdapter {
   /**
    * Process a raw watch event, determining if it's a creation, modification,
    * rename, or deletion and emitting the correct event.
+   *
+   * When inode tracking is enabled (Linux/macOS), a disappearing file is
+   * held briefly in {@link pendingRenames}.  If a new file appears with the
+   * same inode within {@link RENAME_DETECT_MS}, the pair is collapsed into
+   * a single "renamed" event — saving the sync engine from re-hashing and
+   * re-uploading the file's unchanged content.
    */
   private async handleWatchEvent(
     eventType: string,
@@ -689,17 +804,28 @@ export class FileSystemAdapter {
     const fullPath = this.getFullRealPath(relativePath);
     const existed = relativePath in this.files;
 
-    // Emit raw event
+    // Emit raw event for config-directory watchers
     this.trigger("raw", relativePath);
 
     let s: fs.Stats;
     try {
       s = await fsp.stat(fullPath);
     } catch {
-      // File/folder was deleted
-      if (existed) {
-        const entry = this.files[relativePath];
-        delete this.files[relativePath];
+      // ── File/folder was deleted (or renamed away) ────────────────
+      if (!existed) return;
+
+      const entry = this.files[relativePath];
+
+      if (
+        this.inodeTrackingEnabled &&
+        entry.type === "file" &&
+        entry.ino !== undefined
+      ) {
+        // Defer deletion: the file may reappear under a new name
+        this.deferDeletion(relativePath, entry);
+      } else {
+        // No inode tracking or it's a folder — emit immediately
+        this.removeFromIndex(relativePath);
         if (entry.type === "folder") {
           this.trigger("folder-removed", relativePath);
         } else {
@@ -709,6 +835,7 @@ export class FileSystemAdapter {
       return;
     }
 
+    // ── File/folder exists on disk ─────────────────────────────────
     const stat = { ctime: s.ctimeMs, mtime: s.mtimeMs, size: s.size };
 
     if (s.isDirectory()) {
@@ -719,26 +846,97 @@ export class FileSystemAdapter {
         };
         this.trigger("folder-created", relativePath);
       }
-    } else {
-      const newEntry: FileStat = {
-        type: "file",
-        realpath: fullPath,
-        ctime: stat.ctime,
-        mtime: stat.mtime,
-        size: stat.size,
-      };
+      return;
+    }
 
-      if (!existed) {
-        this.files[relativePath] = newEntry;
-        this.trigger("file-created", relativePath, undefined, stat);
-      } else {
-        // Only emit "modified" if stat actually changed
-        const old = this.files[relativePath];
-        if (old.mtime !== stat.mtime || old.size !== stat.size) {
-          this.files[relativePath] = newEntry;
-          this.trigger("modified", relativePath, undefined, stat);
-        }
+    // ── It's a file ────────────────────────────────────────────────
+    const ino = this.inodeTrackingEnabled ? s.ino : undefined;
+
+    // Check if this inode matches a pending rename source
+    if (ino !== undefined) {
+      const pending = this.pendingRenames.get(ino);
+      if (pending) {
+        // Match found — this is the rename destination
+        clearTimeout(pending.timer);
+        this.pendingRenames.delete(ino);
+
+        const oldPath = pending.path;
+
+        // Update index: remove old, add new
+        const newEntry: FileStat = {
+          type: "file",
+          realpath: fullPath,
+          ctime: stat.ctime,
+          mtime: stat.mtime,
+          size: stat.size,
+          ino,
+        };
+        this.addToIndex(relativePath, newEntry);
+
+        this.trigger("renamed", relativePath, oldPath, stat);
+        return;
       }
     }
+
+    const newEntry: FileStat = {
+      type: "file",
+      realpath: fullPath,
+      ctime: stat.ctime,
+      mtime: stat.mtime,
+      size: stat.size,
+      ino,
+    };
+
+    if (!existed) {
+      this.addToIndex(relativePath, newEntry);
+      this.trigger("file-created", relativePath, undefined, stat);
+    } else {
+      // Only emit "modified" if stat actually changed
+      const old = this.files[relativePath];
+      if (old.mtime !== stat.mtime || old.size !== stat.size) {
+        this.addToIndex(relativePath, newEntry);
+        this.trigger("modified", relativePath, undefined, stat);
+      } else if (ino !== undefined && old.ino !== ino) {
+        // Same path, same size/mtime but different inode: the file was
+        // replaced (e.g. atomic write via tmp + rename). Update the index.
+        this.addToIndex(relativePath, newEntry);
+        this.trigger("modified", relativePath, undefined, stat);
+      }
+    }
+  }
+
+  /**
+   * Defer a file deletion to allow inode-based rename detection.
+   *
+   * The file is removed from the path index immediately (so it's no longer
+   * visible to lookups), but its inode is held in {@link pendingRenames}.
+   * If a creation with the same inode arrives within the detection window,
+   * the pair is collapsed into a "renamed" event.  Otherwise, a "file-removed"
+   * event is emitted when the timer fires.
+   */
+  private deferDeletion(relativePath: string, entry: FileStat): void {
+    const ino = entry.ino!;
+
+    // Remove from path index but keep inode info for matching
+    this.removeFromIndex(relativePath);
+
+    // Cancel any previous pending rename for the same inode
+    const existing = this.pendingRenames.get(ino);
+    if (existing) {
+      clearTimeout(existing.timer);
+    }
+
+    const timer = setTimeout(() => {
+      this.pendingRenames.delete(ino);
+      // No matching creation arrived — treat as real deletion
+      this.trigger("file-removed", relativePath);
+    }, FileSystemAdapter.RENAME_DETECT_MS);
+
+    this.pendingRenames.set(ino, {
+      ino,
+      path: relativePath,
+      entry,
+      timer,
+    });
   }
 }

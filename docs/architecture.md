@@ -18,7 +18,7 @@ src/
 │   ├── providers.ts        # V0, V2, V3 encryption provider implementations
 │   └── index.ts            # Re-exports
 ├── fs/
-│   └── adapter.ts          # File system adapter with watch support
+│   └── adapter.ts          # File system adapter with inode-aware watch
 ├── publish/
 │   └── engine.ts           # Publish scanning, upload, removal engine
 ├── storage/
@@ -89,6 +89,31 @@ src/
 
 - **Node.js 24+** — Required for native WebSocket, Web Crypto, `Promise.withResolvers`, and `node:crypto` scrypt
 - **Platforms**: macOS, Linux, Windows (x64, arm64)
+
+## File Watching Strategy
+
+The `FileSystemAdapter` uses `fs.watch({ recursive: true })` under the hood, with OS-specific optimisations:
+
+| Platform | Backend | Inode tracking | Notes |
+|----------|---------|:---:|-------|
+| **Linux** | inotify (recursive since Node 19) | ✅ | Rename detection via inode matching. Subject to `fs.inotify.max_user_watches` limit. |
+| **macOS** | FSEvents | ✅ | Rename detection via inode matching. Very efficient native event stream. |
+| **Windows** | ReadDirectoryChangesW | ❌ | No inode tracking — NTFS file IDs can be reused. Renames are reported as delete + create. |
+
+### Inode-based rename detection (Linux / macOS)
+
+When a file disappears, its inode is held in a pending-renames buffer for 150 ms.
+If a new file appears with the same inode within that window, the adapter emits a
+single `"renamed"` event (with both old and new paths) instead of separate
+`"file-removed"` + `"file-created"` events. This lets the sync engine move the
+metadata record without re-hashing or re-uploading the unchanged content.
+
+### Watch disabled for read-only modes
+
+In `pull-only` and `mirror-remote` sync modes, local file changes are never
+uploaded. The adapter's `watch()` call is skipped entirely; only an initial
+`listAll()` scan is performed. This eliminates inotify/FSEvents overhead on
+machines that only download.
 
 ## Configuration Storage
 
