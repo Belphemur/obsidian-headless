@@ -38,6 +38,11 @@
 	},
 	"author": "Dynalist Inc.",
 	"license": "UNLICENSED",
+	"scripts": {
+		"build": "tsc",
+		"lint": "tsc --noEmit",
+		"test": "node --test mock-server/test.mjs"
+	},
 	"dependencies": {
 		"better-sqlite3": "12.6.2",
 		"commander": "14.0.3",
