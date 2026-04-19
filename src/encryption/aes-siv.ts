@@ -31,7 +31,7 @@ class Block {
   /** The reduction polynomial constant R = 0x87 (for x^128 + x^7 + x^2 + x + 1). */
   private static readonly R = 0x87;
 
-  public readonly data: Uint8Array<ArrayBuffer>;
+  public readonly data: Uint8Array;
 
   constructor() {
     this.data = new Uint8Array(Block.SIZE);
@@ -68,12 +68,12 @@ class AesCtr {
 
   static async importKey(
     hkdfKey: CryptoKey,
-    salt: Uint8Array<ArrayBuffer>,
+    salt: Uint8Array,
   ): Promise<AesCtr> {
     const derived = await subtle.deriveKey(
       {
         name: "HKDF",
-        salt,
+        salt: salt as unknown as Uint8Array<ArrayBuffer>,
         info: new TextEncoder().encode("ObsidianAesSivEnc"),
         hash: "SHA-256",
       },
@@ -88,11 +88,11 @@ class AesCtr {
   /**
    * Encrypt/decrypt `data` using AES-CTR with the given `counter` block.
    */
-  async encryptCtr(counter: Uint8Array<ArrayBuffer>, data: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
+  async encryptCtr(counter: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
     const ct = await subtle.encrypt(
-      { name: "AES-CTR", counter, length: 128 },
+      { name: "AES-CTR", counter: counter as unknown as Uint8Array<ArrayBuffer>, length: 128 },
       this.key,
-      data,
+      data as unknown as Uint8Array<ArrayBuffer>,
     );
     return new Uint8Array(ct);
   }
@@ -107,12 +107,12 @@ class AesCbcMac {
 
   static async importKey(
     hkdfKey: CryptoKey,
-    salt: Uint8Array<ArrayBuffer>,
+    salt: Uint8Array,
   ): Promise<AesCbcMac> {
     const derived = await subtle.deriveKey(
       {
         name: "HKDF",
-        salt,
+        salt: salt as unknown as Uint8Array<ArrayBuffer>,
         info: new TextEncoder().encode("ObsidianAesSivMac"),
         hash: "SHA-256",
       },
@@ -128,12 +128,12 @@ class AesCbcMac {
    * AES-CBC encrypt a single block (16 bytes) with IV = 0.
    * Effectively `AES_K(block)` – a one-block MAC.
    */
-  async encryptBlock(block: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
+  async encryptBlock(block: Uint8Array): Promise<Uint8Array> {
     const iv = new Uint8Array(16);
     const ct = await subtle.encrypt(
       { name: "AES-CBC", iv },
       this.key,
-      block,
+      block as unknown as Uint8Array<ArrayBuffer>,
     );
     // AES-CBC returns block + padding block.  We only need the first 16 bytes.
     return new Uint8Array(ct, 0, 16);
@@ -159,7 +159,7 @@ class Cmac {
    */
   static async importKey(
     hkdfKey: CryptoKey,
-    salt: Uint8Array<ArrayBuffer>,
+    salt: Uint8Array,
   ): Promise<() => Cmac> {
     const cipher = await AesCbcMac.importKey(hkdfKey, salt);
 
@@ -188,7 +188,7 @@ class Cmac {
    * Feed data into the CMAC computation.  Can be called multiple times
    * before {@link finish}.
    */
-  async update(data: Uint8Array<ArrayBuffer>): Promise<void> {
+  async update(data: Uint8Array): Promise<void> {
     const buf = this._buffer.data;
     let off = 0;
 
@@ -279,7 +279,7 @@ export class AesSiv {
    */
   static async importKey(
     hkdfKey: CryptoKey,
-    salt: Uint8Array<ArrayBuffer>,
+    salt: Uint8Array,
   ): Promise<AesSiv> {
     const cmacFactory = await Cmac.importKey(hkdfKey, salt);
     const ctr = await AesCtr.importKey(hkdfKey, salt);
