@@ -71,9 +71,9 @@ export async function aesGcmEncrypt(
   iv?: Uint8Array,
 ): Promise<ArrayBuffer> {
   const actualIv =
-    iv ?? (webcrypto.getRandomValues(new Uint8Array(IV_LENGTH)) as Uint8Array);
+    iv ?? (webcrypto.getRandomValues(new Uint8Array(IV_LENGTH)));
   const ct = await subtle.encrypt(
-    { name: AES_GCM, iv: actualIv },
+    { name: AES_GCM, iv: actualIv as Uint8Array<ArrayBuffer> },
     key,
     plaintext,
   );

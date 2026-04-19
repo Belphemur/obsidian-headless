@@ -9,7 +9,6 @@ import { Command } from "commander";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { fileURLToPath } from "node:url";
 
 import {
   signIn,
@@ -75,9 +74,7 @@ const SUPPORTED_ENCRYPTION_VERSION = 3;
 // Version from package.json
 // ---------------------------------------------------------------------------
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const pkgPath = path.join(__dirname, "..", "..", "package.json");
+const pkgPath = path.join(path.dirname(process.argv[1] || "."), "..", "package.json");
 const { version } = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
 
 // ---------------------------------------------------------------------------
@@ -221,32 +218,32 @@ function printSyncConfig(config: SyncConfig): void {
     "mirror-remote": "mirror-remote",
   };
 
-  const mode = modeLabels[config.mode ?? "bidirectional"] ?? config.mode ?? "bidirectional";
+  const mode = modeLabels[config.syncMode ?? "bidirectional"] ?? config.syncMode ?? "bidirectional";
   const conflict = config.conflictStrategy ?? "merge";
   const device = config.deviceName ?? getDefaultDeviceName();
   const configDir = config.configDir ?? ".obsidian";
 
-  console.log(`  Vault: ${config.name} (${config.vaultId})`);
-  console.log(`  Location: ${config.path}`);
+  console.log(`  Vault: ${config.vaultName} (${config.vaultId})`);
+  console.log(`  Location: ${config.vaultPath}`);
   console.log(`  Sync mode: ${mode}`);
   console.log(`  Conflict strategy: ${conflict}`);
   console.log(`  Device name: ${device}`);
   console.log(`  Config directory: ${configDir}`);
 
-  if (config.fileTypes && config.fileTypes.length > 0) {
-    console.log(`  File types: ${config.fileTypes.join(", ")}`);
+  if (config.allowTypes && config.allowTypes.length > 0) {
+    console.log(`  File types: ${config.allowTypes.join(", ")}`);
   } else {
     console.log(`  File types: image, audio, pdf, video`);
   }
 
-  if (config.configs && config.configs.length > 0) {
-    console.log(`  Configs: ${config.configs.join(", ")}`);
+  if (config.allowSpecialFiles && config.allowSpecialFiles.length > 0) {
+    console.log(`  Configs: ${config.allowSpecialFiles.join(", ")}`);
   } else {
     console.log(`  Configs: none (config syncing disabled)`);
   }
 
-  if (config.excludedFolders && config.excludedFolders.length > 0) {
-    console.log(`  Excluded folders: ${config.excludedFolders.join(", ")}`);
+  if (config.ignoreFolders && config.ignoreFolders.length > 0) {
+    console.log(`  Excluded folders: ${config.ignoreFolders.join(", ")}`);
   }
 }
 
@@ -257,10 +254,8 @@ function printSyncConfig(config: SyncConfig): void {
  */
 function printPublishConfig(config: PublishConfig): void {
   console.log(`  Site ID: ${config.siteId}`);
-  if (config.slug) {
-    console.log(`  Slug: ${config.slug}`);
-  }
-  console.log(`  Location: ${config.path}`);
+  console.log(`  Host: ${config.host}`);
+  console.log(`  Location: ${config.vaultPath}`);
   if (config.includes && config.includes.length > 0) {
     console.log(`  Includes: ${config.includes.join(", ")}`);
   }

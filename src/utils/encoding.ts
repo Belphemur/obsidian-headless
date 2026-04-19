@@ -80,7 +80,7 @@ export function bufferToBase64(buf: ArrayBuffer): string {
  * trimmed to the exact byte range the view covers.
  */
 export function toArrayBuffer(view: Uint8Array): ArrayBuffer {
-  return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+  return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength) as ArrayBuffer;
 }
 
 /**
