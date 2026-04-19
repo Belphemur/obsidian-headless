@@ -3,7 +3,7 @@
 Headless client for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish).
 Sync and publish your vaults from the command line without the desktop app.
 
-Requires Node.js 22 or later.
+Requires Node.js 24 or later.
 
 ## Install
 
@@ -85,7 +85,7 @@ ob sync-create-remote --name "Vault Name" [--encryption <standard|e2ee>] [--pass
 Set up sync between a local vault and a remote vault.
 
 ```
-ob sync-setup --vault <id-or-name> [--path <local-path>] [--password <password>] [--device-name <name>] [--config-dir <name>]
+ob sync-setup --vault <id-or-name> [--path <local-path>] [--password <password>] [--device-name <name>] [--config-dir <name>] [--state-path <path>]
 ```
 
 | Option | Description                                                     |
@@ -95,6 +95,7 @@ ob sync-setup --vault <id-or-name> [--path <local-path>] [--password <password>]
 | `--password` | E2E encryption password (prompted if omitted)                   |
 | `--device-name` | Device name to identify this client in the sync version history |
 | `--config-dir` | Config directory name (default: `.obsidian`)                    |
+| `--state-path` | Custom path for the SQLite state database (default: auto)       |
 
 ### `ob sync`
 
@@ -129,6 +130,7 @@ Run with no options to display the current configuration.
 | `--excluded-folders` | Folders to exclude (comma-separated, empty to clear) |
 | `--device-name` | Device name to identify this client in the sync version history |
 | `--config-dir` | Config directory name (default: `.obsidian`) |
+| `--state-path` | Custom path for the SQLite state database |
 
 ### `ob sync-status`
 
