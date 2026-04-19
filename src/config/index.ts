@@ -71,6 +71,8 @@ export interface SyncConfig {
   allowTypes?: string[];
   allowSpecialFiles?: string[];
   ignoreFolders?: string[];
+  /** Custom path for the SQLite state database. When set, overrides the default location. */
+  statePath?: string;
 }
 
 /** Configuration for a publish site. */
@@ -160,8 +162,10 @@ export function getSyncDir(vaultId: string): string {
 
 /**
  * Returns the state database path for a given vault ID.
+ * If `overridePath` is provided, it is returned directly instead.
  */
-export function getStatePath(vaultId: string): string {
+export function getStatePath(vaultId: string, overridePath?: string): string {
+  if (overridePath) return overridePath;
   return path.join(getSyncDir(vaultId), "state.db");
 }
 

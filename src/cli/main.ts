@@ -267,6 +267,10 @@ function printSyncConfig(config: SyncConfig): void {
   if (config.ignoreFolders && config.ignoreFolders.length > 0) {
     console.log(`  Excluded folders: ${config.ignoreFolders.join(", ")}`);
   }
+
+  if (config.statePath) {
+    console.log(`  State database: ${config.statePath}`);
+  }
 }
 
 /**
@@ -535,6 +539,7 @@ program
   .option("--password <password>", "Encryption password")
   .option("--device-name <name>", "Device name for this client")
   .option("--config-dir <dir>", "Config directory name", ".obsidian")
+  .option("--state-path <path>", "Custom path for the SQLite state database")
   .action(async (opts) => {
     const token = requireAuth();
     const vaultsResponse = await listVaults(
@@ -622,6 +627,7 @@ program
       conflictStrategy: "merge",
       deviceName,
       configDir: opts.configDir as string,
+      statePath: opts.statePath as string | undefined,
     };
 
     writeSyncConfig(vault.id, config);
@@ -670,6 +676,7 @@ program
     "Sync mode: bidirectional, pull-only, or mirror-remote",
   )
   .option("--config-dir <dir>", "Config directory name")
+  .option("--state-path <path>", "Custom path for the SQLite state database")
   .action(async (opts) => {
     const localPath = path.resolve(opts.path);
     const config = findSyncConfigByPath(localPath);
@@ -720,6 +727,10 @@ program
     if (opts.configDir !== undefined) {
       validateConfigDir(opts.configDir as string);
       config.configDir = opts.configDir as string;
+      changed = true;
+    }
+    if (opts.statePath !== undefined) {
+      config.statePath = opts.statePath as string;
       changed = true;
     }
 
