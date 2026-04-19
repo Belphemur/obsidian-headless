@@ -86,6 +86,7 @@ ob sync-setup --vault abc123 --path ~/notes --device-name "server-1"
 | `--password <password>` | Encryption password | — |
 | `--device-name <name>` | Device name | hostname |
 | `--config-dir <dir>` | Config directory name | `.obsidian` |
+| `--state-path <path>` | Custom path for the SQLite state database | auto |
 
 ### `ob sync-config`
 
@@ -109,6 +110,7 @@ ob sync-config --configs "appearance,hotkeys"
 | `--device-name <name>` | Device name |
 | `--mode <mode>` | `bidirectional`, `pull-only`, or `mirror-remote` |
 | `--config-dir <dir>` | Config directory name |
+| `--state-path <path>` | Custom path for the SQLite state database |
 
 ### `ob sync-status`
 

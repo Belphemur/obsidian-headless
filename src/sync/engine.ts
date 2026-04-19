@@ -224,7 +224,7 @@ export class SyncEngine {
     this.encryption = encryption;
 
     // Initialize SQLite state store
-    this.stateStore = new StateStore(getStatePath(config.vaultId));
+    this.stateStore = new StateStore(getStatePath(config.vaultId, config.statePath));
 
     // Configuration with defaults
     this.conflictStrategy = config.conflictStrategy || "merge";
@@ -359,10 +359,18 @@ export class SyncEngine {
 
     // First-time initialization
     if (!this.loaded) {
-      // Start watching the file system for changes
-      await this.adapter.watch((event, filePath, oldPath, stat) => {
-        this.onChange(event, filePath, oldPath, stat);
-      });
+      // Only watch the file system in bidirectional mode.
+      // In pull-only and mirror-remote modes local changes are ignored,
+      // so watching is unnecessary overhead.
+      if (this.syncMode !== "pull" && this.syncMode !== "mirror") {
+        await this.adapter.watch((event, filePath, oldPath, stat) => {
+          this.onChange(event, filePath, oldPath, stat);
+        });
+      } else {
+        // Still perform the initial scan to populate the file index
+        // (needed for merge/conflict detection), but skip watchers.
+        await this.adapter.listAll();
+      }
 
       // Clean up stale local file entries that no longer exist on disk
       for (const filePath of Object.keys(this.localFiles)) {
@@ -699,11 +707,9 @@ export class SyncEngine {
       await this.scanConfigDirectory(configDir);
     }
 
-    // 5. Process scan queue
+    // 5. Process scan queue — stat() returns null for missing files,
+    // so we skip the separate exists() check entirely.
     for (const filePath of this.scanSpecialFileQueue) {
-      const exists = await this.adapter.exists(filePath);
-      if (!exists) continue;
-
       const stat = await this.adapter.stat(filePath);
       if (!stat) continue;
 
@@ -1287,6 +1293,9 @@ export class SyncEngine {
     oldPath?: string,
     stat?: { ctime: number; mtime: number; size: number },
   ): void {
+    // In pull-only / mirror-remote modes, local changes are irrelevant
+    if (this.syncMode === "pull" || this.syncMode === "mirror") return;
+
     // Skip files we're currently syncing (to avoid feedback loops)
     if (filePath === this.syncingPath) return;
 
@@ -1467,11 +1476,8 @@ export class SyncEngine {
    * @param configDir - The config directory name (e.g. ".obsidian").
    */
   private async scanConfigDirectory(configDir: string): Promise<void> {
-    const exists = await this.adapter.exists(configDir);
-    if (!exists) return;
-
     try {
-      // Root-level JSON files
+      // Root-level JSON files — if this fails, the configDir doesn't exist
       const rootContents = await this.adapter.list(configDir);
       for (const file of rootContents.files) {
         if (extname(file) === "json") {
@@ -1479,43 +1485,44 @@ export class SyncEngine {
         }
       }
 
-      // themes/{name}/theme.css and themes/{name}/manifest.json
-      const themesDir = `${configDir}/themes`;
-      if (await this.adapter.exists(themesDir)) {
-        const themes = await this.adapter.list(themesDir);
-        for (const themeFolder of themes.folders) {
-          const themeContents = await this.adapter.list(themeFolder);
-          for (const file of themeContents.files) {
-            const name = basename(file);
-            if (name === "theme.css" || name === "manifest.json") {
-              this.scanSpecialFileQueue.push(file);
-            }
-          }
-        }
-      }
+      // Scan themes, snippets, plugins sub-directories concurrently.
+      // Each list() call returns an empty result if the directory doesn't
+      // exist, so we don't need separate exists() checks.
+      const [themes, snippets, plugins] = await Promise.all([
+        this.adapter.list(`${configDir}/themes`),
+        this.adapter.list(`${configDir}/snippets`),
+        this.adapter.list(`${configDir}/plugins`),
+      ]);
 
-      // snippets/*.css
-      const snippetsDir = `${configDir}/snippets`;
-      if (await this.adapter.exists(snippetsDir)) {
-        const snippets = await this.adapter.list(snippetsDir);
-        for (const file of snippets.files) {
-          if (extname(file) === "css") {
+      // themes/{name}/theme.css and themes/{name}/manifest.json
+      const themeContentResults = await Promise.all(
+        themes.folders.map((folder) => this.adapter.list(folder)),
+      );
+      for (const themeContents of themeContentResults) {
+        for (const file of themeContents.files) {
+          const name = basename(file);
+          if (name === "theme.css" || name === "manifest.json") {
             this.scanSpecialFileQueue.push(file);
           }
         }
       }
 
+      // snippets/*.css
+      for (const file of snippets.files) {
+        if (extname(file) === "css") {
+          this.scanSpecialFileQueue.push(file);
+        }
+      }
+
       // plugins/{name}/{pluginFiles}
-      const pluginsDir = `${configDir}/plugins`;
-      if (await this.adapter.exists(pluginsDir)) {
-        const plugins = await this.adapter.list(pluginsDir);
-        for (const pluginFolder of plugins.folders) {
-          const pluginContents = await this.adapter.list(pluginFolder);
-          for (const file of pluginContents.files) {
-            const name = basename(file);
-            if (this.filter.isPluginFile(name)) {
-              this.scanSpecialFileQueue.push(file);
-            }
+      const pluginContentResults = await Promise.all(
+        plugins.folders.map((folder) => this.adapter.list(folder)),
+      );
+      for (const pluginContents of pluginContentResults) {
+        for (const file of pluginContents.files) {
+          const name = basename(file);
+          if (this.filter.isPluginFile(name)) {
+            this.scanSpecialFileQueue.push(file);
           }
         }
       }

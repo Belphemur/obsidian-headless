@@ -248,42 +248,52 @@ export class PublishEngine {
   /**
    * Recursively walks the vault directory and returns all publishable files
    * with their metadata.
+   *
+   * Uses `readdirSync({ recursive: true, withFileTypes: true })` for a
+   * single kernel call that returns the entire tree, avoiding per-directory
+   * recursion overhead.
    */
   walkLocalFiles(): Array<{ path: string; mtime: number; size: number }> {
     const results: Array<{ path: string; mtime: number; size: number }> = [];
-    this.walkDir(this.config.vaultPath, "", results);
-    return results;
-  }
 
-  private walkDir(
-    root: string,
-    relative: string,
-    results: Array<{ path: string; mtime: number; size: number }>,
-  ): void {
-    const dirPath = relative ? path.join(root, relative) : root;
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(this.config.vaultPath, {
+        withFileTypes: true,
+        recursive: true,
+      });
+    } catch {
+      return results;
+    }
 
     for (const entry of entries) {
-      // Skip hidden files and directories
-      if (entry.name.startsWith(".")) continue;
+      if (!entry.isFile()) continue;
 
-      const entryRelative = relative
-        ? `${relative}/${entry.name}`
-        : entry.name;
+      const parentDir =
+        (entry as any).parentPath ?? (entry as any).path ?? "";
+      const fullPath = path.join(parentDir, entry.name);
+      const relativePath = path
+        .relative(this.config.vaultPath, fullPath)
+        .replace(/\\/g, "/");
 
-      if (entry.isDirectory()) {
-        this.walkDir(root, entryRelative, results);
-      } else if (entry.isFile()) {
-        if (!this.isFileSupported(entry.name, entryRelative)) continue;
+      // Skip hidden files/directories
+      if (relativePath.split("/").some((s) => s.startsWith("."))) continue;
 
-        const stat = fs.statSync(path.join(dirPath, entry.name));
+      if (!this.isFileSupported(entry.name, relativePath)) continue;
+
+      try {
+        const stat = fs.statSync(fullPath);
         results.push({
-          path: entryRelative,
+          path: relativePath,
           mtime: Math.round(stat.mtimeMs),
           size: stat.size,
         });
+      } catch {
+        // File may have disappeared between readdir and stat
       }
     }
+
+    return results;
   }
 
   /**

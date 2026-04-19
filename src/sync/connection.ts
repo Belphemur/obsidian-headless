@@ -14,7 +14,7 @@ import type { EncryptionProvider } from "../encryption/types.js";
 /*  Globals                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Use the global WebSocket available in Node 22+. */
+/** Use the global WebSocket available in Node 22+ / Node 24+. */
 const WS = WebSocket;
 
 /** Extract hostname from a WebSocket URL. */

@@ -87,7 +87,7 @@ src/
 
 ## Runtime Requirements
 
-- **Node.js 22+** — Required for native WebSocket, Web Crypto, and `node:crypto` scrypt
+- **Node.js 24+** — Required for native WebSocket, Web Crypto, `Promise.withResolvers`, and `node:crypto` scrypt
 - **Platforms**: macOS, Linux, Windows (x64, arm64)
 
 ## Configuration Storage

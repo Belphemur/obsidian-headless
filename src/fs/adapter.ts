@@ -4,9 +4,16 @@
  * File system adapter for vault operations.  Wraps Node.js `fs` to provide
  * a high-level interface for reading, writing, watching, and indexing vault
  * files.  Emits change events for consumption by the sync engine.
+ *
+ * Optimised for minimal filesystem I/O:
+ * - Uses async `fs.promises` for all non-blocking operations
+ * - Single recursive scan using `readdir({ recursive: true })`
+ * - Debounced watch events to batch rapid changes
+ * - In-memory index avoids redundant stat calls
  */
 
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 import url from "node:url";
 
@@ -71,6 +78,16 @@ export class FileSystemAdapter {
   private basePath: string;
   private watchers: fs.FSWatcher[] = [];
   private kill: () => void;
+
+  /**
+   * Pending watch events keyed by relative path. Events arriving within a
+   * short window are coalesced so we only stat the file once per batch.
+   */
+  private pendingWatchEvents: Map<string, ReturnType<typeof setTimeout>> =
+    new Map();
+
+  /** Minimum ms between processing watch events for the same path. */
+  private static readonly WATCH_DEBOUNCE_MS = 50;
 
   /**
    * Create a new file system adapter.
@@ -146,15 +163,77 @@ export class FileSystemAdapter {
   /**
    * Recursively scan all files in the vault, populating {@link files}.
    * Skips hidden files and directories (names starting with `.`).
+   *
+   * Uses `fs.promises.readdir` with `{ recursive: true, withFileTypes: true }`
+   * for a single kernel call that returns the entire tree, then stats only
+   * regular files (directories don't need size/mtime).
    */
   async listAll(): Promise<void> {
     this.files = {};
-    await this.listRecursive("");
+
+    let entries: fs.Dirent[];
+    try {
+      entries = await fsp.readdir(this.basePath, {
+        withFileTypes: true,
+        recursive: true,
+      });
+    } catch {
+      this.thingsHappening();
+      return;
+    }
+
+    // Batch stat promises for files — directories don't need stat
+    const fileStatJobs: Array<{
+      relativePath: string;
+      fullPath: string;
+    }> = [];
+
+    for (const entry of entries) {
+      // Build the vault-relative path from parentPath (Node 20+) or name
+      const parentDir = (entry as any).parentPath ?? (entry as any).path ?? "";
+      const fullPath = this.pathModule.join(parentDir, entry.name);
+      const relativePath = this.pathModule
+        .relative(this.basePath, fullPath)
+        .replace(/\\/g, "/");
+
+      // Skip hidden files/directories (any segment starting with ".")
+      if (this.isHiddenRelative(relativePath)) continue;
+
+      if (entry.isDirectory()) {
+        this.files[relativePath] = {
+          type: "folder",
+          realpath: fullPath,
+        };
+      } else if (entry.isFile()) {
+        fileStatJobs.push({ relativePath, fullPath });
+      }
+    }
+
+    // Stat all files concurrently in batches of 64 to avoid fd exhaustion
+    const BATCH_SIZE = 64;
+    for (let i = 0; i < fileStatJobs.length; i += BATCH_SIZE) {
+      const batch = fileStatJobs.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(async ({ relativePath, fullPath }) => {
+          const s = await fsp.stat(fullPath);
+          this.files[relativePath] = {
+            type: "file",
+            realpath: fullPath,
+            ctime: s.ctimeMs,
+            mtime: s.mtimeMs,
+            size: s.size,
+          };
+        }),
+      );
+      // Silently skip files that disappeared between readdir and stat
+    }
+
     this.thingsHappening();
   }
 
   /**
    * Recursively scan a directory, adding entries to {@link files}.
+   * Falls back to the single-dir approach for targeted rescans.
    *
    * @param dir - Vault-relative directory path to scan.
    */
@@ -165,86 +244,53 @@ export class FileSystemAdapter {
 
     let entries: fs.Dirent[];
     try {
-      entries = this.fsModule.readdirSync(fullPath, { withFileTypes: true });
+      entries = await fsp.readdir(fullPath, {
+        withFileTypes: true,
+        recursive: true,
+      });
     } catch {
       return;
     }
 
-    for (const entry of entries) {
-      // Skip hidden files/directories
-      if (entry.name.startsWith(".")) continue;
+    const fileStatJobs: Array<{
+      relativePath: string;
+      entryFullPath: string;
+    }> = [];
 
-      const relativePath = dir
-        ? `${dir}/${entry.name}`
-        : entry.name;
-      const entryFullPath = this.pathModule.join(fullPath, entry.name);
+    for (const entry of entries) {
+      const parentDir = (entry as any).parentPath ?? (entry as any).path ?? "";
+      const entryFullPath = this.pathModule.join(parentDir, entry.name);
+      const relativePath = this.pathModule
+        .relative(this.basePath, entryFullPath)
+        .replace(/\\/g, "/");
+
+      if (this.isHiddenRelative(relativePath)) continue;
 
       if (entry.isDirectory()) {
         this.files[relativePath] = {
           type: "folder",
           realpath: entryFullPath,
         };
-        await this.listRecursiveChild(relativePath);
       } else if (entry.isFile()) {
-        try {
-          const stat = this.fsModule.statSync(entryFullPath);
-          this.files[relativePath] = {
-            type: "file",
-            realpath: entryFullPath,
-            ctime: stat.ctimeMs,
-            mtime: stat.mtimeMs,
-            size: stat.size,
-          };
-        } catch {
-          // File may have been removed between readdir and stat
-        }
+        fileStatJobs.push({ relativePath, entryFullPath });
       }
     }
 
-    this.thingsHappening();
-  }
-
-  /**
-   * Recursively scan a child directory (same as listRecursive but used
-   * internally to avoid redundant root-level checks).
-   */
-  private async listRecursiveChild(dir: string): Promise<void> {
-    const fullPath = this.pathModule.join(this.basePath, dir);
-
-    let entries: fs.Dirent[];
-    try {
-      entries = this.fsModule.readdirSync(fullPath, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      // Skip hidden files/directories
-      if (entry.name.startsWith(".")) continue;
-
-      const relativePath = `${dir}/${entry.name}`;
-      const entryFullPath = this.pathModule.join(fullPath, entry.name);
-
-      if (entry.isDirectory()) {
-        this.files[relativePath] = {
-          type: "folder",
-          realpath: entryFullPath,
-        };
-        await this.listRecursiveChild(relativePath);
-      } else if (entry.isFile()) {
-        try {
-          const stat = this.fsModule.statSync(entryFullPath);
+    const BATCH_SIZE = 64;
+    for (let i = 0; i < fileStatJobs.length; i += BATCH_SIZE) {
+      const batch = fileStatJobs.slice(i, i + BATCH_SIZE);
+      await Promise.allSettled(
+        batch.map(async ({ relativePath, entryFullPath }) => {
+          const s = await fsp.stat(entryFullPath);
           this.files[relativePath] = {
             type: "file",
             realpath: entryFullPath,
-            ctime: stat.ctimeMs,
-            mtime: stat.mtimeMs,
-            size: stat.size,
+            ctime: s.ctimeMs,
+            mtime: s.mtimeMs,
+            size: s.size,
           };
-        } catch {
-          // File may have been removed between readdir and stat
-        }
-      }
+        }),
+      );
     }
 
     this.thingsHappening();
@@ -265,7 +311,7 @@ export class FileSystemAdapter {
 
     let entries: fs.Dirent[];
     try {
-      entries = this.fsModule.readdirSync(fullPath, { withFileTypes: true });
+      entries = await fsp.readdir(fullPath, { withFileTypes: true });
     } catch {
       return { files, folders };
     }
@@ -289,24 +335,37 @@ export class FileSystemAdapter {
 
   /**
    * Check whether a file or directory exists at the given path.
+   * Uses the in-memory index first, falling back to disk only if needed.
    *
    * @param filePath - Vault-relative path.
    */
   async exists(filePath: string): Promise<boolean> {
-    const fullPath = this.getFullRealPath(filePath);
-    return this.fsModule.existsSync(fullPath);
+    // Fast path: check in-memory index
+    if (filePath in this.files) return true;
+    // Slow path: check disk
+    try {
+      await fsp.access(this.getFullRealPath(filePath));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
    * Get stat information for a file or directory.
+   * Uses the in-memory index if available, otherwise stats from disk.
    *
    * @param filePath - Vault-relative path.
    * @returns Stat object with type, realpath, ctime, mtime, and size.
    */
   async stat(filePath: string): Promise<FileStat | null> {
+    // Fast path: return from in-memory index if we have full info
+    const cached = this.files[filePath];
+    if (cached && cached.mtime !== undefined) return cached;
+
     const fullPath = this.getFullRealPath(filePath);
     try {
-      const s = this.fsModule.statSync(fullPath);
+      const s = await fsp.stat(fullPath);
       return {
         type: s.isDirectory() ? "folder" : "file",
         realpath: fullPath,
@@ -327,7 +386,7 @@ export class FileSystemAdapter {
    */
   async read(filePath: string): Promise<string> {
     const fullPath = this.getFullRealPath(filePath);
-    return this.fsModule.readFileSync(fullPath, "utf-8");
+    return fsp.readFile(fullPath, "utf-8");
   }
 
   /**
@@ -338,7 +397,7 @@ export class FileSystemAdapter {
    */
   async readBinary(filePath: string): Promise<ArrayBuffer> {
     const fullPath = this.getFullRealPath(filePath);
-    const buffer = this.fsModule.readFileSync(fullPath);
+    const buffer = await fsp.readFile(fullPath);
     return buffer.buffer.slice(
       buffer.byteOffset,
       buffer.byteOffset + buffer.byteLength,
@@ -360,9 +419,9 @@ export class FileSystemAdapter {
   ): Promise<void> {
     const fullPath = this.getFullRealPath(filePath);
     const dir = this.pathModule.dirname(fullPath);
-    this.fsModule.mkdirSync(dir, { recursive: true });
-    this.fsModule.writeFileSync(fullPath, content, "utf-8");
-    this.applyTimestamps(fullPath, options);
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(fullPath, content, "utf-8");
+    await this.applyTimestamps(fullPath, options);
   }
 
   /**
@@ -380,9 +439,9 @@ export class FileSystemAdapter {
   ): Promise<void> {
     const fullPath = this.getFullRealPath(filePath);
     const dir = this.pathModule.dirname(fullPath);
-    this.fsModule.mkdirSync(dir, { recursive: true });
-    this.fsModule.writeFileSync(fullPath, Buffer.from(data));
-    this.applyTimestamps(fullPath, options);
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(fullPath, Buffer.from(data));
+    await this.applyTimestamps(fullPath, options);
   }
 
   /**
@@ -393,7 +452,7 @@ export class FileSystemAdapter {
    */
   async append(filePath: string, content: string): Promise<void> {
     const fullPath = this.getFullRealPath(filePath);
-    this.fsModule.appendFileSync(fullPath, content, "utf-8");
+    await fsp.appendFile(fullPath, content, "utf-8");
   }
 
   /**
@@ -403,7 +462,7 @@ export class FileSystemAdapter {
    */
   async mkdir(dirPath: string): Promise<void> {
     const fullPath = this.getFullRealPath(dirPath);
-    this.fsModule.mkdirSync(fullPath, { recursive: true });
+    await fsp.mkdir(fullPath, { recursive: true });
   }
 
   /**
@@ -413,7 +472,7 @@ export class FileSystemAdapter {
    */
   async remove(filePath: string): Promise<void> {
     const fullPath = this.getFullRealPath(filePath);
-    this.fsModule.unlinkSync(fullPath);
+    await fsp.unlink(fullPath);
   }
 
   /**
@@ -424,7 +483,7 @@ export class FileSystemAdapter {
    */
   async rmdir(dirPath: string, recursive?: boolean): Promise<void> {
     const fullPath = this.getFullRealPath(dirPath);
-    this.fsModule.rmSync(fullPath, { recursive: recursive ?? false });
+    await fsp.rm(fullPath, { recursive: recursive ?? false });
   }
 
   /**
@@ -437,8 +496,8 @@ export class FileSystemAdapter {
     const fullOld = this.getFullRealPath(oldPath);
     const fullNew = this.getFullRealPath(newPath);
     const dir = this.pathModule.dirname(fullNew);
-    this.fsModule.mkdirSync(dir, { recursive: true });
-    this.fsModule.renameSync(fullOld, fullNew);
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.rename(fullOld, fullNew);
   }
 
   /* ---------------------------------------------------------------- */
@@ -459,7 +518,7 @@ export class FileSystemAdapter {
   }
 
   /**
-   * Stop all file system watchers.
+   * Stop all file system watchers and cancel pending debounced events.
    */
   stopWatch(): void {
     for (const watcher of this.watchers) {
@@ -467,6 +526,12 @@ export class FileSystemAdapter {
     }
     this.watchers = [];
     this.handler = null;
+
+    // Cancel all pending debounced watch events
+    for (const timer of this.pendingWatchEvents.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingWatchEvents.clear();
   }
 
   /**
@@ -495,12 +560,15 @@ export class FileSystemAdapter {
    *
    * @param filePath - Vault-relative path to check.
    */
-  reconcileDeletion(filePath: string): void {
+  async reconcileDeletion(filePath: string): Promise<void> {
     const entry = this.files[filePath];
     if (!entry) return;
 
     const fullPath = this.getFullRealPath(filePath);
-    if (!this.fsModule.existsSync(fullPath)) {
+    try {
+      await fsp.access(fullPath);
+    } catch {
+      // File doesn't exist on disk — emit removal
       const type = entry.type;
       delete this.files[filePath];
       if (type === "folder") {
@@ -514,6 +582,14 @@ export class FileSystemAdapter {
   /* ---------------------------------------------------------------- */
   /*  Private helpers                                                  */
   /* ---------------------------------------------------------------- */
+
+  /**
+   * Check if a vault-relative path is hidden (any segment starts with ".").
+   */
+  private isHiddenRelative(relativePath: string): boolean {
+    const segments = relativePath.split("/");
+    return segments.some((s) => s.startsWith("."));
+  }
 
   /**
    * Detect whether the file system is case-insensitive by creating a
@@ -538,7 +614,10 @@ export class FileSystemAdapter {
    * @param fullPath - Absolute file path.
    * @param options  - Write options with optional ctime/mtime.
    */
-  private applyTimestamps(fullPath: string, options?: WriteOptions): void {
+  private async applyTimestamps(
+    fullPath: string,
+    options?: WriteOptions,
+  ): Promise<void> {
     if (!options) return;
 
     if (options.ctime && this.btime) {
@@ -549,7 +628,7 @@ export class FileSystemAdapter {
     if (options.mtime) {
       const mtime = new Date(options.mtime);
       const atime = new Date(); // access time = now
-      this.fsModule.utimesSync(fullPath, atime, mtime);
+      await fsp.utimes(fullPath, atime, mtime);
     }
   }
 
@@ -577,7 +656,20 @@ export class FileSystemAdapter {
           // Normalise path separators to forward slashes
           const relativePath = filename.replace(/\\/g, "/");
 
-          this.handleWatchEvent(eventType, relativePath);
+          // Debounce: if we already have a pending event for this path,
+          // cancel it and reschedule. This prevents multiple rapid stat
+          // calls for the same file (e.g. editor save-then-rename).
+          const existing = this.pendingWatchEvents.get(relativePath);
+          if (existing) {
+            clearTimeout(existing);
+          }
+
+          const timer = setTimeout(() => {
+            this.pendingWatchEvents.delete(relativePath);
+            this.handleWatchEvent(eventType, relativePath);
+          }, FileSystemAdapter.WATCH_DEBOUNCE_MS);
+
+          this.pendingWatchEvents.set(relativePath, timer);
         },
       );
       this.watchers.push(watcher);
@@ -590,14 +682,20 @@ export class FileSystemAdapter {
    * Process a raw watch event, determining if it's a creation, modification,
    * rename, or deletion and emitting the correct event.
    */
-  private handleWatchEvent(eventType: string, relativePath: string): void {
+  private async handleWatchEvent(
+    eventType: string,
+    relativePath: string,
+  ): Promise<void> {
     const fullPath = this.getFullRealPath(relativePath);
     const existed = relativePath in this.files;
 
     // Emit raw event
     this.trigger("raw", relativePath);
 
-    if (!this.fsModule.existsSync(fullPath)) {
+    let s: fs.Stats;
+    try {
+      s = await fsp.stat(fullPath);
+    } catch {
       // File/folder was deleted
       if (existed) {
         const entry = this.files[relativePath];
@@ -611,41 +709,36 @@ export class FileSystemAdapter {
       return;
     }
 
-    try {
-      const s = this.fsModule.statSync(fullPath);
-      const stat = { ctime: s.ctimeMs, mtime: s.mtimeMs, size: s.size };
+    const stat = { ctime: s.ctimeMs, mtime: s.mtimeMs, size: s.size };
 
-      if (s.isDirectory()) {
-        if (!existed) {
-          this.files[relativePath] = {
-            type: "folder",
-            realpath: fullPath,
-          };
-          this.trigger("folder-created", relativePath);
-        }
+    if (s.isDirectory()) {
+      if (!existed) {
+        this.files[relativePath] = {
+          type: "folder",
+          realpath: fullPath,
+        };
+        this.trigger("folder-created", relativePath);
+      }
+    } else {
+      const newEntry: FileStat = {
+        type: "file",
+        realpath: fullPath,
+        ctime: stat.ctime,
+        mtime: stat.mtime,
+        size: stat.size,
+      };
+
+      if (!existed) {
+        this.files[relativePath] = newEntry;
+        this.trigger("file-created", relativePath, undefined, stat);
       } else {
-        if (!existed) {
-          this.files[relativePath] = {
-            type: "file",
-            realpath: fullPath,
-            ctime: stat.ctime,
-            mtime: stat.mtime,
-            size: stat.size,
-          };
-          this.trigger("file-created", relativePath, undefined, stat);
-        } else {
-          this.files[relativePath] = {
-            type: "file",
-            realpath: fullPath,
-            ctime: stat.ctime,
-            mtime: stat.mtime,
-            size: stat.size,
-          };
+        // Only emit "modified" if stat actually changed
+        const old = this.files[relativePath];
+        if (old.mtime !== stat.mtime || old.size !== stat.size) {
+          this.files[relativePath] = newEntry;
           this.trigger("modified", relativePath, undefined, stat);
         }
       }
-    } catch {
-      // Stat failed; file may have been removed immediately
     }
   }
 }
