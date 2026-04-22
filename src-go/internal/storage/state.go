@@ -121,7 +121,11 @@ func (s *StateStore) setMeta(key, value string) error {
 }
 
 func (s *StateStore) loadTable(table string) (map[string]model.FileRecord, error) {
-	rows, err := s.db.Query(`SELECT path, data FROM ` + table)
+	validatedTable, err := validateTableName(table)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(`SELECT path, data FROM ` + validatedTable)
 	if err != nil {
 		return nil, err
 	}
@@ -143,6 +147,10 @@ func (s *StateStore) loadTable(table string) (map[string]model.FileRecord, error
 }
 
 func (s *StateStore) replaceTable(table string, records map[string]model.FileRecord) error {
+	validatedTable, err := validateTableName(table)
+	if err != nil {
+		return err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -152,10 +160,10 @@ func (s *StateStore) replaceTable(table string, records map[string]model.FileRec
 			_ = tx.Rollback()
 		}
 	}()
-	if _, err = tx.Exec(`DELETE FROM ` + table); err != nil {
+	if _, err = tx.Exec(`DELETE FROM ` + validatedTable); err != nil {
 		return err
 	}
-	statement, err := tx.Prepare(`INSERT INTO ` + table + ` (path, data) VALUES (?, ?)`)
+	statement, err := tx.Prepare(`INSERT INTO ` + validatedTable + ` (path, data) VALUES (?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -170,4 +178,13 @@ func (s *StateStore) replaceTable(table string, records map[string]model.FileRec
 		}
 	}
 	return tx.Commit()
+}
+
+func validateTableName(table string) (string, error) {
+	switch table {
+	case "local_files", "server_files":
+		return table, nil
+	default:
+		return "", fmt.Errorf("invalid table name %q", table)
+	}
 }

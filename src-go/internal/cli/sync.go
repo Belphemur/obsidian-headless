@@ -93,7 +93,10 @@ func newSyncCreateRemoteCommand(app *App) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				key = util.HashBytes([]byte(password + ":" + salt))
+				key, err = util.DerivePasswordHash(password, salt)
+				if err != nil {
+					return err
+				}
 			}
 			vault, err := app.client().CreateVault(cmd.Context(), token, name, key, salt, region, version)
 			if err != nil {
@@ -139,7 +142,10 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 			}
 			keyHash := ""
 			if password != "" {
-				keyHash = util.HashBytes([]byte(password + ":" + vault.Salt))
+				keyHash, err = util.DerivePasswordHash(password, vault.Salt)
+				if err != nil {
+					return err
+				}
 			}
 			if err := app.client().ValidateVaultAccess(cmd.Context(), token, vault.ID, keyHash, vault.Host, 3); err != nil {
 				return err

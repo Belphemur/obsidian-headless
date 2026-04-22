@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -99,7 +100,11 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 				continue
 			}
 			if record.Folder {
-				if err := os.MkdirAll(filepath.Join(e.Config.VaultPath, filepath.FromSlash(record.Path)), 0o755); err != nil {
+				dirPath, err := util.SafeJoin(e.Config.VaultPath, record.Path)
+				if err != nil {
+					return err
+				}
+				if err := os.MkdirAll(dirPath, 0o755); err != nil {
 					return err
 				}
 				e.Logger.Debug().Str("path", action.Path).Msg("ensured remote directory exists locally")
@@ -115,7 +120,11 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 			e.Logger.Info().Str("path", action.Path).Msg("downloaded remote file")
 		case "upload":
 			record := currentLocal[action.Path]
-			data, err := os.ReadFile(filepath.Join(e.Config.VaultPath, filepath.FromSlash(action.Path)))
+			localPath, err := util.SafeJoin(e.Config.VaultPath, action.Path)
+			if err != nil {
+				return err
+			}
+			data, err := os.ReadFile(localPath)
 			if err != nil {
 				return err
 			}
@@ -200,6 +209,14 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 }
 
 func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial bool) (*remoteSession, error) {
+	keyHash := ""
+	if e.Config.EncryptionKey != "" {
+		derivedKeyHash, err := util.DerivePasswordHash(e.Config.EncryptionKey, e.Config.EncryptionSalt)
+		if err != nil {
+			return nil, err
+		}
+		keyHash = derivedKeyHash
+	}
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
 	if err != nil {
 		return nil, err
@@ -208,7 +225,7 @@ func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial b
 		"op":                 "init",
 		"token":              e.Token,
 		"id":                 e.Config.VaultID,
-		"keyhash":            keyHash(e.Config.EncryptionKey, e.Config.EncryptionSalt),
+		"keyhash":            keyHash,
 		"version":            version,
 		"initial":            initial,
 		"device":             e.deviceName(),
@@ -292,7 +309,11 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 	if response.Deleted || response.Pieces == 0 {
 		return nil, nil
 	}
-	data := make([]byte, 0, response.Size)
+	if response.Size < 0 || response.Size > 200*1024*1024 {
+		return nil, fmt.Errorf("remote file size %d exceeds allowed maximum", response.Size)
+	}
+	var data bytes.Buffer
+	data.Grow(int(response.Size))
 	for index := 0; index < response.Pieces; index++ {
 		messageType, payload, err := s.conn.ReadMessage()
 		if err != nil {
@@ -302,9 +323,11 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 			index--
 			continue
 		}
-		data = append(data, payload...)
+		if _, err := data.Write(payload); err != nil {
+			return nil, err
+		}
 	}
-	return data, nil
+	return data.Bytes(), nil
 }
 
 func (s *remoteSession) push(record model.FileRecord, content []byte) error {
@@ -470,10 +493,6 @@ func normalizeWSURL(host string) string {
 	return "wss://" + host
 }
 
-func keyHash(key, salt string) string {
-	return util.HashBytes([]byte(key + ":" + salt))
-}
-
 func (e *Engine) deviceName() string {
 	if e.Config.DeviceName != "" {
 		return e.Config.DeviceName
@@ -505,7 +524,10 @@ func (e *Engine) acquireLock() (func(), error) {
 }
 
 func (e *Engine) removeLocalPath(path string) error {
-	fullPath := filepath.Join(e.Config.VaultPath, filepath.FromSlash(path))
+	fullPath, err := util.SafeJoin(e.Config.VaultPath, path)
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(fullPath); err != nil {
 		return err
 	}
