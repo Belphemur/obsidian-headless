@@ -5,6 +5,23 @@ Sync and publish your vaults from the command line without the desktop app.
 
 Requires Node.js 24 or later.
 
+## Go port
+
+An in-progress Go implementation now lives in `src-go/`.
+
+- Entry point: `src-go/cmd/ob-go/main.go`
+- Module target: Go `1.26.0`
+- Key libraries: Cobra, Viper, zerolog, `modernc.org/sqlite`, `gorilla/websocket`, `fsnotify`
+
+Run it locally with:
+
+```bash
+cd src-go
+GOTOOLCHAIN=go1.26.0 go run ./cmd/ob-go --help
+```
+
+Progress and implementation plan are tracked in `docs/go-port-progress.md`.
+
 ## Install
 
 ```bash
