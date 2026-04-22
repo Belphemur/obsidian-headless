@@ -23,7 +23,10 @@ import (
 	"github.com/Belphemur/obsidian-headless/src-go/internal/util"
 )
 
-const chunkSize = 2 * 1024 * 1024
+const (
+	chunkSize         = 2 * 1024 * 1024
+	maxRemoteFileSize = 200 * 1024 * 1024
+)
 
 type Engine struct {
 	Config model.SyncConfig
@@ -100,6 +103,9 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 				continue
 			}
 			if record.Folder {
+				if !filepath.IsLocal(filepath.FromSlash(record.Path)) {
+					return fmt.Errorf("invalid remote directory path %q", record.Path)
+				}
 				dirPath, err := util.SafeJoin(e.Config.VaultPath, record.Path)
 				if err != nil {
 					return err
@@ -120,6 +126,9 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 			e.Logger.Info().Str("path", action.Path).Msg("downloaded remote file")
 		case "upload":
 			record := currentLocal[action.Path]
+			if !filepath.IsLocal(filepath.FromSlash(action.Path)) {
+				return fmt.Errorf("invalid local file path %q", action.Path)
+			}
 			localPath, err := util.SafeJoin(e.Config.VaultPath, action.Path)
 			if err != nil {
 				return err
@@ -309,7 +318,7 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 	if response.Deleted || response.Pieces == 0 {
 		return nil, nil
 	}
-	if response.Size < 0 || response.Size > 200*1024*1024 {
+	if response.Size < 0 || response.Size > maxRemoteFileSize {
 		return nil, fmt.Errorf("remote file size %d exceeds allowed maximum", response.Size)
 	}
 	var data bytes.Buffer
@@ -524,6 +533,9 @@ func (e *Engine) acquireLock() (func(), error) {
 }
 
 func (e *Engine) removeLocalPath(path string) error {
+	if !filepath.IsLocal(filepath.FromSlash(path)) {
+		return fmt.Errorf("invalid local path %q", path)
+	}
 	fullPath, err := util.SafeJoin(e.Config.VaultPath, path)
 	if err != nil {
 		return err

@@ -113,6 +113,9 @@ func SortedPaths(records map[string]model.FileRecord) []string {
 }
 
 func WriteFileWithTimes(root string, record model.FileRecord, content []byte) error {
+	if !filepath.IsLocal(filepath.FromSlash(record.Path)) {
+		return fmt.Errorf("invalid relative path %q", record.Path)
+	}
 	fullPath, err := SafeJoin(root, record.Path)
 	if err != nil {
 		return err
@@ -132,11 +135,15 @@ func SafeJoin(root, relative string) (string, error) {
 	if cleaned == "." || cleaned == "" || path.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
 		return "", fmt.Errorf("invalid relative path %q", relative)
 	}
+	localPath := filepath.FromSlash(cleaned)
+	if !filepath.IsLocal(localPath) {
+		return "", fmt.Errorf("invalid relative path %q", relative)
+	}
 	baseRoot, err := filepath.Abs(root)
 	if err != nil {
 		return "", err
 	}
-	joined := filepath.Join(baseRoot, filepath.FromSlash(cleaned))
+	joined := filepath.Join(baseRoot, localPath)
 	resolved, err := filepath.Abs(joined)
 	if err != nil {
 		return "", err

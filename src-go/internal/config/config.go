@@ -346,7 +346,7 @@ func ValidateConfigDir(dir string) error {
 	if !strings.HasPrefix(dir, ".") {
 		return fmt.Errorf("config directory must start with '.'")
 	}
-	if strings.Contains(dir, "/") || strings.Contains(dir, `\\`) {
+	if strings.ContainsAny(dir, `/\`) {
 		return fmt.Errorf("config directory must not contain path separators")
 	}
 	return nil
