@@ -13,6 +13,8 @@ import (
 )
 
 const (
+	// walkWorkers keeps the initial recursive watch registration parallel without
+	// creating one goroutine per directory in large vaults.
 	walkWorkers    = 32
 	rescanInterval = 60 * time.Second
 	eventBufSize   = 1024
