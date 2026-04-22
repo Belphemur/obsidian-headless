@@ -17,6 +17,7 @@
 - The module now targets Go `1.26.0` and uses Cobra/Viper, `modernc.org/sqlite`, `zerolog`, `fsnotify`, `gorilla/websocket`, `doublestar`, and `yaml.v3`.
 - The Go CLI now has working login/logout, sync configuration and execution, publish configuration and execution, a SQLite-backed sync state store, and a Syncthing-style watcher pipeline for continuous sync.
 - Integration coverage now exercises the Go CLI end to end against the existing Node mock server for login, sync upload/download, and publish.
+- Follow-up review fixes hardened the Go port with validated SQLite table names, safer vault path joining, bounded remote allocations, and `scrypt`-based password hashing.
 - TypeScript `npm run lint` and `npm run build` pass in the current environment.
 - `npm test` reaches the mock-server suite, but the WebSocket assertions still fail under the available Node `v20.20.2` runtime because `WebSocket` is not globally defined there; the repository itself documents a newer Node runtime requirement.
 - Remaining work is focused on final repository-wide validation bookkeeping and opening the PR.

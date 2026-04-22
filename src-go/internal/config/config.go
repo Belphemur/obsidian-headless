@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 const AppName = "obsidian-headless"
@@ -89,7 +91,7 @@ func DefaultDeviceName() string {
 	if err != nil || host == "" {
 		host = "unknown"
 	}
-	return fmt.Sprintf("%s (%s)", host, strings.Title(runtime.GOOS))
+	return fmt.Sprintf("%s (%s)", host, cases.Title(language.English).String(runtime.GOOS))
 }
 
 func SyncDir(vaultID string) (string, error) {

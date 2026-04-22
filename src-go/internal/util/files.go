@@ -4,14 +4,18 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"golang.org/x/crypto/scrypt"
+	"golang.org/x/text/unicode/norm"
 )
 
 func RandomHex(size int) (string, error) {
@@ -109,7 +113,10 @@ func SortedPaths(records map[string]model.FileRecord) []string {
 }
 
 func WriteFileWithTimes(root string, record model.FileRecord, content []byte) error {
-	fullPath := filepath.Join(root, filepath.FromSlash(record.Path))
+	fullPath, err := SafeJoin(root, record.Path)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		return err
 	}
@@ -118,4 +125,35 @@ func WriteFileWithTimes(root string, record model.FileRecord, content []byte) er
 	}
 	mtime := time.UnixMilli(record.MTime)
 	return os.Chtimes(fullPath, mtime, mtime)
+}
+
+func SafeJoin(root, relative string) (string, error) {
+	cleaned := path.Clean(strings.TrimSpace(relative))
+	if cleaned == "." || cleaned == "" || path.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("invalid relative path %q", relative)
+	}
+	baseRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	joined := filepath.Join(baseRoot, filepath.FromSlash(cleaned))
+	resolved, err := filepath.Abs(joined)
+	if err != nil {
+		return "", err
+	}
+	separator := string(os.PathSeparator)
+	if resolved != baseRoot && !strings.HasPrefix(resolved, baseRoot+separator) {
+		return "", fmt.Errorf("path %q escapes vault root", relative)
+	}
+	return resolved, nil
+}
+
+func DerivePasswordHash(password, salt string) (string, error) {
+	normalizedPassword := norm.NFKC.String(password)
+	normalizedSalt := norm.NFKC.String(salt)
+	key, err := scrypt.Key([]byte(normalizedPassword), []byte(normalizedSalt), 1<<15, 8, 1, 32)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(key), nil
 }
