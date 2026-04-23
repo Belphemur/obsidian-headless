@@ -2,8 +2,10 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 )
@@ -16,6 +18,9 @@ func newLoginCommand(app *App) *cobra.Command {
 		Use:   "login",
 		Short: "Log in to an Obsidian account",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			email = viper.GetString("email")
+			password = viper.GetString("password")
+
 			if email == "" || password == "" {
 				storedEmail, storedPassword, err := configpkg.LoadCredentials()
 				if err != nil {
@@ -29,18 +34,16 @@ func newLoginCommand(app *App) *cobra.Command {
 				}
 			}
 			if email == "" {
-				input, err := app.prompt("Email")
-				if err != nil {
-					return err
-				}
-				email = input
+				fmt.Print("Email: ")
+				fmt.Scanln(&email)
 			}
 			if password == "" {
-				input, err := app.prompt("Password")
+				fmt.Print("Password: ")
+				pass, err := readPassword(app.stdin)
 				if err != nil {
 					return err
 				}
-				password = input
+				password = pass
 			}
 			if email == "" || password == "" {
 				return fmt.Errorf("both --email and --password are required")
@@ -62,6 +65,12 @@ func newLoginCommand(app *App) *cobra.Command {
 	command.Flags().StringVar(&email, "email", "", "account email")
 	command.Flags().StringVar(&password, "password", "", "account password")
 	command.Flags().StringVar(&mfa, "mfa", "", "MFA code")
+
+	viper.BindPFlag("email", command.Flags().Lookup("email"))
+	viper.BindPFlag("password", command.Flags().Lookup("password"))
+	viper.BindEnv("email", "OBSIDIAN_EMAIL")
+	viper.BindEnv("password", "OBSIDIAN_PASSWORD")
+
 	return command
 }
 
@@ -87,4 +96,10 @@ func newLogoutCommand(app *App) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+var _ = func() {
+	cobra.OnInitialize(func() {
+		viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	})
 }

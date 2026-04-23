@@ -2,11 +2,14 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/term"
 )
 
 type rootCommand struct {
@@ -48,4 +51,18 @@ func writeLines(output io.Writer, lines ...string) {
 	for _, line := range lines {
 		_, _ = io.WriteString(output, line+"\n")
 	}
+}
+
+func readPassword(input io.Reader) (string, error) {
+	termFD, ok := input.(*os.File)
+	if !ok || !term.IsTerminal(int(termFD.Fd())) {
+		var password string
+		fmt.Scanln(&password)
+		return password, nil
+	}
+	passwordBytes, err := term.ReadPassword(int(termFD.Fd()))
+	if err != nil {
+		return "", err
+	}
+	return string(passwordBytes), nil
 }
