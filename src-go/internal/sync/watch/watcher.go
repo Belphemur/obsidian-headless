@@ -27,6 +27,8 @@ type Watcher struct {
 	logger     zerolog.Logger
 	Out        chan ScanEvent
 	rescanning atomic.Bool // guards against concurrent full-rescans
+	closing    atomic.Bool
+	wg         sync.WaitGroup
 }
 
 func New(root string, excludes []string, logger zerolog.Logger) (*Watcher, error) {
@@ -54,25 +56,25 @@ func New(root string, excludes []string, logger zerolog.Logger) (*Watcher, error
 func (w *Watcher) Run(ctx context.Context) {
 	ticker := time.NewTicker(rescanInterval)
 	defer ticker.Stop()
-	defer close(w.Out)
-	defer w.fw.Close()
-	defer w.agg.Flush()
 	for {
 		select {
 		case <-ctx.Done():
+			w.shutdown(ctx)
 			return
 		case event, ok := <-w.fw.Events:
 			if !ok {
+				w.shutdown(ctx)
 				return
 			}
 			w.handle(event)
 		case err, ok := <-w.fw.Errors:
 			if !ok {
+				w.shutdown(ctx)
 				return
 			}
 			w.logger.Error().Err(err).Msg("fsnotify error")
 		case <-ticker.C:
-			go w.fullRescan()
+			w.startBackground(w.fullRescan)
 		}
 	}
 }
@@ -84,7 +86,8 @@ func (w *Watcher) handle(event fsnotify.Event) {
 	if event.Has(fsnotify.Create) {
 		info, err := os.Lstat(event.Name)
 		if err == nil && info.IsDir() {
-			go func(path string) {
+			w.startBackground(func() {
+				path := event.Name
 				if err := w.addDirsRecursive(path); err != nil {
 					w.logger.Error().Err(err).Str("path", path).Msg("failed to watch new directory")
 					return
@@ -98,7 +101,7 @@ func (w *Watcher) handle(event fsnotify.Event) {
 					w.agg.Push(p, EventCreate)
 					return nil
 				})
-			}(event.Name)
+			})
 			return
 		}
 	}
@@ -117,6 +120,9 @@ func (w *Watcher) handle(event fsnotify.Event) {
 // An atomic guard ensures only one rescan can run at a time, and
 // top-level subdirectories are walked concurrently for speed.
 func (w *Watcher) fullRescan() {
+	if w.closing.Load() {
+		return
+	}
 	if !w.rescanning.CompareAndSwap(false, true) {
 		return // another rescan is already in progress
 	}
@@ -151,7 +157,7 @@ func (w *Watcher) fullRescan() {
 
 func (w *Watcher) rescanDir(root string) {
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || w.isExcluded(path) {
+		if w.closing.Load() || err != nil || d.IsDir() || w.isExcluded(path) {
 			return nil
 		}
 		if changed, eventType := w.scanner.HasChanged(path); changed {
@@ -166,7 +172,11 @@ func (w *Watcher) rescanDir(root string) {
 func (w *Watcher) addDirsRecursive(root string) error {
 	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil // best-effort: log but keep walking
+			w.logger.Warn().Err(err).Str("path", path).Msg("cannot walk path")
+			if path == root {
+				return err
+			}
+			return nil
 		}
 		if w.isExcluded(path) {
 			if d.IsDir() {
@@ -183,6 +193,32 @@ func (w *Watcher) addDirsRecursive(root string) error {
 		w.scanner.Update(path)
 		return nil
 	})
+}
+
+func (w *Watcher) startBackground(fn func()) {
+	if w.closing.Load() {
+		return
+	}
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+		if w.closing.Load() {
+			return
+		}
+		fn()
+	}()
+}
+
+func (w *Watcher) shutdown(ctx context.Context) {
+	if !w.closing.CompareAndSwap(false, true) {
+		return
+	}
+	_ = w.fw.Close()
+	w.wg.Wait()
+	if !w.agg.Shutdown(ctx) {
+		w.logger.Warn().Msg("skipping final watcher flush during shutdown because cancellation fired first")
+	}
+	close(w.Out)
 }
 
 func (w *Watcher) isExcluded(path string) bool {
