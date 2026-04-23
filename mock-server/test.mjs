@@ -23,6 +23,8 @@ import { fileURLToPath } from "node:url";
 const API_URL = "http://127.0.0.1:3000";
 const WS_URL = "ws://127.0.0.1:3001";
 const TEST_TOKEN = "test-token-12345";
+const STARTUP_POLL_INTERVAL_MS = 200;
+const MAX_STARTUP_ATTEMPTS = 50;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mockServerProcess = null;
@@ -54,7 +56,7 @@ before(async () => {
     output += chunk.toString();
   });
 
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+  for (let attempt = 0; attempt < MAX_STARTUP_ATTEMPTS; attempt += 1) {
     if (mockServerProcess.exitCode !== null) {
       throw new Error(`Mock server exited early.\n${output}`);
     }
@@ -67,7 +69,7 @@ before(async () => {
       return;
     }
 
-    await delay(200);
+    await delay(STARTUP_POLL_INTERVAL_MS);
   }
 
   throw new Error(`Mock server did not start in time.\n${output}`);
@@ -80,7 +82,7 @@ after(async () => {
 
   if (mockServerProcess.exitCode === null) {
     mockServerProcess.kill("SIGTERM");
-    await delay(200);
+    await delay(STARTUP_POLL_INTERVAL_MS);
   }
 
   if (mockServerProcess.exitCode === null) {
