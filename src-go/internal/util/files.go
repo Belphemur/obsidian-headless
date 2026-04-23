@@ -75,6 +75,10 @@ func ScanVault(root, configDir string, ignored []string) (map[string]model.FileR
 				return nil
 			}
 		}
+		if d.Type()&os.ModeSymlink != 0 {
+			// Skip symlinks to avoid following pointers outside the vault.
+			return nil
+		}
 		if d.IsDir() {
 			return nil
 		}
@@ -82,15 +86,23 @@ func ScanVault(root, configDir string, ignored []string) (map[string]model.FileR
 		if err != nil {
 			return err
 		}
-		data, err := os.ReadFile(path)
+		file, err := os.Open(path)
 		if err != nil {
 			return err
+		}
+		hash, hashErr := HashReader(file)
+		closeErr := file.Close()
+		if hashErr != nil {
+			return hashErr
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 		mtime := info.ModTime().UnixMilli()
 		files[rel] = model.FileRecord{
 			Path:   rel,
 			Size:   info.Size(),
-			Hash:   HashBytes(data),
+			Hash:   hash,
 			CTime:  mtime,
 			MTime:  mtime,
 			Folder: false,
@@ -151,6 +163,29 @@ func SafeJoin(root, relative string) (string, error) {
 	separator := string(os.PathSeparator)
 	if resolved != baseRoot && !strings.HasPrefix(resolved, baseRoot+separator) {
 		return "", fmt.Errorf("path %q escapes vault root", relative)
+	}
+	// Walk each component between baseRoot and resolved to reject symlinked
+	// directories that could redirect writes outside the vault.
+	rel2, err := filepath.Rel(baseRoot, resolved)
+	if err != nil {
+		return "", err
+	}
+	current := baseRoot
+	for part := range strings.SplitSeq(rel2, string(os.PathSeparator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		current = filepath.Join(current, part)
+		fi, lstatErr := os.Lstat(current)
+		if lstatErr != nil {
+			if os.IsNotExist(lstatErr) {
+				break // rest of path does not exist yet; that is fine
+			}
+			return "", lstatErr
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("path component %q is a symlink", current)
+		}
 	}
 	return resolved, nil
 }

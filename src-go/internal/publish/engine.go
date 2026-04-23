@@ -114,6 +114,9 @@ func (e *Engine) scanLocal(all bool) (map[string]localFile, map[string]model.Pub
 		if d.IsDir() {
 			return nil
 		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err

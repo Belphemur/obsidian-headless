@@ -69,8 +69,5 @@ func (a *Aggregator) emit(path string) {
 	}
 	delete(a.pending, path)
 	a.mu.Unlock()
-	select {
-	case a.out <- ScanEvent{Path: path, Type: pending.eventType, DetectedAt: pending.lastSeen}:
-	default:
-	}
+	a.out <- ScanEvent{Path: path, Type: pending.eventType, DetectedAt: pending.lastSeen}
 }

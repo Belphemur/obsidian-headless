@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/cli"
+	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 )
 
 const (
@@ -46,11 +47,10 @@ func TestGoCLIWorksWithMockServer(t *testing.T) {
 
 	runCLI(t, "sync-setup", "--vault", vaultID, "--path", vaultA, "--password", "sync-secret")
 	runCLI(t, "sync", "--path", vaultA)
-	tokenBytes, err := os.ReadFile(filepath.Join(home, "config", "obsidian-headless", "auth_token"))
-	if err != nil {
-		t.Fatal(err)
+	token, err := configpkg.LoadAuthToken()
+	if err != nil || token == "" {
+		t.Fatalf("failed to load auth token: %v", err)
 	}
-	token := strings.TrimSpace(string(tokenBytes))
 	pushRemoteFile(t, token, vaultID, "hello.md", []byte("# Updated from Remote\n"))
 	runCLI(t, "sync", "--path", vaultA)
 	content, err := os.ReadFile(filepath.Join(vaultA, "hello.md"))

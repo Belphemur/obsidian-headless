@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -86,6 +87,46 @@ func ClearAuthToken() error {
 	return nil
 }
 
+// MasterKeyPath returns the path to the 32-byte master key used to encrypt
+// sensitive values stored in the secrets database.
+func MasterKeyPath() (string, error) {
+	base, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "master.key"), nil
+}
+
+// LoadOrCreateMasterKey loads the 32-byte master encryption key from disk,
+// creating a new random key if one does not yet exist.
+func LoadOrCreateMasterKey() ([]byte, error) {
+	path, err := MasterKeyPath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if len(data) != 32 {
+			return nil, fmt.Errorf("master.key is corrupt (want 32 bytes, got %d)", len(data))
+		}
+		return data, nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, err
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
+	}
+	if err := ensureDir(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, key, 0o600); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
 func DefaultDeviceName() string {
 	host, err := os.Hostname()
 	if err != nil || host == "" {
@@ -94,7 +135,23 @@ func DefaultDeviceName() string {
 	return fmt.Sprintf("%s (%s)", host, cases.Title(language.English).String(runtime.GOOS))
 }
 
+// validateConfigID rejects vault/site IDs that could be used to escape the
+// app config directory when joined into a file path.
+func validateConfigID(kind, id string) error {
+	if id == "" {
+		return fmt.Errorf("%s ID must not be empty", kind)
+	}
+	// Reject separators and dot-segments that could escape the config tree.
+	if strings.ContainsAny(id, `/\`) || id == "." || id == ".." || strings.Contains(id, "..") {
+		return fmt.Errorf("invalid %s ID %q", kind, id)
+	}
+	return nil
+}
+
 func SyncDir(vaultID string) (string, error) {
+	if err := validateConfigID("vault", vaultID); err != nil {
+		return "", err
+	}
 	base, err := BaseDir()
 	if err != nil {
 		return "", err
@@ -103,6 +160,9 @@ func SyncDir(vaultID string) (string, error) {
 }
 
 func PublishDir(siteID string) (string, error) {
+	if err := validateConfigID("site", siteID); err != nil {
+		return "", err
+	}
 	base, err := BaseDir()
 	if err != nil {
 		return "", err
@@ -342,6 +402,9 @@ func ValidateChoices(values, valid []string, kind string) error {
 func ValidateConfigDir(dir string) error {
 	if dir == "" {
 		return nil
+	}
+	if dir == "." || dir == ".." || filepath.Clean(dir) != dir {
+		return fmt.Errorf("config directory must be a single hidden directory name")
 	}
 	if !strings.HasPrefix(dir, ".") {
 		return fmt.Errorf("config directory must start with '.'")

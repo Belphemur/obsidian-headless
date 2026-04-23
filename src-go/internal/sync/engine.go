@@ -205,7 +205,10 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-watcher.Out:
+		case _, ok := <-watcher.Out:
+			if !ok {
+				return nil
+			}
 			if err := e.RunOnce(ctx); err != nil {
 				e.Logger.Error().Err(err).Msg("watch-triggered sync failed")
 			}
@@ -230,6 +233,12 @@ func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial b
 	if err != nil {
 		return nil, err
 	}
+	// Close the connection when the context is cancelled so that any blocking
+	// ReadJSON / ReadMessage call returns an error immediately.
+	go func() {
+		<-ctx.Done()
+		_ = conn.Close()
+	}()
 	initMessage := map[string]any{
 		"op":                 "init",
 		"token":              e.Token,
@@ -318,6 +327,9 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 	if response.Deleted || response.Pieces == 0 {
 		return nil, nil
 	}
+	if response.Pieces == 0 && response.Size != 0 {
+		return nil, fmt.Errorf("remote file declared size %d with no pieces", response.Size)
+	}
 	if response.Size < 0 || response.Size > maxRemoteFileSize {
 		return nil, fmt.Errorf("remote file size %d exceeds allowed maximum", response.Size)
 	}
@@ -335,6 +347,9 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 		if _, err := data.Write(payload); err != nil {
 			return nil, err
 		}
+	}
+	if int64(data.Len()) != response.Size {
+		return nil, fmt.Errorf("remote file size mismatch: expected %d bytes, got %d", response.Size, data.Len())
 	}
 	return data.Bytes(), nil
 }
@@ -543,7 +558,12 @@ func (e *Engine) removeLocalPath(path string) error {
 	if err := os.Remove(fullPath); err != nil {
 		return err
 	}
-	for dir := filepath.Dir(fullPath); dir != e.Config.VaultPath && dir != "."; dir = filepath.Dir(dir) {
+	vaultRoot, err := filepath.Abs(e.Config.VaultPath)
+	if err != nil {
+		return err
+	}
+	vaultRoot = filepath.Clean(vaultRoot)
+	for dir := filepath.Dir(fullPath); dir != vaultRoot && dir != "." && dir != filepath.Dir(dir); dir = filepath.Dir(dir) {
 		entries, err := os.ReadDir(dir)
 		if err != nil || len(entries) > 0 {
 			break

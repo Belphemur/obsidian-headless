@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -205,34 +206,26 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 		}
 		return fmt.Errorf("%s", message)
 	}
+	bodyBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		return err
+	}
+
+	// Always check for an application-level error payload first.
+	var appErr apiError
+	if decErr := json.Unmarshal(bodyBytes, &appErr); decErr == nil {
+		if appErr.Error != "" {
+			return fmt.Errorf("%s", appErr.Error)
+		}
+		if appErr.Message != "" && appErr.Code != "" {
+			return fmt.Errorf("%s", appErr.Message)
+		}
+	}
+
 	if target == nil {
 		return nil
 	}
-	if err := json.NewDecoder(response.Body).Decode(target); err != nil {
-		return err
-	}
-	if errValue := extractApplicationError(target); errValue != "" {
-		return fmt.Errorf("%s", errValue)
-	}
-	return nil
-}
-
-func extractApplicationError(target any) string {
-	payload, err := json.Marshal(target)
-	if err != nil {
-		return ""
-	}
-	var appErr apiError
-	if err := json.Unmarshal(payload, &appErr); err != nil {
-		return ""
-	}
-	if appErr.Error != "" {
-		return appErr.Error
-	}
-	if appErr.Message != "" && appErr.Code != "" {
-		return appErr.Message
-	}
-	return ""
+	return json.Unmarshal(bodyBytes, target)
 }
 
 func hostAPIURL(host, path string) string {
