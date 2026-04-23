@@ -56,7 +56,11 @@ before(async () => {
     output += chunk.toString();
   });
 
-  for (let attempt = 0; attempt < MAX_STARTUP_ATTEMPTS; attempt += 1) {
+  for (
+    let startupAttempt = 0;
+    startupAttempt < MAX_STARTUP_ATTEMPTS;
+    startupAttempt += 1
+  ) {
     if (mockServerProcess.exitCode !== null) {
       throw new Error(`Mock server exited early.\n${output}`);
     }
