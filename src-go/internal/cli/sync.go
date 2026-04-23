@@ -9,6 +9,7 @@ import (
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/logging"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
 	syncpkg "github.com/Belphemur/obsidian-headless/src-go/internal/sync"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/util"
 )
@@ -84,7 +85,8 @@ func newSyncCreateRemoteCommand(app *App) *cobra.Command {
 			version := 0
 			key := ""
 			salt := ""
-			if encryption == "" || encryption == "e2ee" {
+			switch encryption {
+			case "", "e2ee":
 				if password == "" {
 					return fmt.Errorf("--password is required for e2ee vaults")
 				}
@@ -97,6 +99,10 @@ func newSyncCreateRemoteCommand(app *App) *cobra.Command {
 				if err != nil {
 					return err
 				}
+			case "standard":
+				// no key material needed
+			default:
+				return fmt.Errorf("unknown encryption mode %q: must be 'e2ee' or 'standard'", encryption)
 			}
 			vault, err := app.client().CreateVault(cmd.Context(), token, name, key, salt, region, version)
 			if err != nil {
@@ -147,14 +153,14 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 					return err
 				}
 			}
-			if err := app.client().ValidateVaultAccess(cmd.Context(), token, vault.ID, keyHash, vault.Host, 3); err != nil {
+			if err := app.client().ValidateVaultAccess(cmd.Context(), token, vault.ID, keyHash, vault.Host, vault.EncryptionVersion); err != nil {
 				return err
 			}
 			absPath, err := filepath.Abs(localPath)
 			if err != nil {
 				return err
 			}
-			cfg := model.SyncConfig{VaultID: vault.ID, VaultName: vault.Name, VaultPath: absPath, Host: vault.Host, EncryptionVersion: vault.EncryptionVersion, EncryptionKey: password, EncryptionSalt: vault.Salt, ConflictStrategy: "merge", DeviceName: deviceName, ConfigDir: configDir, StatePath: statePath}
+			cfg := model.SyncConfig{VaultID: vault.ID, VaultName: vault.Name, VaultPath: absPath, Host: vault.Host, EncryptionVersion: vault.EncryptionVersion, EncryptionSalt: vault.Salt, ConflictStrategy: "merge", DeviceName: deviceName, ConfigDir: configDir, StatePath: statePath}
 			if cfg.DeviceName == "" {
 				cfg.DeviceName = configpkg.DefaultDeviceName()
 			}
@@ -163,6 +169,26 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 			}
 			if err := configpkg.WriteSyncConfig(cfg); err != nil {
 				return err
+			}
+			// Store the encryption key in the vault's secrets store so it is
+			// never written to the plain-text config file.
+			if password != "" {
+				masterKey, mkErr := configpkg.LoadOrCreateMasterKey()
+				if mkErr != nil {
+					return mkErr
+				}
+				statePath, spErr := configpkg.StatePath(cfg.VaultID, cfg.StatePath)
+				if spErr != nil {
+					return spErr
+				}
+				store, stErr := storage.Open(statePath)
+				if stErr != nil {
+					return stErr
+				}
+				defer store.Close()
+				if setErr := store.SetSecret("encryption_key", password, masterKey); setErr != nil {
+					return setErr
+				}
 			}
 			statePathValue, err := configpkg.StatePath(cfg.VaultID, cfg.StatePath)
 			if err != nil {
@@ -313,6 +339,27 @@ func newSyncRunCommand(app *App) *cobra.Command {
 			}
 			if cfg == nil {
 				return fmt.Errorf("no sync config for %s", localPath)
+			}
+			// Load the vault encryption key from the encrypted secrets store.
+			if cfg.EncryptionVersion != 0 {
+				masterKey, mkErr := configpkg.LoadOrCreateMasterKey()
+				if mkErr != nil {
+					return mkErr
+				}
+				statePath, spErr := configpkg.StatePath(cfg.VaultID, cfg.StatePath)
+				if spErr != nil {
+					return spErr
+				}
+				store, stErr := storage.Open(statePath)
+				if stErr != nil {
+					return stErr
+				}
+				defer store.Close()
+				encKey, ekErr := store.GetSecret("encryption_key", masterKey)
+				if ekErr != nil {
+					return ekErr
+				}
+				cfg.EncryptionKey = encKey
 			}
 			logPath, err := configpkg.LogPath(cfg.VaultID)
 			if err != nil {

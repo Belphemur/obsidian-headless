@@ -146,7 +146,7 @@ func (s *StateStore) loadTable(table string) (map[string]model.FileRecord, error
 	return result, rows.Err()
 }
 
-func (s *StateStore) replaceTable(table string, records map[string]model.FileRecord) error {
+func (s *StateStore) replaceTable(table string, records map[string]model.FileRecord) (retErr error) {
 	validatedTable, err := validateTableName(table)
 	if err != nil {
 		return err
@@ -156,28 +156,91 @@ func (s *StateStore) replaceTable(table string, records map[string]model.FileRec
 		return err
 	}
 	defer func() {
-		if err != nil {
+		if retErr != nil {
 			_ = tx.Rollback()
 		}
 	}()
-	if _, err = tx.Exec(`DELETE FROM ` + validatedTable); err != nil {
-		return err
+
+	// Upsert every record.
+	upsertSQL := `INSERT INTO ` + validatedTable + ` (path, data) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET data = excluded.data`
+	stmt, err := tx.Prepare(upsertSQL)
+	if err != nil {
+		retErr = err
+		return
 	}
-	statement, err := tx.Prepare(`INSERT INTO ` + validatedTable + ` (path, data) VALUES (?, ?)`)
+	defer stmt.Close()
+
+	for path, record := range records {
+		payload, err := json.Marshal(record)
+		if err != nil {
+			retErr = err
+			return
+		}
+		if _, err = stmt.Exec(path, string(payload)); err != nil {
+			retErr = err
+			return
+		}
+	}
+
+	// Delete orphans — entries in the DB that are no longer in the new set.
+	rows, err := tx.Query(`SELECT path FROM ` + validatedTable)
+	if err != nil {
+		retErr = err
+		return
+	}
+	var toDelete []string
+	for rows.Next() {
+		var p string
+		if scanErr := rows.Scan(&p); scanErr != nil {
+			_ = rows.Close()
+			retErr = scanErr
+			return
+		}
+		if _, exists := records[p]; !exists {
+			toDelete = append(toDelete, p)
+		}
+	}
+	if closeErr := rows.Close(); closeErr != nil {
+		retErr = closeErr
+		return
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		retErr = rowsErr
+		return
+	}
+	for _, p := range toDelete {
+		if _, err = tx.Exec(`DELETE FROM `+validatedTable+` WHERE path = ?`, p); err != nil {
+			retErr = err
+			return
+		}
+	}
+
+	retErr = tx.Commit()
+	return
+}
+
+// SetSecret stores a plaintext secret value under name, encrypted with AES-GCM
+// using masterKey (must be 32 bytes). Call LoadOrCreateMasterKey to obtain it.
+func (s *StateStore) SetSecret(name string, plaintext string, masterKey []byte) error {
+	enc, err := encrypt(masterKey, []byte(plaintext))
 	if err != nil {
 		return err
 	}
-	defer statement.Close()
-	for path, record := range records {
-		payload, marshalErr := json.Marshal(record)
-		if marshalErr != nil {
-			return marshalErr
-		}
-		if _, err = statement.Exec(path, string(payload)); err != nil {
-			return err
-		}
+	return s.setMeta("secret:"+name, enc)
+}
+
+// GetSecret retrieves and decrypts a secret previously stored with SetSecret.
+// Returns ("", nil) when the secret does not exist.
+func (s *StateStore) GetSecret(name string, masterKey []byte) (string, error) {
+	val, err := s.metaValue("secret:" + name)
+	if err != nil || val == "" {
+		return "", err
 	}
-	return tx.Commit()
+	plain, err := decrypt(masterKey, val)
+	if err != nil {
+		return "", err
+	}
+	return string(plain), nil
 }
 
 func validateTableName(table string) (string, error) {

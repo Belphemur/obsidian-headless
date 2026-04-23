@@ -14,22 +14,19 @@ import (
 )
 
 const (
-	// walkWorkers keeps the initial recursive watch registration parallel without
-	// creating one goroutine per directory in large vaults.
-	walkWorkers    = 32
 	rescanInterval = 60 * time.Second
 	eventBufSize   = 1024
 )
 
 type Watcher struct {
-	root      string
-	fw        *fsnotify.Watcher
-	agg       *Aggregator
-	scanner   *Scanner
-	excludes  []string
-	logger    zerolog.Logger
-	Out       chan ScanEvent
-	rescaning atomic.Bool // guards against concurrent full-rescans
+	root       string
+	fw         *fsnotify.Watcher
+	agg        *Aggregator
+	scanner    *Scanner
+	excludes   []string
+	logger     zerolog.Logger
+	Out        chan ScanEvent
+	rescanning atomic.Bool // guards against concurrent full-rescans
 }
 
 func New(root string, excludes []string, logger zerolog.Logger) (*Watcher, error) {
@@ -90,7 +87,17 @@ func (w *Watcher) handle(event fsnotify.Event) {
 			go func(path string) {
 				if err := w.addDirsRecursive(path); err != nil {
 					w.logger.Error().Err(err).Str("path", path).Msg("failed to watch new directory")
+					return
 				}
+				// Emit create events for any files that already existed inside
+				// the newly-appeared directory (e.g. a directory rename/move).
+				_ = filepath.WalkDir(path, func(p string, d os.DirEntry, werr error) error {
+					if werr != nil || d.IsDir() || w.isExcluded(p) {
+						return nil
+					}
+					w.agg.Push(p, EventCreate)
+					return nil
+				})
 			}(event.Name)
 			return
 		}
@@ -106,8 +113,44 @@ func (w *Watcher) handle(event fsnotify.Event) {
 	}
 }
 
+// fullRescan walks the entire vault tree looking for metadata changes.
+// An atomic guard ensures only one rescan can run at a time, and
+// top-level subdirectories are walked concurrently for speed.
 func (w *Watcher) fullRescan() {
-	_ = filepath.WalkDir(w.root, func(path string, d os.DirEntry, err error) error {
+	if !w.rescanning.CompareAndSwap(false, true) {
+		return // another rescan is already in progress
+	}
+	defer w.rescanning.Store(false)
+
+	entries, err := os.ReadDir(w.root)
+	if err != nil {
+		w.logger.Error().Err(err).Msg("fullRescan: cannot read root")
+		return
+	}
+
+	var wg sync.WaitGroup
+	for _, entry := range entries {
+		child := filepath.Join(w.root, entry.Name())
+		if w.isExcluded(child) {
+			continue
+		}
+		if entry.IsDir() {
+			wg.Add(1)
+			go func(dir string) {
+				defer wg.Done()
+				w.rescanDir(dir)
+			}(child)
+		} else {
+			if changed, eventType := w.scanner.HasChanged(child); changed {
+				w.agg.Push(child, eventType)
+			}
+		}
+	}
+	wg.Wait()
+}
+
+func (w *Watcher) rescanDir(root string) {
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || w.isExcluded(path) {
 			return nil
 		}
@@ -118,49 +161,28 @@ func (w *Watcher) fullRescan() {
 	})
 }
 
+// addDirsRecursive registers fsnotify watches for root and all subdirectories,
+// and pre-populates the scanner state for every file found.
 func (w *Watcher) addDirsRecursive(root string) error {
-	sem := make(chan struct{}, walkWorkers)
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var firstErr error
-	var walk func(string)
-	walk = func(path string) {
-		defer wg.Done()
-		defer func() { <-sem }()
-		if w.isExcluded(path) {
-			return
-		}
-		entries, err := os.ReadDir(path)
+	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			mu.Lock()
-			if firstErr == nil {
-				firstErr = err
-			}
-			mu.Unlock()
-			return
+			return nil // best-effort: log but keep walking
 		}
-		if err := w.fw.Add(path); err != nil {
-			w.logger.Warn().Err(err).Str("path", path).Msg("cannot watch path")
-		}
-		for _, entry := range entries {
-			child := filepath.Join(path, entry.Name())
-			if w.isExcluded(child) {
-				continue
+		if w.isExcluded(path) {
+			if d.IsDir() {
+				return filepath.SkipDir
 			}
-			if entry.IsDir() {
-				sem <- struct{}{}
-				wg.Add(1)
-				go walk(child)
-				continue
-			}
-			w.scanner.Update(child)
+			return nil
 		}
-	}
-	sem <- struct{}{}
-	wg.Add(1)
-	go walk(root)
-	wg.Wait()
-	return firstErr
+		if d.IsDir() {
+			if addErr := w.fw.Add(path); addErr != nil {
+				w.logger.Warn().Err(addErr).Str("path", path).Msg("cannot watch path")
+			}
+			return nil
+		}
+		w.scanner.Update(path)
+		return nil
+	})
 }
 
 func (w *Watcher) isExcluded(path string) bool {

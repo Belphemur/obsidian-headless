@@ -52,7 +52,7 @@ type SyncConfig struct {
 	VaultPath         string   `json:"vaultPath"`
 	Host              string   `json:"host"`
 	EncryptionVersion int      `json:"encryptionVersion"`
-	EncryptionKey     string   `json:"encryptionKey"`
+	EncryptionKey     string   `json:"-"` // not persisted; loaded at runtime from the secrets store
 	EncryptionSalt    string   `json:"encryptionSalt"`
 	ConflictStrategy  string   `json:"conflictStrategy"`
 	SyncMode          string   `json:"syncMode,omitempty"`
