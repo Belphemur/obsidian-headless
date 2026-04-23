@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/cli"
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/util"
 )
 
 const (
@@ -219,7 +219,7 @@ func pushRemoteFile(t *testing.T, token, vaultID, path string, content []byte) {
 		"op":        "push",
 		"path":      path,
 		"extension": filepath.Ext(path),
-		"hash":      fmt.Sprintf("%x", content),
+		"hash":      util.HashBytes(content),
 		"ctime":     now,
 		"mtime":     now,
 		"folder":    false,

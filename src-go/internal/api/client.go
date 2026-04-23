@@ -217,13 +217,16 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 		if appErr.Error != "" {
 			return fmt.Errorf("%s", appErr.Error)
 		}
-		if appErr.Message != "" && appErr.Code != "" {
-			return fmt.Errorf("%s", appErr.Message)
-		}
 	}
 
 	if target == nil {
+		if appErr.Message != "" {
+			return fmt.Errorf("%s", appErr.Message)
+		}
 		return nil
+	}
+	if appErr.Message != "" && appErr.Code != "" {
+		return fmt.Errorf("%s", appErr.Message)
 	}
 	return json.Unmarshal(bodyBytes, target)
 }
