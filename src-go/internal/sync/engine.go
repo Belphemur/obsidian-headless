@@ -28,6 +28,8 @@ const (
 	chunkSize          = 2 * 1024 * 1024
 	maxRemoteFileSize  = 200 * 1024 * 1024
 	websocketIOTimeout = 30 * time.Second
+	// staleLockAge only removes lock files that are clearly abandoned while
+	// still leaving ample room for legitimately long-running sync sessions.
 	staleLockAge       = 24 * time.Hour
 )
 
