@@ -16,14 +16,31 @@ func newLoginCommand(app *App) *cobra.Command {
 		Use:   "login",
 		Short: "Log in to an Obsidian account",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if email == "" && password == "" {
-				email, password, err := configpkg.LoadCredentials()
+			if email == "" || password == "" {
+				storedEmail, storedPassword, err := configpkg.LoadCredentials()
 				if err != nil {
 					return err
 				}
-				if email == "" || password == "" {
-					return fmt.Errorf("provide --email and --password or run login first with credentials")
+				if email == "" && storedEmail != "" {
+					email = storedEmail
 				}
+				if password == "" && storedPassword != "" {
+					password = storedPassword
+				}
+			}
+			if email == "" {
+				input, err := app.prompt("Email")
+				if err != nil {
+					return err
+				}
+				email = input
+			}
+			if password == "" {
+				input, err := app.prompt("Password")
+				if err != nil {
+					return err
+				}
+				password = input
 			}
 			if email == "" || password == "" {
 				return fmt.Errorf("both --email and --password are required")
