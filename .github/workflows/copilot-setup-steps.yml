@@ -1,4 +1,7 @@
-name: "Copilot Setup Steps"
+name: Copilot Setup Steps
+
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:
@@ -11,28 +14,46 @@ on:
 
 jobs:
   copilot-setup-steps:
+    name: Setup Node and Go
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Set up Node.js 24
-        uses: actions/setup-node@v4
+      - name: Set up Go
+        uses: actions/setup-go@v6
         with:
-          node-version: "24"
-          cache: "npm"
-
-      - name: Install JavaScript dependencies
-        run: npm ci
-
-      - name: Set up Go 1.26
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.26.0"
+          go-version-file: src-go/go.mod
           cache: true
           cache-dependency-path: src-go/go.sum
 
-      - name: Download Go module dependencies
-        run: cd src-go && go mod download
+      - name: Verify Go installation
+        run: |
+          go version
+          go env
+
+      - name: Download Go dependencies
+        run: |
+          cd src-go
+          go mod download
+          go mod verify
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Verify Node installation
+        run: |
+          node --version
+          npm --version
+
+      - name: Setup complete
+        run: |
+          echo "✅ Go 1.26 environment ready"
+          echo "✅ Node 24 environment ready"
+          echo "✅ Go and npm dependencies installed"
