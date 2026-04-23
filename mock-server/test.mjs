@@ -12,16 +12,99 @@
  *   node mock-server/test.mjs
  */
 
-import { test, describe } from "node:test";
+import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import net from "node:net";
+import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 const API_URL = "http://127.0.0.1:3000";
 const WS_URL = "ws://127.0.0.1:3001";
 const TEST_TOKEN = "test-token-12345";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+let mockServerProcess = null;
+let startedMockServer = false;
+
+before(async () => {
+  const [apiReady, wsReady] = await Promise.all([
+    isPortOpen(3000),
+    isPortOpen(3001),
+  ]);
+
+  if (apiReady && wsReady) {
+    return;
+  }
+
+  startedMockServer = true;
+  const repoRoot = path.resolve(__dirname, "..");
+  let output = "";
+
+  mockServerProcess = spawn(process.execPath, ["mock-server/server.mjs"], {
+    cwd: repoRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  mockServerProcess.stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+  mockServerProcess.stderr.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (mockServerProcess.exitCode !== null) {
+      throw new Error(`Mock server exited early.\n${output}`);
+    }
+
+    const [apiReadyNow, wsReadyNow] = await Promise.all([
+      isPortOpen(3000),
+      isPortOpen(3001),
+    ]);
+    if (apiReadyNow && wsReadyNow) {
+      return;
+    }
+
+    await delay(200);
+  }
+
+  throw new Error(`Mock server did not start in time.\n${output}`);
+});
+
+after(async () => {
+  if (!startedMockServer || !mockServerProcess) {
+    return;
+  }
+
+  if (mockServerProcess.exitCode === null) {
+    mockServerProcess.kill("SIGTERM");
+    await delay(200);
+  }
+
+  if (mockServerProcess.exitCode === null) {
+    mockServerProcess.kill("SIGKILL");
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+async function isPortOpen(port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+
+    socket.once("connect", () => {
+      socket.end();
+      resolve(true);
+    });
+    socket.once("error", () => {
+      resolve(false);
+    });
+  });
+}
 
 async function post(endpoint, body = {}) {
   const res = await fetch(`${API_URL}${endpoint}`, {
