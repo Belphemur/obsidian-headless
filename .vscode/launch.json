@@ -1,0 +1,158 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "sync",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["sync"],
+            "env": {}
+        },
+        {
+            "name": "sync-status",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["sync-status"],
+            "env": {}
+        },
+        {
+            "name": "sync-config",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["sync-config"],
+            "env": {}
+        },
+        {
+            "name": "sync-list-local",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["sync-list-local"],
+            "env": {}
+        },
+        {
+            "name": "sync-list-remote",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["sync-list-remote"],
+            "env": {}
+        },
+        {
+            "name": "sync-create-remote",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["sync-create-remote"],
+            "env": {}
+        },
+        {
+            "name": "sync-setup",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["sync-setup"],
+            "env": {}
+        },
+        {
+            "name": "sync-unlink",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["sync-unlink"],
+            "env": {}
+        },
+        {
+            "name": "publish",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["publish"],
+            "env": {}
+        },
+        {
+            "name": "publish-config",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["publish-config"],
+            "env": {}
+        },
+        {
+            "name": "publish-list-sites",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["publish-list-sites"],
+            "env": {}
+        },
+        {
+            "name": "publish-create-site",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["publish-create-site"],
+            "env": {}
+        },
+        {
+            "name": "publish-setup",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["publish-setup"],
+            "env": {}
+        },
+        {
+            "name": "publish-unlink",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["publish-unlink"],
+            "env": {}
+        },
+        {
+            "name": "login",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["login"],
+            "env": {}
+        },
+        {
+            "name": "logout",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["logout"],
+            "env": {}
+        },
+        {
+            "name": "completion",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "args": ["completion"],
+            "env": {}
+        }
+    ]
+}

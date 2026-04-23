@@ -17,22 +17,19 @@ func newLoginCommand(app *App) *cobra.Command {
 		Short: "Log in to an Obsidian account",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if email == "" && password == "" {
-				token, err := configpkg.LoadAuthToken()
+				email, password, err := configpkg.LoadCredentials()
 				if err != nil {
 					return err
 				}
-				if token == "" {
-					return fmt.Errorf("provide --email and --password")
+				if email == "" || password == "" {
+					return fmt.Errorf("provide --email and --password or run login first with credentials")
 				}
-				user, err := app.client().UserInfo(cmd.Context(), token)
-				if err != nil {
-					return err
-				}
-				writeLines(app.stdout, fmt.Sprintf("Logged in as %s <%s>", user.Name, user.Email))
-				return nil
 			}
 			if email == "" || password == "" {
 				return fmt.Errorf("both --email and --password are required")
+			}
+			if err := configpkg.SaveCredentials(email, password); err != nil {
+				return err
 			}
 			response, err := app.client().SignIn(cmd.Context(), email, password, mfa)
 			if err != nil {
@@ -64,6 +61,9 @@ func newLogoutCommand(app *App) *cobra.Command {
 				_ = app.client().SignOut(cmd.Context(), token)
 			}
 			if err := configpkg.ClearAuthToken(); err != nil {
+				return err
+			}
+			if err := configpkg.ClearCredentials(); err != nil {
 				return err
 			}
 			writeLines(app.stdout, "Logged out.")

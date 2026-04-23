@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -33,6 +34,81 @@ func BaseDir() (string, error) {
 		return filepath.Join(home, ".config", AppName), nil
 	}
 	return filepath.Join(home, "."+AppName), nil
+}
+
+func CredentialsDBPath() (string, error) {
+	base, err := BaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "credentials.db"), nil
+}
+
+func SaveCredentials(email, password string) error {
+	dbPath, err := CredentialsDBPath()
+	if err != nil {
+		return err
+	}
+	store, err := storage.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	masterKey, err := LoadOrCreateMasterKey()
+	if err != nil {
+		return err
+	}
+	if err := store.SetSecret("email", email, masterKey); err != nil {
+		return err
+	}
+	if err := store.SetSecret("password", password, masterKey); err != nil {
+		return err
+	}
+	return nil
+}
+
+func LoadCredentials() (string, string, error) {
+	dbPath, err := CredentialsDBPath()
+	if err != nil {
+		return "", "", err
+	}
+	store, err := storage.Open(dbPath)
+	if err != nil {
+		return "", "", err
+	}
+	defer store.Close()
+	masterKey, err := LoadOrCreateMasterKey()
+	if err != nil {
+		return "", "", err
+	}
+	email, err := store.GetSecret("email", masterKey)
+	if err != nil {
+		return "", "", err
+	}
+	password, err := store.GetSecret("password", masterKey)
+	if err != nil {
+		return "", "", err
+	}
+	return email, password, nil
+}
+
+func ClearCredentials() error {
+	dbPath, err := CredentialsDBPath()
+	if err != nil {
+		return err
+	}
+	store, err := storage.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	masterKey, err := LoadOrCreateMasterKey()
+	if err != nil {
+		return err
+	}
+	_ = store.SetSecret("email", "", masterKey)
+	_ = store.SetSecret("password", "", masterKey)
+	return nil
 }
 
 func ensureDir(path string) error {
