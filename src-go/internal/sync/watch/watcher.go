@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -21,13 +22,14 @@ const (
 )
 
 type Watcher struct {
-	root     string
-	fw       *fsnotify.Watcher
-	agg      *Aggregator
-	scanner  *Scanner
-	excludes []string
-	logger   zerolog.Logger
-	Out      chan ScanEvent
+	root      string
+	fw        *fsnotify.Watcher
+	agg       *Aggregator
+	scanner   *Scanner
+	excludes  []string
+	logger    zerolog.Logger
+	Out       chan ScanEvent
+	rescaning atomic.Bool // guards against concurrent full-rescans
 }
 
 func New(root string, excludes []string, logger zerolog.Logger) (*Watcher, error) {
