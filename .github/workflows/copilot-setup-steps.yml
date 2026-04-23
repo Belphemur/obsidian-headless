@@ -38,10 +38,10 @@ jobs:
           go mod download
           go mod verify
 
-      - name: Set up Node 24
+      - name: Set up Node LTS
         uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version: "lts/*"
           cache: npm
 
       - name: Install npm dependencies
@@ -55,5 +55,5 @@ jobs:
       - name: Setup complete
         run: |
           echo "✅ Go 1.26 environment ready"
-          echo "✅ Node 24 environment ready"
+          echo "✅ Node LTS environment ready"
           echo "✅ Go and npm dependencies installed"
