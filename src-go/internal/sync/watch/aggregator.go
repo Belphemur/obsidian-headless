@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -15,12 +16,14 @@ type pendingEvent struct {
 	firstSeen time.Time
 	lastSeen  time.Time
 	timer     *time.Timer
+	token     uint64
 }
 
 type Aggregator struct {
 	mu      sync.Mutex
 	pending map[string]*pendingEvent
 	out     chan<- ScanEvent
+	closed  bool
 }
 
 func NewAggregator(out chan<- ScanEvent) *Aggregator {
@@ -30,44 +33,61 @@ func NewAggregator(out chan<- ScanEvent) *Aggregator {
 func (a *Aggregator) Push(path string, eventType EventType) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.closed {
+		return
+	}
 	now := time.Now()
 	if pending, ok := a.pending[path]; ok {
 		pending.timer.Stop()
 		pending.lastSeen = now
 		pending.eventType = eventType
+		pending.token++
+		token := pending.token
 		delay := quiescenceDelay
 		if now.Sub(pending.firstSeen) >= maxSuppressionTime {
 			delay = 0
 		}
-		pending.timer = time.AfterFunc(delay, func() { a.emit(path) })
+		pending.timer = time.AfterFunc(delay, func() { a.emit(path, pending, token) })
 		return
 	}
-	pending := &pendingEvent{eventType: eventType, firstSeen: now, lastSeen: now}
-	pending.timer = time.AfterFunc(quiescenceDelay, func() { a.emit(path) })
+	pending := &pendingEvent{eventType: eventType, firstSeen: now, lastSeen: now, token: 1}
+	pending.timer = time.AfterFunc(quiescenceDelay, func() { a.emit(path, pending, pending.token) })
 	a.pending[path] = pending
 }
 
-func (a *Aggregator) Flush() {
+func (a *Aggregator) Shutdown(ctx context.Context) bool {
 	a.mu.Lock()
-	paths := make([]string, 0, len(a.pending))
+	if a.closed {
+		a.mu.Unlock()
+		return true
+	}
+	a.closed = true
+	events := make([]ScanEvent, 0, len(a.pending))
 	for path, pending := range a.pending {
 		pending.timer.Stop()
-		paths = append(paths, path)
+		events = append(events, ScanEvent{Path: path, Type: pending.eventType, DetectedAt: pending.lastSeen})
 	}
+	clear(a.pending)
 	a.mu.Unlock()
-	for _, path := range paths {
-		a.emit(path)
+	for _, event := range events {
+		select {
+		case a.out <- event:
+		case <-ctx.Done():
+			return false
+		}
 	}
+	return true
 }
 
-func (a *Aggregator) emit(path string) {
+func (a *Aggregator) emit(path string, pending *pendingEvent, token uint64) {
 	a.mu.Lock()
-	pending, ok := a.pending[path]
-	if !ok {
+	current, ok := a.pending[path]
+	if !ok || a.closed || current != pending || current.token != token {
 		a.mu.Unlock()
 		return
 	}
 	delete(a.pending, path)
+	event := ScanEvent{Path: path, Type: pending.eventType, DetectedAt: pending.lastSeen}
 	a.mu.Unlock()
-	a.out <- ScanEvent{Path: path, Type: pending.eventType, DetectedAt: pending.lastSeen}
+	a.out <- event
 }

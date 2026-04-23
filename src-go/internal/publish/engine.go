@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,12 +25,12 @@ type Engine struct {
 }
 
 type localFile struct {
-	Path    string
-	Hash    string
-	Content []byte
-	MTime   int64
-	Size    int64
-	Publish *bool
+	Path     string
+	FullPath string
+	Hash     string
+	MTime    int64
+	Size     int64
+	Publish  *bool
 }
 
 type Result struct {
@@ -75,7 +76,11 @@ func (e *Engine) Run(ctx context.Context, dryRun, yes, all bool) (*Result, error
 	}
 	for _, path := range result.Uploads {
 		file := localFiles[path]
-		if err := e.Client.UploadPublishedFile(ctx, e.Token, site, path, file.Hash, file.Content); err != nil {
+		content, err := os.ReadFile(file.FullPath)
+		if err != nil {
+			return nil, err
+		}
+		if err := e.Client.UploadPublishedFile(ctx, e.Token, site, path, file.Hash, content); err != nil {
 			return nil, err
 		}
 	}
@@ -117,15 +122,11 @@ func (e *Engine) scanLocal(all bool) (map[string]localFile, map[string]model.Pub
 		if d.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		publishProbe, err := readPublishProbe(path)
 		if err != nil {
 			return err
 		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		publishFlag := detectPublishFlag(data)
+		publishFlag := detectPublishFlag(publishProbe)
 		if publishFlag != nil && !*publishFlag {
 			return nil
 		}
@@ -142,8 +143,23 @@ func (e *Engine) scanLocal(all bool) (map[string]localFile, map[string]model.Pub
 				return nil
 			}
 		}
-		hash := util.HashBytes(data)
-		files[rel] = localFile{Path: rel, Hash: hash, Content: data, MTime: info.ModTime().UnixMilli(), Size: info.Size(), Publish: publishFlag}
+		hashFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		hash, hashErr := util.HashReader(hashFile)
+		closeErr := hashFile.Close()
+		if hashErr != nil {
+			return hashErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		files[rel] = localFile{Path: rel, FullPath: path, Hash: hash, MTime: info.ModTime().UnixMilli(), Size: info.Size(), Publish: publishFlag}
 		cache[rel] = model.PublishCacheEntry{Hash: hash, MTime: info.ModTime().UnixMilli(), Size: info.Size(), Publish: publishFlag}
 		return nil
 	})
@@ -164,10 +180,11 @@ func matchesAny(path string, patterns []string) bool {
 }
 
 func detectPublishFlag(content []byte) *bool {
-	if !bytes.HasPrefix(content, []byte("---\n")) {
+	normalized := bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+	if !bytes.HasPrefix(normalized, []byte("---\n")) {
 		return nil
 	}
-	body := content[4:]
+	body := normalized[4:]
 	before, _, ok := bytes.Cut(body, []byte("\n---\n"))
 	if !ok {
 		return nil
@@ -186,4 +203,20 @@ func detectPublishFlag(content []byte) *bool {
 		return nil
 	}
 	return &boolean
+}
+
+const publishProbeSize = 16 * 1024
+
+func readPublishProbe(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	buffer := make([]byte, publishProbeSize)
+	n, err := io.ReadFull(file, buffer)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, err
+	}
+	return buffer[:n], nil
 }
