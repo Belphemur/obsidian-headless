@@ -160,16 +160,11 @@ async function waitForProcessExit(process) {
     return true;
   }
 
-  try {
-    const result = await Promise.race([
-      once(process, "close"),
-      delay(PROCESS_EXIT_TIMEOUT_MS).then(() => false),
-    ]);
-    return result !== false;
-  } finally {
-    process.stdout?.destroy();
-    process.stderr?.destroy();
-  }
+  const result = await Promise.race([
+    once(process, "close"),
+    delay(PROCESS_EXIT_TIMEOUT_MS).then(() => false),
+  ]);
+  return result !== false;
 }
 
 async function post(endpoint, body = {}) {
