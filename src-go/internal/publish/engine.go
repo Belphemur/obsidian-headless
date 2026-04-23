@@ -212,7 +212,9 @@ func readPublishProbe(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 	buffer := make([]byte, publishProbeSize)
 	n, err := io.ReadFull(file, buffer)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {

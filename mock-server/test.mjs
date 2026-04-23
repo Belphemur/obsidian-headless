@@ -12,16 +12,160 @@
  *   node mock-server/test.mjs
  */
 
-import { test, describe } from "node:test";
+import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import net from "node:net";
+import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 const API_URL = "http://127.0.0.1:3000";
 const WS_URL = "ws://127.0.0.1:3001";
 const TEST_TOKEN = "test-token-12345";
+const PORT_CHECK_TIMEOUT_MS = 1000;
+const STARTUP_POLL_INTERVAL_MS = 200;
+const MAX_STARTUP_ATTEMPTS = 50;
+const PROCESS_EXIT_TIMEOUT_MS = 1000;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+let mockServerProcess = null;
+let startedMockServer = false;
+
+before(async () => {
+  const [apiReady, wsReady] = await Promise.all([
+    isPortOpen(3000),
+    isPortOpen(3001),
+  ]);
+
+  if (apiReady && wsReady) {
+    return;
+  }
+
+  startedMockServer = true;
+  const repoRoot = path.resolve(__dirname, "..");
+  let output = "";
+  let startupError = null;
+  let exitResult = null;
+
+  mockServerProcess = spawn(process.execPath, ["mock-server/server.mjs"], {
+    cwd: repoRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  mockServerProcess.once("error", (error) => {
+    startupError = error;
+  });
+  mockServerProcess.once("exit", (code, signal) => {
+    exitResult = { code, signal };
+  });
+  mockServerProcess.stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+  mockServerProcess.stderr.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  for (
+    let startupAttempt = 0;
+    startupAttempt < MAX_STARTUP_ATTEMPTS;
+    startupAttempt += 1
+  ) {
+    if (startupError) {
+      throw new Error(`Mock server failed to start.\n${startupError}\n${output}`);
+    }
+
+    if (exitResult) {
+      throw new Error(`Mock server exited early.\n${output}`);
+    }
+
+    const [apiReadyNow, wsReadyNow] = await Promise.all([
+      isPortOpen(3000),
+      isPortOpen(3001),
+    ]);
+    if (apiReadyNow && wsReadyNow) {
+      return;
+    }
+
+    await delay(STARTUP_POLL_INTERVAL_MS);
+  }
+
+  throw new Error(`Mock server did not start in time.\n${output}`);
+});
+
+after(async () => {
+  if (!startedMockServer || !mockServerProcess) {
+    return;
+  }
+
+  if (mockServerProcess.exitCode === null && mockServerProcess.signalCode === null) {
+    mockServerProcess.kill("SIGTERM");
+    const exited = await waitForProcessExit(mockServerProcess);
+    if (
+      !exited &&
+      mockServerProcess.exitCode === null &&
+      mockServerProcess.signalCode === null
+    ) {
+      mockServerProcess.kill("SIGKILL");
+      await waitForProcessExit(mockServerProcess);
+    }
+  }
+
+  if (mockServerProcess.exitCode === null && mockServerProcess.signalCode === null) {
+    throw new Error("Timed out waiting for mock server process to exit");
+  }
+
+  mockServerProcess.stdout?.destroy();
+  mockServerProcess.stderr?.destroy();
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+async function isPortOpen(port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    let settled = false;
+
+    const finish = (result, shouldDestroy = false) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(result);
+      if (shouldDestroy) {
+        socket.destroy();
+      }
+    };
+
+    socket.setTimeout(PORT_CHECK_TIMEOUT_MS);
+
+    socket.once("connect", () => {
+      socket.end();
+      finish(true);
+    });
+    socket.once("timeout", () => {
+      finish(false, true);
+    });
+    socket.once("error", () => {
+      finish(false, true);
+    });
+  });
+}
+
+async function waitForProcessExit(process) {
+  if (process.exitCode !== null || process.signalCode !== null) {
+    return true;
+  }
+
+  const result = await Promise.race([
+    once(process, "close"),
+    delay(PROCESS_EXIT_TIMEOUT_MS).then(() => false),
+  ]);
+  return result !== false;
+}
 
 async function post(endpoint, body = {}) {
   const res = await fetch(`${API_URL}${endpoint}`, {

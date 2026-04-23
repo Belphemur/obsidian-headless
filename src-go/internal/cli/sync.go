@@ -185,7 +185,9 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 				if stErr != nil {
 					return stErr
 				}
-				defer store.Close()
+				defer func() {
+					_ = store.Close()
+				}()
 				if setErr := store.SetSecret("encryption_key", password, masterKey); setErr != nil {
 					return setErr
 				}
@@ -354,7 +356,9 @@ func newSyncRunCommand(app *App) *cobra.Command {
 				if stErr != nil {
 					return stErr
 				}
-				defer store.Close()
+				defer func() {
+					_ = store.Close()
+				}()
 				encKey, ekErr := store.GetSecret("encryption_key", masterKey)
 				if ekErr != nil {
 					return ekErr

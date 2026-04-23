@@ -177,7 +177,9 @@ func postJSON(t *testing.T, endpoint string, body any, target any) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode >= 400 {
 		t.Fatalf("request %s failed: %s", endpoint, response.Status)
 	}
@@ -192,7 +194,9 @@ func pushRemoteFile(t *testing.T, token, vaultID, path string, content []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 	if err := conn.WriteJSON(map[string]any{
 		"op":                 "init",
 		"token":              token,

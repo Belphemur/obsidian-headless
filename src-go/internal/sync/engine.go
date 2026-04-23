@@ -70,7 +70,9 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() {
+		_ = store.Close()
+	}()
 	previousLocal, err := store.LoadLocalFiles()
 	if err != nil {
 		return err
@@ -95,7 +97,9 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer session.Close()
+	defer func() {
+		_ = session.Close()
+	}()
 	plan := buildPlan(currentLocal, previousLocal, session.remote, previousRemote)
 	e.Logger.Info().Int("planned_actions", len(plan)).Msg("sync plan created")
 	for _, action := range plan {
@@ -580,7 +584,7 @@ func (e *Engine) acquireLock() (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("sync already running: %w", err)
 	}
-	_, _ = file.WriteString(fmt.Sprintf("%d\n%d\n", os.Getpid(), time.Now().Unix()))
+	_, _ = fmt.Fprintf(file, "%d\n%d\n", os.Getpid(), time.Now().Unix())
 	return func() {
 		_ = file.Close()
 		_ = os.Remove(lockPath)

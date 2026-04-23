@@ -1,0 +1,41 @@
+name: TypeScript CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "mock-server/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - ".github/workflows/typescript-ci.yml"
+      - ".github/workflows/typescript-cd.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
+      - run: npm pack
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: typescript-package
+          path: "*.tgz"
+          if-no-files-found: error
