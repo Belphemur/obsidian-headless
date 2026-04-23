@@ -129,7 +129,9 @@ func (s *StateStore) loadTable(table string) (map[string]model.FileRecord, error
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 	result := map[string]model.FileRecord{}
 	for rows.Next() {
 		var path string
@@ -168,7 +170,9 @@ func (s *StateStore) replaceTable(table string, records map[string]model.FileRec
 		retErr = err
 		return
 	}
-	defer stmt.Close()
+	defer func() {
+		_ = stmt.Close()
+	}()
 
 	for path, record := range records {
 		payload, err := json.Marshal(record)

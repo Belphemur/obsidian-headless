@@ -193,7 +193,9 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	if response.StatusCode >= 400 {
 		var apiErr apiError
 		_ = json.NewDecoder(response.Body).Decode(&apiErr)
