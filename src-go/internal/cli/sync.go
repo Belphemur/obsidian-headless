@@ -359,6 +359,9 @@ func newSyncRunCommand(app *App) *cobra.Command {
 				if ekErr != nil {
 					return ekErr
 				}
+				if encKey == "" {
+					return fmt.Errorf("missing encryption key for encrypted vault %q; re-run `sync-setup --password` or restore the secrets store", cfg.VaultID)
+				}
 				cfg.EncryptionKey = encKey
 			}
 			logPath, err := configpkg.LogPath(cfg.VaultID)

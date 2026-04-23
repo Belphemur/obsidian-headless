@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -24,8 +25,10 @@ import (
 )
 
 const (
-	chunkSize         = 2 * 1024 * 1024
-	maxRemoteFileSize = 200 * 1024 * 1024
+	chunkSize          = 2 * 1024 * 1024
+	maxRemoteFileSize  = 200 * 1024 * 1024
+	websocketIOTimeout = 30 * time.Second
+	staleLockAge       = 24 * time.Hour
 )
 
 type Engine struct {
@@ -35,9 +38,11 @@ type Engine struct {
 }
 
 type remoteSession struct {
-	conn    *websocket.Conn
-	remote  map[string]model.FileRecord
-	version int64
+	conn      *websocket.Conn
+	remote    map[string]model.FileRecord
+	version   int64
+	ctx       context.Context
+	stopClose func() bool
 }
 
 type syncAction struct {
@@ -88,7 +93,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer session.conn.Close()
+	defer session.Close()
 	plan := buildPlan(currentLocal, previousLocal, session.remote, previousRemote)
 	e.Logger.Info().Int("planned_actions", len(plan)).Msg("sync plan created")
 	for _, action := range plan {
@@ -233,12 +238,9 @@ func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial b
 	if err != nil {
 		return nil, err
 	}
-	// Close the connection when the context is cancelled so that any blocking
-	// ReadJSON / ReadMessage call returns an error immediately.
-	go func() {
-		<-ctx.Done()
+	stopClose := context.AfterFunc(ctx, func() {
 		_ = conn.Close()
-	}()
+	})
 	initMessage := map[string]any{
 		"op":                 "init",
 		"token":              e.Token,
@@ -249,28 +251,32 @@ func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial b
 		"device":             e.deviceName(),
 		"encryption_version": e.Config.EncryptionVersion,
 	}
-	if err := conn.WriteJSON(initMessage); err != nil {
+	session := &remoteSession{conn: conn, remote: map[string]model.FileRecord{}, ctx: ctx, stopClose: stopClose}
+	if err := session.writeJSON(initMessage); err != nil {
+		stopClose()
 		_ = conn.Close()
 		return nil, err
 	}
-	remote := map[string]model.FileRecord{}
 	var readyVersion int64
 	for {
-		messageType, payload, err := conn.ReadMessage()
+		messageType, payload, err := session.readMessage()
 		if err != nil {
+			stopClose()
 			_ = conn.Close()
 			return nil, err
 		}
 		if messageType != websocket.TextMessage {
 			continue
 		}
-		var message map[string]any
-		if err := json.Unmarshal(payload, &message); err != nil {
+		message, err := decodeJSONMessage(payload)
+		if err != nil {
+			stopClose()
 			_ = conn.Close()
 			return nil, err
 		}
 		if response, ok := message["res"].(string); ok {
 			if response == "err" {
+				stopClose()
 				_ = conn.Close()
 				return nil, fmt.Errorf("sync init failed: %v", message["msg"])
 			}
@@ -280,15 +286,16 @@ func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial b
 		}
 		if operation, _ := message["op"].(string); operation == "push" {
 			record := parseRemoteRecord(message)
-			remote[record.Path] = record
+			session.remote[record.Path] = record
 			continue
 		}
 		if operation, _ := message["op"].(string); operation == "ready" {
-			readyVersion = int64(number(message["version"]))
+			readyVersion = int64Value(message["version"])
 			break
 		}
 	}
-	if err := conn.WriteJSON(map[string]any{"op": "deleted", "suppressrenames": true}); err != nil {
+	if err := session.writeJSON(map[string]any{"op": "deleted", "suppressrenames": true}); err != nil {
+		stopClose()
 		_ = conn.Close()
 		return nil, err
 	}
@@ -296,19 +303,21 @@ func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial b
 		Res   string             `json:"res"`
 		Items []model.FileRecord `json:"items"`
 	}
-	if err := conn.ReadJSON(&deletedResponse); err != nil {
+	if err := session.readJSON(&deletedResponse); err != nil {
+		stopClose()
 		_ = conn.Close()
 		return nil, err
 	}
 	for _, record := range deletedResponse.Items {
 		record.Deleted = true
-		remote[record.Path] = record
+		session.remote[record.Path] = record
 	}
-	return &remoteSession{conn: conn, remote: remote, version: readyVersion}, nil
+	session.version = readyVersion
+	return session, nil
 }
 
 func (s *remoteSession) pull(uid int64) ([]byte, error) {
-	if err := s.conn.WriteJSON(map[string]any{"op": "pull", "uid": uid}); err != nil {
+	if err := s.writeJSON(map[string]any{"op": "pull", "uid": uid}); err != nil {
 		return nil, err
 	}
 	var response struct {
@@ -318,17 +327,20 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 		Deleted bool   `json:"deleted"`
 		Msg     string `json:"msg"`
 	}
-	if err := s.conn.ReadJSON(&response); err != nil {
+	if err := s.readJSON(&response); err != nil {
 		return nil, err
 	}
 	if response.Res == "err" {
 		return nil, fmt.Errorf("%s", response.Msg)
 	}
-	if response.Deleted || response.Pieces == 0 {
+	if response.Deleted {
 		return nil, nil
 	}
 	if response.Pieces == 0 && response.Size != 0 {
 		return nil, fmt.Errorf("remote file declared size %d with no pieces", response.Size)
+	}
+	if response.Pieces == 0 {
+		return nil, nil
 	}
 	if response.Size < 0 || response.Size > maxRemoteFileSize {
 		return nil, fmt.Errorf("remote file size %d exceeds allowed maximum", response.Size)
@@ -336,7 +348,7 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 	var data bytes.Buffer
 	data.Grow(int(response.Size))
 	for index := 0; index < response.Pieces; index++ {
-		messageType, payload, err := s.conn.ReadMessage()
+		messageType, payload, err := s.readMessage()
 		if err != nil {
 			return nil, err
 		}
@@ -346,6 +358,9 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 		}
 		if _, err := data.Write(payload); err != nil {
 			return nil, err
+		}
+		if int64(data.Len()) > response.Size {
+			return nil, fmt.Errorf("remote sent more data than declared: expected %d bytes, got %d", response.Size, data.Len())
 		}
 	}
 	if int64(data.Len()) != response.Size {
@@ -371,42 +386,54 @@ func (s *remoteSession) push(record model.FileRecord, content []byte) error {
 		"size":      len(content),
 		"pieces":    pieces,
 	}
-	if err := s.conn.WriteJSON(message); err != nil {
+	if err := s.writeJSON(message); err != nil {
 		return err
 	}
 	var response map[string]any
-	if err := s.conn.ReadJSON(&response); err != nil {
+	if err := s.readJSON(&response); err != nil {
 		return err
 	}
-	if response["res"] == "ok" {
+	if stringValue(response["res"]) == "err" {
+		return fmt.Errorf("push failed: %s", stringValue(response["msg"]))
+	}
+	if pieces == 0 && stringValue(response["res"]) == "ok" {
 		return nil
 	}
-	for start := 0; start < len(content); start += chunkSize {
+	if pieces > 0 && stringValue(response["res"]) != "next" {
+		return fmt.Errorf("push failed: unexpected initial response %q", stringValue(response["res"]))
+	}
+	for index, start := 0, 0; start < len(content); index, start = index+1, start+chunkSize {
 		end := min(start+chunkSize, len(content))
-		if err := s.conn.WriteMessage(websocket.BinaryMessage, content[start:end]); err != nil {
+		if err := s.writeMessage(websocket.BinaryMessage, content[start:end]); err != nil {
 			return err
 		}
 		response = map[string]any{}
-		if err := s.conn.ReadJSON(&response); err != nil {
+		if err := s.readJSON(&response); err != nil {
 			return err
 		}
-	}
-	if response["res"] == "err" {
-		return fmt.Errorf("push failed")
+		if stringValue(response["res"]) == "err" {
+			return fmt.Errorf("push failed: %s", stringValue(response["msg"]))
+		}
+		if index < pieces-1 && stringValue(response["res"]) != "next" {
+			return fmt.Errorf("push failed: unexpected chunk response %q", stringValue(response["res"]))
+		}
+		if index == pieces-1 && stringValue(response["res"]) != "ok" {
+			return fmt.Errorf("push failed: unexpected final response %q", stringValue(response["res"]))
+		}
 	}
 	return nil
 }
 
 func (s *remoteSession) delete(path string) error {
-	if err := s.conn.WriteJSON(map[string]any{"op": "push", "path": path, "extension": filepath.Ext(path), "hash": "", "ctime": time.Now().UnixMilli(), "mtime": time.Now().UnixMilli(), "folder": false, "deleted": true, "size": 0, "pieces": 0}); err != nil {
+	if err := s.writeJSON(map[string]any{"op": "push", "path": path, "extension": filepath.Ext(path), "hash": "", "ctime": time.Now().UnixMilli(), "mtime": time.Now().UnixMilli(), "folder": false, "deleted": true, "size": 0, "pieces": 0}); err != nil {
 		return err
 	}
 	var response map[string]any
-	if err := s.conn.ReadJSON(&response); err != nil {
+	if err := s.readJSON(&response); err != nil {
 		return err
 	}
 	if response["res"] == "err" {
-		return fmt.Errorf("delete failed")
+		return fmt.Errorf("delete failed: %s", stringValue(response["msg"]))
 	}
 	return nil
 }
@@ -486,12 +513,12 @@ func parseRemoteRecord(message map[string]any) model.FileRecord {
 	return model.FileRecord{
 		Path:    stringValue(message["path"]),
 		Hash:    stringValue(message["hash"]),
-		CTime:   int64(number(message["ctime"])),
-		MTime:   int64(number(message["mtime"])),
-		Size:    int64(number(message["size"])),
+		CTime:   int64Value(message["ctime"]),
+		MTime:   int64Value(message["mtime"]),
+		Size:    int64Value(message["size"]),
 		Folder:  boolValue(message["folder"]),
 		Deleted: boolValue(message["deleted"]),
-		UID:     int64(number(message["uid"])),
+		UID:     int64Value(message["uid"]),
 		Device:  stringValue(message["device"]),
 		User:    stringValue(message["user"]),
 	}
@@ -538,9 +565,20 @@ func (e *Engine) acquireLock() (func(), error) {
 	}
 	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			stale, staleErr := removeStaleLock(lockPath)
+			if staleErr != nil {
+				return nil, staleErr
+			}
+			if stale {
+				file, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+			}
+		}
+	}
+	if err != nil {
 		return nil, fmt.Errorf("sync already running: %w", err)
 	}
-	_, _ = file.WriteString(fmt.Sprintf("%d\n", os.Getpid()))
+	_, _ = file.WriteString(fmt.Sprintf("%d\n%d\n", os.Getpid(), time.Now().Unix()))
 	return func() {
 		_ = file.Close()
 		_ = os.Remove(lockPath)
@@ -587,15 +625,91 @@ func boolValue(value any) bool {
 	return false
 }
 
-func number(value any) float64 {
+func int64Value(value any) int64 {
 	switch typed := value.(type) {
-	case float64:
-		return typed
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err == nil {
+			return parsed
+		}
+		return 0
 	case int:
-		return float64(typed)
+		return int64(typed)
 	case int64:
-		return float64(typed)
+		return typed
+	case float64:
+		return int64(typed)
 	default:
 		return 0
 	}
+}
+
+func decodeJSONMessage(payload []byte) (map[string]any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	var message map[string]any
+	if err := decoder.Decode(&message); err != nil {
+		return nil, err
+	}
+	return message, nil
+}
+
+func (s *remoteSession) Close() error {
+	if s.stopClose != nil {
+		s.stopClose()
+	}
+	return s.conn.Close()
+}
+
+func (s *remoteSession) writeJSON(value any) error {
+	if err := s.conn.SetWriteDeadline(s.ioDeadline()); err != nil {
+		return err
+	}
+	return s.conn.WriteJSON(value)
+}
+
+func (s *remoteSession) readJSON(value any) error {
+	if err := s.conn.SetReadDeadline(s.ioDeadline()); err != nil {
+		return err
+	}
+	return s.conn.ReadJSON(value)
+}
+
+func (s *remoteSession) writeMessage(messageType int, data []byte) error {
+	if err := s.conn.SetWriteDeadline(s.ioDeadline()); err != nil {
+		return err
+	}
+	return s.conn.WriteMessage(messageType, data)
+}
+
+func (s *remoteSession) readMessage() (int, []byte, error) {
+	if err := s.conn.SetReadDeadline(s.ioDeadline()); err != nil {
+		return 0, nil, err
+	}
+	return s.conn.ReadMessage()
+}
+
+func (s *remoteSession) ioDeadline() time.Time {
+	deadline := time.Now().Add(websocketIOTimeout)
+	if ctxDeadline, ok := s.ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		return ctxDeadline
+	}
+	return deadline
+}
+
+func removeStaleLock(lockPath string) (bool, error) {
+	info, err := os.Stat(lockPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if time.Since(info.ModTime()) < staleLockAge {
+		return false, nil
+	}
+	if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	return true, nil
 }
