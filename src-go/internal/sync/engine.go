@@ -164,7 +164,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	}
 	session.remote = validRemote
 	e.Logger.Debug().Int("deleted_records", len(deletedRemote)).Msg("found deleted files from server")
-	plan := buildPlan(currentLocal, previousLocal, session.remote, previousRemote, deletedRemote)
+	plan := buildPlan(currentLocal, previousLocal, session.remote, previousRemote, deletedRemote, e.Logger)
 	e.Logger.Info().Int("planned_actions", len(plan)).Msg("sync plan created")
 	for i, action := range plan {
 		e.Logger.Debug().Int("action", i).Str("kind", action.Kind).Str("path", action.Path).Msg("action")
@@ -607,7 +607,7 @@ func (s *remoteSession) delete(path string) error {
 	return nil
 }
 
-func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, deletedRemote map[string]model.FileRecord) []syncAction {
+func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, deletedRemote map[string]model.FileRecord, logger zerolog.Logger) []syncAction {
 	pathsSet := map[string]struct{}{}
 	for _, collection := range []map[string]model.FileRecord{currentLocal, previousLocal, currentRemote, previousRemote, deletedRemote} {
 		for path := range collection {
@@ -628,14 +628,35 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, delet
 		currentR, hasCurrentR := currentRemote[path]
 		previousR, hasPreviousR := previousRemote[path]
 		isDeleted := false
+		deletedRecord := model.FileRecord{}
 		if dr, ok := deletedRemote[path]; ok && dr.Deleted {
 			isDeleted = true
+			deletedRecord = dr
 		}
 		localChanged := recordChanged(hasPreviousL, previousL, hasCurrentL, currentL)
 		remoteChanged := recordChanged(hasPreviousR, previousR, hasCurrentR, currentR)
 		if isDeleted {
-			actions = append(actions, syncAction{Path: path, Kind: "delete-remote"})
+			logger.Debug().Str("path", path).Int64("tombstone_mtime", deletedRecord.MTime).Bool("has_current_l", hasCurrentL).Msg("tombstone found")
+			if hasCurrentL {
+				logger.Debug().Str("path", path).Int64("local_mtime", currentL.MTime).Int64("tombstone_mtime", deletedRecord.MTime).Msg("comparing local to tombstone")
+				if currentL.MTime > deletedRecord.MTime {
+					logger.Info().Str("path", path).Msg("tombstone: local newer, will upload")
+					actions = append(actions, syncAction{Path: path, Kind: "upload"})
+					continue
+				}
+				logger.Info().Str("path", path).Msg("tombstone: local older, will delete local")
+				actions = append(actions, syncAction{Path: path, Kind: "delete-local"})
+				continue
+			}
+			logger.Debug().Str("path", path).Msg("tombstone: no local file, skipping")
 			continue
+		}
+		if hasCurrentR && hasPreviousL && previousL.Deleted {
+			logger.Debug().Str("path", path).Int64("tombstone_mtime", deletedRecord.MTime).Int64("prev_local_mtime", previousL.MTime).Msg("prev deleted local vs tombstone")
+			if deletedRecord.MTime > previousL.MTime {
+				logger.Debug().Str("path", path).Msg("deleted after tombstone, skip recreation")
+				continue
+			}
 		}
 		switch {
 		case remoteChanged && localChanged:
