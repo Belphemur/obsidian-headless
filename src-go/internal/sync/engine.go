@@ -150,15 +150,21 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	}
 	// Clean up session.remote to remove any invalid (hex-like) paths that resulted from failed decryption
 	validRemote := make(map[string]model.FileRecord)
+	deletedRemote := make(map[string]model.FileRecord)
 	for path, record := range session.remote {
-		if isValidPath(path) {
-			validRemote[path] = record
-		} else {
+		if !isValidPath(path) {
 			e.Logger.Warn().Str("path", path).Msg("removing invalid path from remote")
+			continue
+		}
+		if record.Deleted {
+			deletedRemote[path] = record
+		} else {
+			validRemote[path] = record
 		}
 	}
 	session.remote = validRemote
-	plan := buildPlan(currentLocal, previousLocal, session.remote, previousRemote)
+	e.Logger.Debug().Int("deleted_records", len(deletedRemote)).Msg("found deleted files from server")
+	plan := buildPlan(currentLocal, previousLocal, session.remote, previousRemote, deletedRemote)
 	e.Logger.Info().Int("planned_actions", len(plan)).Msg("sync plan created")
 	for i, action := range plan {
 		e.Logger.Debug().Int("action", i).Str("kind", action.Kind).Str("path", action.Path).Msg("action")
@@ -178,13 +184,6 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 			}
 			// Fix: Override record.Path with action.Path to ensure we use the decrypted path
 			record.Path = action.Path
-			if record.Deleted {
-				if err := e.removeLocalPath(action.Path); err != nil && !os.IsNotExist(err) {
-					return err
-				}
-				e.Logger.Info().Str("path", action.Path).Msg("deleted local file from remote tombstone")
-				continue
-			}
 			if record.Folder {
 				if !filepath.IsLocal(filepath.FromSlash(record.Path)) {
 					return fmt.Errorf("invalid remote directory path %q", record.Path)
@@ -234,6 +233,11 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 			record.Hash = ""
 			session.remote[action.Path] = record
 			e.Logger.Info().Str("path", action.Path).Msg("deleted remote file")
+		case "delete-local":
+			if err := e.removeLocalPath(action.Path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			e.Logger.Info().Str("path", action.Path).Msg("deleted local file from remote tombstone")
 		}
 	}
 	refreshedLocal, err := util.ScanVault(e.Config.VaultPath, e.configDir(), e.Config.IgnoreFolders)
@@ -586,9 +590,9 @@ func (s *remoteSession) delete(path string) error {
 	return nil
 }
 
-func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[string]model.FileRecord) []syncAction {
+func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, deletedRemote map[string]model.FileRecord) []syncAction {
 	pathsSet := map[string]struct{}{}
-	for _, collection := range []map[string]model.FileRecord{currentLocal, previousLocal, currentRemote, previousRemote} {
+	for _, collection := range []map[string]model.FileRecord{currentLocal, previousLocal, currentRemote, previousRemote, deletedRemote} {
 		for path := range collection {
 			if isValidPath(path) {
 				pathsSet[path] = struct{}{}
@@ -606,8 +610,17 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[st
 		previousL, hasPreviousL := previousLocal[path]
 		currentR, hasCurrentR := currentRemote[path]
 		previousR, hasPreviousR := previousRemote[path]
+		isDeleted := false
+		if dr, ok := deletedRemote[path]; ok && dr.Deleted {
+			isDeleted = true
+		}
 		localChanged := recordChanged(hasPreviousL, previousL, hasCurrentL, currentL)
 		remoteChanged := recordChanged(hasPreviousR, previousR, hasCurrentR, currentR)
+		// Check if this path was deleted on remote (but not in currentRemote anymore)
+		if isDeleted && hasCurrentL {
+			actions = append(actions, syncAction{Path: path, Kind: "delete-local"})
+			continue
+		}
 		switch {
 		case remoteChanged && localChanged:
 			if chooseRemote(hasCurrentL, currentL, hasCurrentR, currentR, hasPreviousL, previousL, hasPreviousR, previousR) {
