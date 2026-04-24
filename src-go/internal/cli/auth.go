@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/spf13/viper"
 
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
+	apipkg "github.com/Belphemur/obsidian-headless/src-go/internal/api"
 )
 
 func newLoginCommand(app *App) *cobra.Command {
@@ -18,27 +20,38 @@ func newLoginCommand(app *App) *cobra.Command {
 		Use:   "login",
 		Short: "Log in to an Obsidian account",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			email = viper.GetString("email")
-			password = viper.GetString("password")
-
-			if email == "" || password == "" {
-				storedEmail, storedPassword, err := configpkg.LoadCredentials()
-				if err != nil {
-					return err
-				}
-				if email == "" && storedEmail != "" {
-					email = storedEmail
-				}
-				if password == "" && storedPassword != "" {
-					password = storedPassword
-				}
+			// Check if already logged in
+			existingToken, err := configpkg.LoadAuthToken()
+			if err != nil {
+				return err
 			}
+
+			// If logged in and no credentials provided, show current user info
+			if existingToken != "" && email == "" && password == "" {
+				userInfo, err := app.client().UserInfo(cmd.Context(), existingToken)
+				if err == nil {
+					writeLines(app.stdout, fmt.Sprintf("Logged in as: %s", userInfo.Email))
+					if userInfo.Name != "" {
+						writeLines(app.stdout, fmt.Sprintf("Name: %s", userInfo.Name))
+					}
+					return nil
+				}
+				// Token may be invalid, proceed with login
+			}
+
+			// If already logged in, sign out old session
+			if existingToken != "" {
+				_ = app.client().SignOut(cmd.Context(), existingToken)
+				_ = configpkg.ClearAuthToken()
+			}
+
+			// Get credentials from flags or prompt
 			if email == "" {
-				fmt.Print("Email: ")
+				fmt.Fprint(app.stdout, "Email: ")
 				fmt.Scanln(&email)
 			}
 			if password == "" {
-				fmt.Print("Password: ")
+				fmt.Fprint(app.stdout, "Password: ")
 				pass, err := readPassword(app.stdin)
 				if err != nil {
 					return err
@@ -48,17 +61,32 @@ func newLoginCommand(app *App) *cobra.Command {
 			if email == "" || password == "" {
 				return fmt.Errorf("both --email and --password are required")
 			}
-			if err := configpkg.SaveCredentials(email, password); err != nil {
-				return err
-			}
+
+			// Attempt login
 			response, err := app.client().SignIn(cmd.Context(), email, password, mfa)
 			if err != nil {
-				return err
+				// Check if 2FA is required using APIError type (server returns 200 with error in body)
+				var apiErr *apipkg.APIError
+				if errors.As(err, &apiErr) && strings.Contains(strings.ToLower(apiErr.Message), "2fa") && mfa == "" {
+					fmt.Fprint(app.stdout, "2FA code: ")
+					fmt.Scanln(&mfa)
+					if mfa != "" {
+						response, err = app.client().SignIn(cmd.Context(), email, password, mfa)
+						if err != nil {
+							return fmt.Errorf("login failed: %w", err)
+						}
+					} else {
+						return fmt.Errorf("login failed: %w", err)
+					}
+				} else {
+					return fmt.Errorf("login failed: %w", err)
+				}
 			}
+
 			if err := configpkg.SaveAuthToken(response.Token); err != nil {
 				return err
 			}
-			writeLines(app.stdout, fmt.Sprintf("Logged in as %s <%s>", response.Name, response.Email))
+			writeLines(app.stdout, "Login successful.")
 			return nil
 		},
 	}
@@ -87,9 +115,6 @@ func newLogoutCommand(app *App) *cobra.Command {
 				_ = app.client().SignOut(cmd.Context(), token)
 			}
 			if err := configpkg.ClearAuthToken(); err != nil {
-				return err
-			}
-			if err := configpkg.ClearCredentials(); err != nil {
 				return err
 			}
 			writeLines(app.stdout, "Logged out.")

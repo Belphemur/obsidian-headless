@@ -234,7 +234,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial bool) (*remoteSession, error) {
 	keyHash := ""
 	if e.Config.EncryptionKey != "" {
-		derivedKeyHash, err := util.DerivePasswordHash(e.Config.EncryptionKey, e.Config.EncryptionSalt)
+		derivedKeyHash, err := util.DerivePasswordHash(e.Config.EncryptionKey, e.Config.EncryptionSalt, e.Config.EncryptionVersion)
 		if err != nil {
 			return nil, err
 		}

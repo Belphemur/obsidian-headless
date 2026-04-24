@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -74,6 +75,11 @@ func newSyncCreateRemoteCommand(app *App) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "sync-create-remote",
 		Short: "Create a remote sync vault",
+		Long: `Create a new remote vault with optional encryption.
+
+Encryption modes:
+  standard - No encryption (default for new vaults)
+  e2ee     - End-to-end encrypted (requires --password)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if name == "" {
 				return fmt.Errorf("--name is required")
@@ -86,7 +92,9 @@ func newSyncCreateRemoteCommand(app *App) *cobra.Command {
 			key := ""
 			salt := ""
 			switch encryption {
-			case "", "e2ee":
+			case "standard", "":
+				// no key material needed
+			case "e2ee":
 				if password == "" {
 					return fmt.Errorf("--password is required for e2ee vaults")
 				}
@@ -95,14 +103,12 @@ func newSyncCreateRemoteCommand(app *App) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				key, err = util.DerivePasswordHash(password, salt)
+				key, err = util.DerivePasswordHash(password, salt, version)
 				if err != nil {
 					return err
 				}
-			case "standard":
-				// no key material needed
 			default:
-				return fmt.Errorf("unknown encryption mode %q: must be 'e2ee' or 'standard'", encryption)
+				return fmt.Errorf("unknown encryption mode %q: must be 'standard' or 'e2ee'", encryption)
 			}
 			vault, err := app.client().CreateVault(cmd.Context(), token, name, key, salt, region, version)
 			if err != nil {
@@ -140,21 +146,34 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if vault.Password != "" && password == "" {
-				return fmt.Errorf("--password is required for encrypted vaults")
+			isEncrypted := vault.EncryptionVersion > 0
+			if isEncrypted && password == "" {
+				fmt.Fprint(app.stdout, "Vault password: ")
+				pass, err := readPassword(app.stdin)
+				if err != nil {
+					return err
+				}
+				password = pass
 			}
 			if err := configpkg.ValidateConfigDir(configDir); err != nil {
 				return err
 			}
 			keyHash := ""
-			if password != "" {
-				keyHash, err = util.DerivePasswordHash(password, vault.Salt)
+			if isEncrypted && password != "" {
+				keyHash, err = util.DerivePasswordHash(password, vault.Salt, vault.EncryptionVersion)
 				if err != nil {
 					return err
 				}
 			}
-			if err := app.client().ValidateVaultAccess(cmd.Context(), token, vault.ID, keyHash, vault.Host, vault.EncryptionVersion); err != nil {
-				return err
+			// Only validate access for encrypted vaults
+			if isEncrypted {
+				vaultID := vault.UID
+				if vaultID == "" {
+					vaultID = vault.ID
+				}
+				if err := app.client().ValidateVaultAccess(cmd.Context(), token, vaultID, keyHash, vault.Host, vault.EncryptionVersion); err != nil {
+					return err
+				}
 			}
 			absPath, err := filepath.Abs(localPath)
 			if err != nil {
@@ -205,7 +224,7 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 	command.Flags().StringVar(&password, "password", "", "encryption password")
 	command.Flags().StringVar(&deviceName, "device-name", "", "device name")
 	command.Flags().StringVar(&configDir, "config-dir", ".obsidian", "config directory")
-	command.Flags().StringVar(&statePath, "state-path", "", "custom state database path")
+	command.Flags().StringVar(&statePath, "state-path", "", "custom state database path (default: ~/.config/obsidian-headless/sync/{vaultID}/state.db)")
 	return command
 }
 
@@ -261,7 +280,19 @@ func newSyncConfigCommand(app *App) *cobra.Command {
 				changed = true
 			}
 			if cmd.Flags().Changed("state-path") {
+				oldStatePath, _ := configpkg.StatePath(cfg.VaultID, cfg.StatePath)
 				cfg.StatePath = statePath
+				newStatePath, _ := configpkg.StatePath(cfg.VaultID, cfg.StatePath)
+				if oldStatePath != newStatePath {
+					if _, err := os.Stat(oldStatePath); err == nil {
+						if err := os.MkdirAll(filepath.Dir(newStatePath), 0o700); err != nil {
+							return fmt.Errorf("failed to create directory for new state db: %w", err)
+						}
+						if err := os.Rename(oldStatePath, newStatePath); err != nil {
+							return fmt.Errorf("failed to move state db from %s to %s: %w", oldStatePath, newStatePath, err)
+						}
+					}
+				}
 				changed = true
 			}
 			if !changed {
@@ -279,7 +310,7 @@ func newSyncConfigCommand(app *App) *cobra.Command {
 	command.Flags().StringVar(&configs, "configs", "", "comma-separated config categories")
 	command.Flags().StringVar(&deviceName, "device-name", "", "device name")
 	command.Flags().StringVar(&configDir, "config-dir", ".obsidian", "config directory")
-	command.Flags().StringVar(&statePath, "state-path", "", "custom state database path")
+	command.Flags().StringVar(&statePath, "state-path", "", "custom state database path (default: ~/.config/obsidian-headless/sync/{vaultID}/state.db)")
 	return command
 }
 
@@ -400,6 +431,7 @@ func resolveVault(vaults []model.Vault, selector string) (*model.Vault, error) {
 }
 
 func printSyncConfig(app *App, cfg model.SyncConfig) {
+	statePath, _ := configpkg.StatePath(cfg.VaultID, cfg.StatePath)
 	writeLines(app.stdout,
 		fmt.Sprintf("Vault: %s (%s)", cfg.VaultName, cfg.VaultID),
 		fmt.Sprintf("Location: %s", cfg.VaultPath),
@@ -408,5 +440,6 @@ func printSyncConfig(app *App, cfg model.SyncConfig) {
 		fmt.Sprintf("Conflict strategy: %s", valueOrDefault(cfg.ConflictStrategy, "merge")),
 		fmt.Sprintf("Device name: %s", valueOrDefault(cfg.DeviceName, configpkg.DefaultDeviceName())),
 		fmt.Sprintf("Config directory: %s", valueOrDefault(cfg.ConfigDir, ".obsidian")),
+		fmt.Sprintf("State DB: %s", statePath),
 	)
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -16,8 +15,9 @@ import (
 )
 
 type Client struct {
-	apiBase string
-	http    *http.Client
+	apiBase      string
+	http        *http.Client
+	defaultHeaders map[string]string
 }
 
 type apiError struct {
@@ -26,13 +26,30 @@ type apiError struct {
 	Message string `json:"message"`
 }
 
+// APIError represents an error response from the Obsidian API.
+type APIError struct {
+	StatusCode int
+	Message    string
+	Code       string
+}
+
+func (e *APIError) Error() string {
+	return e.Message
+}
+
+// RequestOptions allows customizing individual API requests.
+type RequestOptions struct {
+	Headers map[string]string
+}
+
 func New(apiBase string, timeout time.Duration) *Client {
 	if apiBase == "" {
 		apiBase = "https://api.obsidian.md"
 	}
 	return &Client{
-		apiBase: strings.TrimRight(apiBase, "/"),
-		http:    &http.Client{Timeout: timeout},
+		apiBase:      strings.TrimRight(apiBase, "/"),
+		http:          &http.Client{Timeout: timeout},
+		defaultHeaders: map[string]string{"Origin": "https://obsidian.md"},
 	}
 }
 
@@ -41,6 +58,7 @@ func (c *Client) SignIn(ctx context.Context, email, password, mfa string) (*mode
 	if mfa != "" {
 		body["mfa"] = mfa
 	}
+
 	var response model.SignInResponse
 	if err := c.postJSON(ctx, c.apiBase+"/user/signin", body, &response); err != nil {
 		return nil, err
@@ -112,10 +130,13 @@ func (c *Client) CreateVault(ctx context.Context, token, name, keyHash, salt, re
 func (c *Client) ValidateVaultAccess(ctx context.Context, token, vaultID, keyHash, host string, supportedVersion int) error {
 	body := map[string]any{
 		"token":                        token,
-		"uid":                          vaultID,
-		"keyhash":                      keyHash,
+		"vault_uid":                    vaultID,
 		"host":                         host,
 		"supported_encryption_version": supportedVersion,
+		"encryption_version":           3,
+	}
+	if keyHash != "" {
+		body["keyhash"] = keyHash
 	}
 	return c.postJSON(ctx, c.apiBase+"/vault/access", body, nil)
 }
@@ -179,7 +200,21 @@ func (c *Client) DeletePublishedFile(ctx context.Context, token string, site mod
 	return c.postJSON(ctx, hostAPIURL(site.Host, "/api/delete"), body, nil)
 }
 
-func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target any) error {
+func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target any, opts ...*RequestOptions) error {
+	// Always send OPTIONS preflight first (matches TypeScript client behavior)
+	preflightReq, _ := http.NewRequestWithContext(ctx, http.MethodOptions, endpoint, nil)
+	for k, v := range c.defaultHeaders {
+		preflightReq.Header.Set(k, v)
+	}
+	if len(opts) >0 && opts[0] != nil && opts[0].Headers != nil {
+		for k, v := range opts[0].Headers {
+			preflightReq.Header.Set(k, v)
+		}
+	}
+	if resp, err := c.http.Do(preflightReq); err == nil {
+		resp.Body.Close()
+	}
+
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -189,6 +224,14 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
+	for k, v := range c.defaultHeaders {
+		request.Header.Set(k, v)
+	}
+	if len(opts) >0 && opts[0] != nil && opts[0].Headers != nil {
+		for k, v := range opts[0].Headers {
+			request.Header.Set(k, v)
+		}
+	}
 	response, err := c.http.Do(request)
 	if err != nil {
 		return err
@@ -196,41 +239,38 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 	defer func() {
 		_ = response.Body.Close()
 	}()
-	if response.StatusCode >= 400 {
-		var apiErr apiError
-		_ = json.NewDecoder(response.Body).Decode(&apiErr)
-		message := apiErr.Error
-		if message == "" {
-			message = apiErr.Message
-		}
-		if message == "" {
-			message = response.Status
-		}
-		return fmt.Errorf("%s", message)
-	}
 	bodyBytes, err := io.ReadAll(response.Body)
 	if err != nil {
 		return err
 	}
 
-	// Always check for an application-level error payload first.
+	// Check for application-level error in response body (matches TypeScript client)
 	var appErr apiError
 	if decErr := json.Unmarshal(bodyBytes, &appErr); decErr == nil {
 		if appErr.Error != "" {
-			return fmt.Errorf("%s", appErr.Error)
+			return &APIError{StatusCode: response.StatusCode, Message: appErr.Error, Code: appErr.Code}
 		}
+	}
+
+	// Also check HTTP status codes for errors
+	if response.StatusCode >= 400 {
+		message := appErr.Message
+		if message == "" {
+			message = response.Status
+		}
+		return &APIError{StatusCode: response.StatusCode, Message: message, Code: appErr.Code}
 	}
 
 	if target == nil {
 		if appErr.Message != "" {
-			return fmt.Errorf("%s", appErr.Message)
+			return &APIError{StatusCode: response.StatusCode, Message: appErr.Message, Code: appErr.Code}
 		}
 		return nil
 	}
 	if appErr.Message != "" && appErr.Code != "" {
-		return fmt.Errorf("%s", appErr.Message)
+		return &APIError{StatusCode: response.StatusCode, Message: appErr.Message, Code: appErr.Code}
 	}
-	return json.Unmarshal(bodyBytes, target)
+ 	return json.Unmarshal(bodyBytes, target)
 }
 
 func hostAPIURL(host, path string) string {

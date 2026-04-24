@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/scrypt"
 	"golang.org/x/text/unicode/norm"
 )
@@ -190,12 +191,36 @@ func SafeJoin(root, relative string) (string, error) {
 	return resolved, nil
 }
 
-func DerivePasswordHash(password, salt string) (string, error) {
+func DerivePasswordHash(password, salt string, encryptionVersion int) (string, error) {
+	// Match TypeScript: normalize password and salt with NFKC
 	normalizedPassword := norm.NFKC.String(password)
 	normalizedSalt := norm.NFKC.String(salt)
-	key, err := scrypt.Key([]byte(normalizedPassword), []byte(normalizedSalt), 1<<15, 8, 1, 32)
+
+	// The salt is a hex string representing 16 random bytes.
+	// TypeScript uses Buffer.from(normSalt, "utf8") which UTF-8 encodes the hex string.
+	// This is different from hex-decoding!
+	// Let's match TypeScript behavior.
+	rawSalt := []byte(normalizedSalt) // UTF-8 encode the hex string
+
+	// scrypt with N=32768, r=8, p=1, dkLen=32
+	rawKey, err := scrypt.Key([]byte(normalizedPassword), rawSalt, 1<<15, 8, 1, 32)
 	if err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(key), nil
+
+	switch encryptionVersion {
+	case 2, 3:
+		// Match TypeScript computeKeyHash for V2/V3:
+		// Web Crypto HKDF derivation
+		hkdfReader := hkdf.New(sha256.New, rawKey, rawSalt, []byte("ObsidianKeyHash"))
+		keyHash := make([]byte, 32)
+		if _, err := hkdfReader.Read(keyHash); err != nil {
+			return "", fmt.Errorf("HKDF derivation failed: %w", err)
+		}
+		return hex.EncodeToString(keyHash), nil
+	default:
+		// V0: key hash is hex(SHA-256(rawKey))
+		hash := sha256.Sum256(rawKey)
+		return hex.EncodeToString(hash[:]), nil
+	}
 }
