@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	quiescenceDelay    = 10 * time.Second
+	quiescenceDelay    = 2 * time.Second
 	maxSuppressionTime = 10 * time.Minute
 )
 

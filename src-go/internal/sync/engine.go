@@ -628,35 +628,14 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, delet
 		currentR, hasCurrentR := currentRemote[path]
 		previousR, hasPreviousR := previousRemote[path]
 		isDeleted := false
-		deletedRecord := model.FileRecord{}
 		if dr, ok := deletedRemote[path]; ok && dr.Deleted {
 			isDeleted = true
-			deletedRecord = dr
 		}
 		localChanged := recordChanged(hasPreviousL, previousL, hasCurrentL, currentL)
 		remoteChanged := recordChanged(hasPreviousR, previousR, hasCurrentR, currentR)
-		// Check if this path was deleted on remote (in deletedRemote tombstone)
 		if isDeleted {
-			if hasCurrentL {
-				// Local file exists - if newer than tombstone, upload it
-				if currentL.MTime > deletedRecord.MTime {
-					actions = append(actions, syncAction{Path: path, Kind: "upload"})
-					continue
-				}
-				// Otherwise delete local file
-				actions = append(actions, syncAction{Path: path, Kind: "delete-local"})
-				continue
-			}
-			// No local file - no action needed for deleted tombstone
+			actions = append(actions, syncAction{Path: path, Kind: "delete-remote"})
 			continue
-		}
-		// File exists on remote and was previously deleted locally (or never existed)
-		// If it was deleted locally and tombstone is newer, don't recreate
-		if hasCurrentR && hasPreviousL && previousL.Deleted {
-			if deletedRecord.MTime > previousL.MTime {
-				// Was deleted locally after tombstone - skip recreation
-				continue
-			}
 		}
 		switch {
 		case remoteChanged && localChanged:

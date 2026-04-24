@@ -80,12 +80,15 @@ func (w *Watcher) Run(ctx context.Context) {
 }
 
 func (w *Watcher) handle(event fsnotify.Event) {
+	w.logger.Debug().Str("path", event.Name).Str("ops", event.Op.String()).Msg("fs event")
 	if w.isExcluded(event.Name) {
+		w.logger.Debug().Str("path", event.Name).Msg("excluding event")
 		return
 	}
 	if event.Has(fsnotify.Create) {
 		info, err := os.Lstat(event.Name)
 		if err == nil && info.IsDir() {
+			w.logger.Info().Str("path", event.Name).Msg("directory created, adding watch")
 			w.startBackground(func() {
 				path := event.Name
 				if err := w.addDirsRecursive(path); err != nil {
@@ -98,20 +101,24 @@ func (w *Watcher) handle(event fsnotify.Event) {
 					if werr != nil || d.IsDir() || w.isExcluded(p) {
 						return nil
 					}
+					w.logger.Debug().Str("path", p).Msg("file in new directory")
 					w.agg.Push(p, EventCreate)
 					return nil
 				})
 			})
 			return
 		}
+		w.logger.Debug().Str("path", event.Name).Msg("file created")
 	}
 	if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+		w.logger.Info().Str("path", event.Name).Msg("file removed/renamed")
 		_ = w.fw.Remove(event.Name)
 		w.scanner.Remove(event.Name)
 		w.agg.Push(event.Name, EventRemove)
 		return
 	}
 	if changed, eventType := w.scanner.HasChanged(event.Name); changed {
+		w.logger.Debug().Str("path", event.Name).Str("type", eventType.String()).Msg("file changed")
 		w.agg.Push(event.Name, eventType)
 	}
 }
