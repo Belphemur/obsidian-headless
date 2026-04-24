@@ -227,10 +227,13 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 			if err := session.delete(action.Path); err != nil {
 				return err
 			}
-			record := session.remote[action.Path]
-			record.Deleted = true
-			record.Size = 0
-			record.Hash = ""
+			record := model.FileRecord{
+				Path:    action.Path,
+				Deleted: true,
+				Size:    0,
+				Hash:    "",
+				MTime:   time.Now().UnixMilli(),
+			}
 			session.remote[action.Path] = record
 			e.Logger.Info().Str("path", action.Path).Msg("deleted remote file")
 		case "delete-local":
@@ -590,7 +593,8 @@ func (s *remoteSession) push(record model.FileRecord, content []byte) error {
 }
 
 func (s *remoteSession) delete(path string) error {
-	if err := s.writeJSON(map[string]any{"op": "push", "path": path, "extension": filepath.Ext(path), "hash": "", "ctime": time.Now().UnixMilli(), "mtime": time.Now().UnixMilli(), "folder": false, "deleted": true, "size": 0, "pieces": 0}); err != nil {
+	encryptedPath := s.encryptPath(path)
+	if err := s.writeJSON(map[string]any{"op": "push", "path": encryptedPath, "extension": filepath.Ext(path), "hash": "", "ctime": time.Now().UnixMilli(), "mtime": time.Now().UnixMilli(), "folder": false, "deleted": true, "size": 0, "pieces": 0}); err != nil {
 		return err
 	}
 	var response map[string]any
