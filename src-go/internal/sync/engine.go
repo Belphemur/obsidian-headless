@@ -518,11 +518,24 @@ func (s *remoteSession) push(record model.FileRecord, content []byte) error {
 	if err := s.writeJSON(message); err != nil {
 		return err
 	}
+	// Read response, handling push message echoes
 	var response map[string]any
-	if err := s.readJSON(&response); err != nil {
-		return fmt.Errorf("push readJSON error: %w", err)
+	for {
+		if err := s.readJSON(&response); err != nil {
+			return fmt.Errorf("push readJSON error: %w", err)
+		}
+		s.Logger.Debug().Interface("response", response).Str("res", fmt.Sprintf("%v", response["res"])).Msg("push response")
+		// If this is a push message echo, process it and continue reading
+		if op, ok := response["op"].(string); ok && op == "push" {
+			s.Logger.Debug().Msg("processing push echo during initial response")
+			parsed := s.parseRemoteRecord(response)
+			if parsed.Path != "" {
+				s.remote[parsed.Path] = parsed
+			}
+			continue
+		}
+		break
 	}
-	s.Logger.Debug().Interface("response", response).Str("res", fmt.Sprintf("%v", response["res"])).Msg("push response")
 	if stringValue(response["res"]) == "err" {
 		return fmt.Errorf("push failed: %s", stringValue(response["msg"]))
 	}
