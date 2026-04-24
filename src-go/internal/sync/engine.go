@@ -79,9 +79,12 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	e.mu.Lock()
 	if e.conn == nil {
 		e.mu.Unlock()
-		return fmt.Errorf("not connected, call RunContinuous first")
+		if err := e.ensureConnected(ctx); err != nil {
+			return fmt.Errorf("failed to connect: %w", err)
+		}
+	} else {
+		e.mu.Unlock()
 	}
-	e.mu.Unlock()
 
 	lock, err := e.acquireLock()
 	if err != nil {
@@ -337,10 +340,7 @@ func (e *Engine) ensureConnected(ctx context.Context) error {
 
 	go e.readLoop()
 
-	e.conn = nil
-	e.stopClose()
-	_ = conn.Close()
-	return fmt.Errorf("connection failed")
+	return nil
 }
 
 func (e *Engine) readLoop() {

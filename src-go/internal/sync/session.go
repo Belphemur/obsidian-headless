@@ -275,17 +275,32 @@ func (s *remoteSession) push(record model.FileRecord, data []byte) error {
 
 func (s *remoteSession) delete(path string) error {
 	encryptedPath := s.encryptPath(path)
-	if err := s.writeJSON(map[string]any{"op": "push", "path": encryptedPath, "extension": ".md", "hash": "", "ctime": time.Now().UnixMilli(), "mtime": time.Now().UnixMilli(), "folder": false, "deleted": true, "size": 0, "pieces": 0}); err != nil {
+	if err := s.writeJSON(map[string]any{"op": "push", "path": encryptedPath, "extension": filepath.Ext(path), "hash": "", "ctime": time.Now().UnixMilli(), "mtime": time.Now().UnixMilli(), "folder": false, "deleted": true, "size": 0, "pieces": 0}); err != nil {
 		return err
 	}
 	var response map[string]any
-	if err := s.readJSON(&response); err != nil {
-		return err
+	for {
+		if err := s.readJSON(&response); err != nil {
+			return fmt.Errorf("delete readJSON error: %w", err)
+		}
+		s.Logger.Debug().Interface("response", response).Msg("delete response")
+		if op, ok := response["op"].(string); ok && op == "push" {
+			s.Logger.Debug().Msg("processing push echo during delete")
+			parsed := s.parseRemoteRecord(response)
+			if parsed.Path != "" {
+				s.remote[parsed.Path] = parsed
+			}
+			continue
+		}
+		break
 	}
-	if response["res"] == "err" {
+	if stringValue(response["res"]) == "err" {
 		return fmt.Errorf("delete failed: %s", stringValue(response["msg"]))
 	}
-	return nil
+	if stringValue(response["res"]) == "ok" || stringValue(response["op"]) == "ok" {
+		return nil
+	}
+	return fmt.Errorf("delete failed: unexpected response %q", stringValue(response["res"]))
 }
 
 func (s *remoteSession) writeMessage(msgType int, data []byte) error {
