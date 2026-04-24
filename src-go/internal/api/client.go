@@ -15,8 +15,8 @@ import (
 )
 
 type Client struct {
-	apiBase      string
-	http        *http.Client
+	apiBase        string
+	http           *http.Client
 	defaultHeaders map[string]string
 }
 
@@ -47,8 +47,8 @@ func New(apiBase string, timeout time.Duration) *Client {
 		apiBase = "https://api.obsidian.md"
 	}
 	return &Client{
-		apiBase:      strings.TrimRight(apiBase, "/"),
-		http:          &http.Client{Timeout: timeout},
+		apiBase:        strings.TrimRight(apiBase, "/"),
+		http:           &http.Client{Timeout: timeout},
 		defaultHeaders: map[string]string{"Origin": "https://obsidian.md"},
 	}
 }
@@ -206,7 +206,7 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 	for k, v := range c.defaultHeaders {
 		preflightReq.Header.Set(k, v)
 	}
-	if len(opts) >0 && opts[0] != nil && opts[0].Headers != nil {
+	if len(opts) > 0 && opts[0] != nil && opts[0].Headers != nil {
 		for k, v := range opts[0].Headers {
 			preflightReq.Header.Set(k, v)
 		}
@@ -227,7 +227,7 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 	for k, v := range c.defaultHeaders {
 		request.Header.Set(k, v)
 	}
-	if len(opts) >0 && opts[0] != nil && opts[0].Headers != nil {
+	if len(opts) > 0 && opts[0] != nil && opts[0].Headers != nil {
 		for k, v := range opts[0].Headers {
 			request.Header.Set(k, v)
 		}
@@ -270,7 +270,7 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 	if appErr.Message != "" && appErr.Code != "" {
 		return &APIError{StatusCode: response.StatusCode, Message: appErr.Message, Code: appErr.Code}
 	}
- 	return json.Unmarshal(bodyBytes, target)
+	return json.Unmarshal(bodyBytes, target)
 }
 
 func hostAPIURL(host, path string) string {

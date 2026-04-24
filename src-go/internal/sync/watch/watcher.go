@@ -199,14 +199,12 @@ func (w *Watcher) startBackground(fn func()) {
 	if w.closing.Load() {
 		return
 	}
-	w.wg.Add(1)
-	go func() {
-		defer w.wg.Done()
+	w.wg.Go(func() {
 		if w.closing.Load() {
 			return
 		}
 		fn()
-	}()
+	})
 }
 
 func (w *Watcher) shutdown(ctx context.Context) {

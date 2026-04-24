@@ -408,7 +408,10 @@ func newSyncRunCommand(app *App) *cobra.Command {
 				return err
 			}
 			defer cleanup()
-			engine := syncpkg.NewEngine(*cfg, token, logger)
+			engine, err := syncpkg.NewEngine(*cfg, token, logger)
+			if err != nil {
+				return err
+			}
 			if continuous {
 				return engine.RunContinuous(cmd.Context())
 			}

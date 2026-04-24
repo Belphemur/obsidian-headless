@@ -19,7 +19,7 @@ func TestCredentials(t *testing.T) {
 		t.Fatalf("SaveCredentials failed: %v", err)
 	}
 
- LoadedEmail, LoadedPassword, err := LoadCredentials()
+	LoadedEmail, LoadedPassword, err := LoadCredentials()
 	if err != nil {
 		t.Fatalf("LoadCredentials failed: %v", err)
 	}

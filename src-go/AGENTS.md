@@ -34,10 +34,12 @@ src-go/
 ## Key Commands
 
 ### Auth
+
 - `ob login [--email] [--password] [--mfa]` - Login to Obsidian account
 - `ob logout` - Logout
 
 ### Sync
+
 - `ob sync-list-remote` - List remote vaults
 - `ob sync-list-local` - List configured vaults
 - `ob sync-create-remote --name [--encryption] [--password]` - Create vault
@@ -48,6 +50,7 @@ src-go/
 - `ob sync-unlink [--path]` - Remove sync config
 
 ### Publish
+
 - `ob publish-list-sites` - List publish sites
 - `ob publish-create-site --slug` - Create site
 - `ob publish-setup --site [--path]` - Setup publish
@@ -80,6 +83,7 @@ src-go/
 ## Database Schema
 
 ### state.db (per vault)
+
 ```sql
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE local_files (path TEXT PRIMARY KEY, data TEXT NOT NULL);
@@ -110,17 +114,33 @@ GOTOOLCHAIN=go1.26.0 go run ./cmd/ob-go --help
 ## Key Implementation Details
 
 ### Encryption
+
 - Master key (32 bytes) encrypts credentials and vault keys in SQLite
 - Vault encryption uses scrypt (2^15, 8, 1) with salt
 - AES-256-GCM for secret storage
 
 ### Sync Protocol
+
 - WebSocket connection for real-time sync
 - Chunked file transfer (2MB chunks)
 - Version tracking for conflict resolution
 - Lock file mechanism to prevent concurrent syncs
 
 ### Publish Selection
+
 - `publish: true/false` frontmatter flag (highest priority)
 - Include/exclude patterns from config
 - `--all` flag to publish untagged files
+
+## Code Quality
+
+Run the following commands before committing:
+
+```bash
+cd src-go
+go fmt ./...
+go vet ./...
+go fix ./...
+go build ./...
+go test ./...
+```

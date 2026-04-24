@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/encryption"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
 	watchpkg "github.com/Belphemur/obsidian-headless/src-go/internal/sync/watch"
@@ -30,13 +30,16 @@ const (
 	websocketIOTimeout = 30 * time.Second
 	// staleLockAge only removes lock files that are clearly abandoned while
 	// still leaving ample room for legitimately long-running sync sessions.
-	staleLockAge       = 24 * time.Hour
+	staleLockAge = 24 * time.Hour
 )
 
 type Engine struct {
 	Config model.SyncConfig
 	Token  string
 	Logger zerolog.Logger
+
+	enc    encryption.EncryptionProvider
+	rawKey []byte
 }
 
 type remoteSession struct {
@@ -45,6 +48,9 @@ type remoteSession struct {
 	version   int64
 	ctx       context.Context
 	stopClose func() bool
+	enc       encryption.EncryptionProvider
+	Logger    zerolog.Logger
+	rawKey    []byte
 }
 
 type syncAction struct {
@@ -52,8 +58,32 @@ type syncAction struct {
 	Kind string
 }
 
-func NewEngine(config model.SyncConfig, token string, logger zerolog.Logger) *Engine {
-	return &Engine{Config: config, Token: token, Logger: logger}
+func NewEngine(config model.SyncConfig, token string, logger zerolog.Logger) (*Engine, error) {
+	e := &Engine{Config: config, Token: token, Logger: logger}
+
+	// Create encryption provider for encrypted vaults
+	var rawKey []byte
+	if config.EncryptionVersion > 0 && config.EncryptionKey != "" {
+		logger.Debug().Str("vaultID", config.VaultID).Str("encryptionVersion", fmt.Sprint(config.EncryptionVersion)).Msg("creating encryption provider")
+		var err error
+		rawKey, err = encryption.DeriveKey(config.EncryptionKey, config.EncryptionSalt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to derive encryption key: %w", err)
+		}
+		logger.Debug().Int("rawKeyLen", len(rawKey)).Msg("derived raw key")
+		enc, err := encryption.NewEncryptionProvider(
+			encryption.EncryptionVersion(config.EncryptionVersion),
+			rawKey,
+			config.EncryptionSalt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create encryption provider: %w", err)
+		}
+		e.enc = enc
+		e.rawKey = rawKey
+	}
+
+	return e, nil
 }
 
 func (e *Engine) RunOnce(ctx context.Context) error {
@@ -81,6 +111,19 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Decrypt paths in previousRemote if vault is encrypted
+	if e.rawKey != nil {
+		decryptedRemote := make(map[string]model.FileRecord)
+		for path, record := range previousRemote {
+			decPath, err := e.enc.DecryptPath(path)
+			if err != nil {
+				e.Logger.Warn().Err(err).Str("path", path).Msg("failed to decrypt path from state")
+				decPath = path
+			}
+			decryptedRemote[decPath] = record
+		}
+		previousRemote = decryptedRemote
+	}
 	currentLocal, err := util.ScanVault(e.Config.VaultPath, e.configDir(), e.Config.IgnoreFolders)
 	if err != nil {
 		return err
@@ -100,12 +143,40 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	defer func() {
 		_ = session.Close()
 	}()
+	e.Logger.Debug().Int("remote_files", len(session.remote)).Msg("loaded remote files")
+	for path := range session.remote {
+		e.Logger.Debug().Str("path", path).Msg("remote file")
+	}
+	// Clean up session.remote to remove any invalid (hex-like) paths that resulted from failed decryption
+	validRemote := make(map[string]model.FileRecord)
+	for path, record := range session.remote {
+		if isValidPath(path) {
+			validRemote[path] = record
+		} else {
+			e.Logger.Warn().Str("path", path).Msg("removing invalid path from remote")
+		}
+	}
+	session.remote = validRemote
 	plan := buildPlan(currentLocal, previousLocal, session.remote, previousRemote)
 	e.Logger.Info().Int("planned_actions", len(plan)).Msg("sync plan created")
+	for i, action := range plan {
+		e.Logger.Debug().Int("action", i).Str("kind", action.Kind).Str("path", action.Path).Msg("action")
+		if action.Path == "" {
+			e.Logger.Error().Msg("EMPTY PATH IN ACTION!")
+		}
+	}
 	for _, action := range plan {
 		switch action.Kind {
 		case "download":
-			record := session.remote[action.Path]
+			record, exists := session.remote[action.Path]
+			e.Logger.Debug().Bool("exists", exists).Str("path", action.Path).Msg("download lookup")
+			if !exists {
+				// Try previousRemote
+				record, exists = previousRemote[action.Path]
+				e.Logger.Debug().Bool("in_previous", exists).Msg("try previous remote")
+			}
+			// Fix: Override record.Path with action.Path to ensure we use the decrypted path
+			record.Path = action.Path
 			if record.Deleted {
 				if err := e.removeLocalPath(action.Path); err != nil && !os.IsNotExist(err) {
 					return err
@@ -151,7 +222,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 			if err := session.push(record, data); err != nil {
 				return err
 			}
-			session.remote[action.Path] = record
+			// Note: Don't store uploads to session.remote - currentLocal already tracks them
 			e.Logger.Info().Str("path", action.Path).Msg("uploaded local file")
 		case "delete-remote":
 			if err := session.delete(action.Path); err != nil {
@@ -233,11 +304,16 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 
 func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial bool) (*remoteSession, error) {
 	keyHash := ""
-	if e.Config.EncryptionKey != "" {
-		derivedKeyHash, err := util.DerivePasswordHash(e.Config.EncryptionKey, e.Config.EncryptionSalt, e.Config.EncryptionVersion)
+	if e.rawKey != nil {
+		derivedKeyHash, err := encryption.ComputeKeyHash(
+			e.rawKey,
+			e.Config.EncryptionSalt,
+			encryption.EncryptionVersion(e.Config.EncryptionVersion),
+		)
 		if err != nil {
 			return nil, err
 		}
+		e.Logger.Debug().Str("keyHash", derivedKeyHash).Msg("computed key hash for init")
 		keyHash = derivedKeyHash
 	}
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
@@ -257,7 +333,7 @@ func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial b
 		"device":             e.deviceName(),
 		"encryption_version": e.Config.EncryptionVersion,
 	}
-	session := &remoteSession{conn: conn, remote: map[string]model.FileRecord{}, ctx: ctx, stopClose: stopClose}
+	session := &remoteSession{conn: conn, remote: map[string]model.FileRecord{}, ctx: ctx, stopClose: stopClose, enc: e.enc, Logger: e.Logger, rawKey: e.rawKey}
 	if err := session.writeJSON(initMessage); err != nil {
 		stopClose()
 		_ = conn.Close()
@@ -291,7 +367,14 @@ func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial b
 			}
 		}
 		if operation, _ := message["op"].(string); operation == "push" {
-			record := parseRemoteRecord(message)
+			pathIf, _ := message["path"]
+			fmt.Printf("DEBUG: received push message with path=%v\n", pathIf)
+			record := session.parseRemoteRecord(message)
+			if record.Path == "" {
+				session.Logger.Warn().Msg("skipping record with failed decryption")
+				continue
+			}
+			session.Logger.Debug().Str("path", record.Path).Msg("parsed remote record from push")
 			session.remote[record.Path] = record
 			continue
 		}
@@ -315,8 +398,22 @@ func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial b
 		return nil, err
 	}
 	for _, record := range deletedResponse.Items {
-		record.Deleted = true
-		session.remote[record.Path] = record
+		// Parse the deleted record through parseRemoteRecord to decrypt path
+		msg := map[string]any{
+			"path":    record.Path,
+			"hash":    record.Hash,
+			"ctime":   record.CTime,
+			"mtime":   record.MTime,
+			"size":    record.Size,
+			"folder":  record.Folder,
+			"deleted": true,
+			"uid":     record.UID,
+			"device":  record.Device,
+			"user":    record.User,
+		}
+		parsed := session.parseRemoteRecord(msg)
+		parsed.Deleted = true
+		session.remote[parsed.Path] = parsed
 	}
 	session.version = readyVersion
 	return session, nil
@@ -372,24 +469,34 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 	if int64(data.Len()) != response.Size {
 		return nil, fmt.Errorf("remote file size mismatch: expected %d bytes, got %d", response.Size, data.Len())
 	}
-	return data.Bytes(), nil
+
+	// Decrypt data if vault is encrypted
+	return s.decryptData(data.Bytes())
 }
 
 func (s *remoteSession) push(record model.FileRecord, content []byte) error {
-	pieces := int(math.Ceil(float64(len(content)) / float64(chunkSize)))
-	if len(content) == 0 {
-		pieces = 0
+	var pieces int
+	if len(content) > 0 {
+		pieces = (len(content) + chunkSize - 1) / chunkSize
 	}
+
+	// Encrypt path and content if vault is encrypted
+	encryptedPath := s.encryptPath(record.Path)
+	encryptedContent, err := s.encryptData(content)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt content: %w", err)
+	}
+
 	message := map[string]any{
 		"op":        "push",
-		"path":      record.Path,
+		"path":      encryptedPath,
 		"extension": filepath.Ext(record.Path),
 		"hash":      record.Hash,
 		"ctime":     record.CTime,
 		"mtime":     record.MTime,
 		"folder":    false,
 		"deleted":   false,
-		"size":      len(content),
+		"size":      len(encryptedContent),
 		"pieces":    pieces,
 	}
 	if err := s.writeJSON(message); err != nil {
@@ -397,25 +504,37 @@ func (s *remoteSession) push(record model.FileRecord, content []byte) error {
 	}
 	var response map[string]any
 	if err := s.readJSON(&response); err != nil {
-		return err
+		return fmt.Errorf("push readJSON error: %w", err)
 	}
+	s.Logger.Debug().Interface("response", response).Str("res", fmt.Sprintf("%v", response["res"])).Msg("push response")
 	if stringValue(response["res"]) == "err" {
 		return fmt.Errorf("push failed: %s", stringValue(response["msg"]))
 	}
-	if pieces == 0 && stringValue(response["res"]) == "ok" {
+	// Handle server returning "ok" when it already has the content (deduplication)
+	if stringValue(response["res"]) == "ok" {
 		return nil
 	}
 	if pieces > 0 && stringValue(response["res"]) != "next" {
 		return fmt.Errorf("push failed: unexpected initial response %q", stringValue(response["res"]))
 	}
-	for index, start := 0, 0; start < len(content); index, start = index+1, start+chunkSize {
-		end := min(start+chunkSize, len(content))
-		if err := s.writeMessage(websocket.BinaryMessage, content[start:end]); err != nil {
+	for index, start := 0, 0; start < len(encryptedContent); index, start = index+1, start+chunkSize {
+		end := min(start+chunkSize, len(encryptedContent))
+		if err := s.writeMessage(websocket.BinaryMessage, encryptedContent[start:end]); err != nil {
 			return err
 		}
-		response = map[string]any{}
-		if err := s.readJSON(&response); err != nil {
-			return err
+		// Read response, skipping any push message echoes
+		var response map[string]any
+		for {
+			if err := s.readJSON(&response); err != nil {
+				return fmt.Errorf("push chunk readJSON error: %w", err)
+			}
+			s.Logger.Debug().Interface("chunk_response", response).Msg("push chunk response")
+			// If this is a push message echo, skip it and read the next message
+			if op, ok := response["op"].(string); ok && op == "push" {
+				s.Logger.Debug().Msg("skipping push echo")
+				continue
+			}
+			break
 		}
 		if stringValue(response["res"]) == "err" {
 			return fmt.Errorf("push failed: %s", stringValue(response["msg"]))
@@ -448,7 +567,9 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[st
 	pathsSet := map[string]struct{}{}
 	for _, collection := range []map[string]model.FileRecord{currentLocal, previousLocal, currentRemote, previousRemote} {
 		for path := range collection {
-			pathsSet[path] = struct{}{}
+			if isValidPath(path) {
+				pathsSet[path] = struct{}{}
+			}
 		}
 	}
 	paths := make([]string, 0, len(pathsSet))
@@ -528,6 +649,56 @@ func parseRemoteRecord(message map[string]any) model.FileRecord {
 		Device:  stringValue(message["device"]),
 		User:    stringValue(message["user"]),
 	}
+}
+
+// parseRemoteRecord decrypts path for encrypted vaults
+func (s *remoteSession) parseRemoteRecord(message map[string]any) model.FileRecord {
+	record := parseRemoteRecord(message)
+	fmt.Printf("DEBUG parseRemoteRecord: encrypted path from server: %q\n", record.Path)
+	s.Logger.Debug().Str("encrypted_path", record.Path).Msg("decrypting path")
+	s.Logger.Debug().Bool("enc_nil", s.enc == nil).Msg("encryption provider")
+	if s.enc != nil && record.Path != "" {
+		decryptedPath, err := s.enc.DecryptPath(record.Path)
+		if err != nil {
+			s.Logger.Warn().Err(err).Str("path", record.Path).Msg("failed to decrypt path, skipping record")
+			record.Path = "" // Mark as invalid - skip this record
+		} else {
+			s.Logger.Debug().Str("decrypted_path", decryptedPath).Msg("path decrypted")
+			record.Path = decryptedPath
+		}
+	}
+	return record
+}
+
+// encryptPath encrypts path for encrypted vaults
+func (s *remoteSession) encryptPath(path string) string {
+	if s.enc == nil {
+		return path
+	}
+	s.Logger.Debug().Str("plain_path", path).Msg("encrypting path")
+	encPath, err := s.enc.EncryptPath(path)
+	if err != nil {
+		s.Logger.Warn().Err(err).Str("path", path).Msg("failed to encrypt path, using as-is")
+		return path
+	}
+	s.Logger.Debug().Str("encrypted_path", encPath).Msg("path encrypted")
+	return encPath
+}
+
+// encryptData encrypts data for encrypted vaults
+func (s *remoteSession) encryptData(data []byte) ([]byte, error) {
+	if s.enc == nil {
+		return data, nil
+	}
+	return s.enc.EncryptData(data)
+}
+
+// decryptData decrypts data for encrypted vaults
+func (s *remoteSession) decryptData(data []byte) ([]byte, error) {
+	if s.enc == nil {
+		return data, nil
+	}
+	return s.enc.DecryptData(data)
 }
 
 func normalizeWSURL(host string) string {
@@ -718,4 +889,23 @@ func removeStaleLock(lockPath string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func isValidPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	// Check for null bytes (invalid in all OSes)
+	for i := 0; i < len(path); i++ {
+		if path[i] == 0 {
+			return false
+		}
+	}
+	// Use filepath.Clean to normalize and check for traversal
+	cleaned := filepath.Clean(path)
+	// Reject if cleaning changes the path significantly or creates traversal
+	if cleaned == ".." || cleaned[:2] == ".." {
+		return false
+	}
+	return true
 }

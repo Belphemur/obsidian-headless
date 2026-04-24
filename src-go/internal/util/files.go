@@ -126,6 +126,7 @@ func SortedPaths(records map[string]model.FileRecord) []string {
 }
 
 func WriteFileWithTimes(root string, record model.FileRecord, content []byte) error {
+	fmt.Printf("DEBUG WriteFileWithTimes: record.Path=%q\n", record.Path)
 	if !filepath.IsLocal(filepath.FromSlash(record.Path)) {
 		return fmt.Errorf("invalid relative path %q", record.Path)
 	}
