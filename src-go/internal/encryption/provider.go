@@ -33,6 +33,10 @@ type EncryptionProvider interface {
 	EncryptData(data []byte) ([]byte, error)
 	// DecryptData decrypts file data
 	DecryptData(data []byte) ([]byte, error)
+	// EncryptHash encrypts a hash (64-char hex) for server storage
+	EncryptHash(hash string) (string, error)
+	// DecryptHash decrypts a hash from server
+	DecryptHash(encoded string) (string, error)
 }
 
 // DeriveKey derives a 32-byte raw key from password and salt using scrypt
@@ -141,6 +145,14 @@ func (e *encryptionV0) DecryptData(data []byte) ([]byte, error) {
 	return e.gcm.Open(nil, iv, ciphertext, nil)
 }
 
+func (e *encryptionV0) EncryptHash(hash string) (string, error) {
+	return e.EncryptPath(hash)
+}
+
+func (e *encryptionV0) DecryptHash(encoded string) (string, error) {
+	return e.DecryptPath(encoded)
+}
+
 // --- V2/V3 Provider (AES-SIV paths + AES-GCM content) ---
 
 type encryptionV2V3 struct {
@@ -244,4 +256,12 @@ func (e *encryptionV2V3) DecryptData(data []byte) ([]byte, error) {
 	iv := data[:12]
 	ciphertext := data[12:]
 	return e.gcm.Open(nil, iv, ciphertext, nil)
+}
+
+func (e *encryptionV2V3) EncryptHash(hash string) (string, error) {
+	return e.EncryptPath(hash)
+}
+
+func (e *encryptionV2V3) DecryptHash(encoded string) (string, error) {
+	return e.DecryptPath(encoded)
 }

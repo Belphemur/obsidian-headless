@@ -491,8 +491,9 @@ func (s *remoteSession) push(record model.FileRecord, content []byte) error {
 	// Track what we're about to push to detect self-echoes
 	s.justPushed = &record
 
-	// Encrypt path and content if vault is encrypted
+	// Encrypt path, hash, and content if vault is encrypted
 	encryptedPath := s.encryptPath(record.Path)
+	encryptedHash := s.encryptHash(record.Hash)
 	encryptedContent, err := s.encryptData(content)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt content: %w", err)
@@ -502,7 +503,7 @@ func (s *remoteSession) push(record model.FileRecord, content []byte) error {
 		"op":        "push",
 		"path":      encryptedPath,
 		"extension": filepath.Ext(record.Path),
-		"hash":      record.Hash,
+		"hash":      encryptedHash,
 		"ctime":     record.CTime,
 		"mtime":     record.MTime,
 		"folder":    false,
@@ -673,7 +674,7 @@ func parseRemoteRecord(message map[string]any) model.FileRecord {
 	}
 }
 
-// parseRemoteRecord decrypts path for encrypted vaults
+// parseRemoteRecord decrypts path and hash for encrypted vaults
 func (s *remoteSession) parseRemoteRecord(message map[string]any) model.FileRecord {
 	record := parseRemoteRecord(message)
 	s.Logger.Debug().Str("path", record.Path).Msg("decrypting path")
@@ -685,6 +686,16 @@ func (s *remoteSession) parseRemoteRecord(message map[string]any) model.FileReco
 		} else {
 			s.Logger.Debug().Str("decrypted_path", decryptedPath).Msg("path decrypted")
 			record.Path = decryptedPath
+		}
+	}
+	// Decrypt hash if encrypted vault
+	if s.enc != nil && record.Hash != "" {
+		decryptedHash, err := s.enc.DecryptHash(record.Hash)
+		if err != nil {
+			s.Logger.Warn().Err(err).Str("hash", record.Hash).Msg("failed to decrypt hash, keeping as-is")
+		} else {
+			s.Logger.Debug().Str("decrypted_hash", decryptedHash).Msg("hash decrypted")
+			record.Hash = decryptedHash
 		}
 	}
 	return record
@@ -703,6 +714,21 @@ func (s *remoteSession) encryptPath(path string) string {
 	}
 	s.Logger.Debug().Str("encrypted_path", encPath).Msg("path encrypted")
 	return encPath
+}
+
+// encryptHash encrypts hash for encrypted vaults
+func (s *remoteSession) encryptHash(hash string) string {
+	if s.enc == nil {
+		return hash
+	}
+	s.Logger.Debug().Str("plain_hash", hash).Msg("encrypting hash")
+	encHash, err := s.enc.EncryptHash(hash)
+	if err != nil {
+		s.Logger.Warn().Err(err).Str("hash", hash).Msg("failed to encrypt hash, using as-is")
+		return hash
+	}
+	s.Logger.Debug().Str("encrypted_hash", encHash).Msg("hash encrypted")
+	return encHash
 }
 
 // encryptData encrypts data for encrypted vaults
