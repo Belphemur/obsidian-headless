@@ -43,14 +43,15 @@ type Engine struct {
 }
 
 type remoteSession struct {
-	conn      *websocket.Conn
-	remote    map[string]model.FileRecord
-	version   int64
-	ctx       context.Context
-	stopClose func() bool
-	enc       encryption.EncryptionProvider
-	Logger    zerolog.Logger
-	rawKey    []byte
+	conn       *websocket.Conn
+	remote     map[string]model.FileRecord
+	version    int64
+	ctx        context.Context
+	stopClose  func() bool
+	enc        encryption.EncryptionProvider
+	Logger     zerolog.Logger
+	rawKey     []byte
+	justPushed *model.FileRecord // Track the file we just pushed to detect self-echoes
 }
 
 type syncAction struct {
@@ -222,7 +223,6 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 			if err := session.push(record, data); err != nil {
 				return err
 			}
-			// Note: Don't store uploads to session.remote - currentLocal already tracks them
 			e.Logger.Info().Str("path", action.Path).Msg("uploaded local file")
 		case "delete-remote":
 			if err := session.delete(action.Path); err != nil {
@@ -372,6 +372,16 @@ func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial b
 				session.Logger.Warn().Msg("skipping record with failed decryption")
 				continue
 			}
+			// Check if this is a self-echo (we just pushed this file)
+			if session.justPushed != nil && !session.justPushed.Deleted && !record.Deleted {
+				if record.Path == session.justPushed.Path && record.MTime == session.justPushed.MTime {
+					session.Logger.Debug().Str("path", record.Path).Msg("detected self-echo, skipping")
+					session.justPushed = nil
+					// Still add to remote since this is our authoritative record
+					session.remote[record.Path] = record
+					continue
+				}
+			}
 			session.Logger.Debug().Str("path", record.Path).Msg("parsed remote record from push")
 			session.remote[record.Path] = record
 			continue
@@ -478,6 +488,9 @@ func (s *remoteSession) push(record model.FileRecord, content []byte) error {
 		pieces = (len(content) + chunkSize - 1) / chunkSize
 	}
 
+	// Track what we're about to push to detect self-echoes
+	s.justPushed = &record
+
 	// Encrypt path and content if vault is encrypted
 	encryptedPath := s.encryptPath(record.Path)
 	encryptedContent, err := s.encryptData(content)
@@ -520,16 +533,20 @@ func (s *remoteSession) push(record model.FileRecord, content []byte) error {
 		if err := s.writeMessage(websocket.BinaryMessage, encryptedContent[start:end]); err != nil {
 			return err
 		}
-		// Read response, skipping any push message echoes
+		// Read response, processing any push message echoes
 		var response map[string]any
 		for {
 			if err := s.readJSON(&response); err != nil {
 				return fmt.Errorf("push chunk readJSON error: %w", err)
 			}
 			s.Logger.Debug().Interface("chunk_response", response).Msg("push chunk response")
-			// If this is a push message echo, skip it and read the next message
+			// If this is a push message echo, process it and add to remote
 			if op, ok := response["op"].(string); ok && op == "push" {
-				s.Logger.Debug().Msg("skipping push echo")
+				s.Logger.Debug().Msg("processing push echo")
+				parsed := s.parseRemoteRecord(response)
+				if parsed.Path != "" {
+					s.remote[parsed.Path] = parsed
+				}
 				continue
 			}
 			break
