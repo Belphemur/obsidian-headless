@@ -40,7 +40,6 @@ func DeriveKey(password, salt string) ([]byte, error) {
 	normalizedPassword := norm.NFKC.String(password)
 	normalizedSalt := norm.NFKC.String(salt)
 	rawSalt := []byte(normalizedSalt) // UTF-8 encode the hex string
-	fmt.Printf("DEBUG DeriveKey: password=%q, salt=%q, rawSalt=%q\n", password, salt, normalizedSalt)
 
 	rawKey, err := scrypt.Key([]byte(normalizedPassword), rawSalt, 1<<15, 8, 1, 32)
 	if err != nil {
@@ -213,36 +212,24 @@ func newEncryptionV2V3(rawKey []byte, salt string, version EncryptionVersion) (*
 }
 
 func (e *encryptionV2V3) EncryptPath(path string) (string, error) {
-	// AES-SIV deterministic encryption (nil nonce for deterministic output)
 	plaintext := []byte(path)
 	ciphertext := e.siv.Seal(nil, nil, plaintext, nil)
-	result := hex.EncodeToString(ciphertext)
-	fmt.Printf("DEBUG EncryptPath: path=%q -> encrypted=%q\n", path, result)
-	return result, nil
+	return hex.EncodeToString(ciphertext), nil
 }
 
 func (e *encryptionV2V3) DecryptPath(encoded string) (string, error) {
-	fmt.Printf("DEBUG V2V3 DecryptPath: input=%q\n", encoded)
 	if encoded == "" {
-		fmt.Printf("DEBUG V2V3 DecryptPath: empty input, returning empty\n")
 		return "", nil
 	}
 	data, err := hex.DecodeString(encoded)
 	if err != nil {
-		// Path is not valid hex - it might already be plaintext
-		// This happens when state DB stores already-decrypted paths
-		fmt.Printf("DEBUG V2V3 DecryptPath: not hex, treating as plaintext: %v\n", err)
 		return encoded, nil
 	}
-	fmt.Printf("DEBUG V2V3 DecryptPath: decoded len=%d\n", len(data))
 	plaintext, err := e.siv.Open(nil, nil, data, nil)
 	if err != nil {
-		fmt.Printf("DEBUG V2V3 DecryptPath SIV Open ERROR: %v\n", err)
 		return "", err
 	}
-	result := string(plaintext)
-	fmt.Printf("DEBUG V2V3 DecryptPath: result=%q\n", result)
-	return result, nil
+	return string(plaintext), nil
 }
 
 func (e *encryptionV2V3) EncryptData(data []byte) ([]byte, error) {

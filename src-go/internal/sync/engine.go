@@ -367,8 +367,6 @@ func (e *Engine) openRemoteSession(ctx context.Context, version int64, initial b
 			}
 		}
 		if operation, _ := message["op"].(string); operation == "push" {
-			pathIf, _ := message["path"]
-			fmt.Printf("DEBUG: received push message with path=%v\n", pathIf)
 			record := session.parseRemoteRecord(message)
 			if record.Path == "" {
 				session.Logger.Warn().Msg("skipping record with failed decryption")
@@ -511,7 +509,7 @@ func (s *remoteSession) push(record model.FileRecord, content []byte) error {
 		return fmt.Errorf("push failed: %s", stringValue(response["msg"]))
 	}
 	// Handle server returning "ok" when it already has the content (deduplication)
-	if stringValue(response["res"]) == "ok" {
+	if stringValue(response["res"]) == "ok" || stringValue(response["op"]) == "ok" {
 		return nil
 	}
 	if pieces > 0 && stringValue(response["res"]) != "next" {
@@ -539,10 +537,17 @@ func (s *remoteSession) push(record model.FileRecord, content []byte) error {
 		if stringValue(response["res"]) == "err" {
 			return fmt.Errorf("push failed: %s", stringValue(response["msg"]))
 		}
-		if index < pieces-1 && stringValue(response["res"]) != "next" {
-			return fmt.Errorf("push failed: unexpected chunk response %q", stringValue(response["res"]))
+		if index < pieces-1 {
+			// Check for "next" in either res or op field
+			if stringValue(response["res"]) != "next" && stringValue(response["op"]) != "next" {
+				return fmt.Errorf("push failed: unexpected chunk response %q", stringValue(response["res"]))
+			}
 		}
-		if index == pieces-1 && stringValue(response["res"]) != "ok" {
+		if index == pieces-1 {
+			// Check for "ok" in either res or op field (push echoes use op:ok)
+			if stringValue(response["res"]) == "ok" || stringValue(response["op"]) == "ok" {
+				return nil
+			}
 			return fmt.Errorf("push failed: unexpected final response %q", stringValue(response["res"]))
 		}
 	}
@@ -654,14 +659,12 @@ func parseRemoteRecord(message map[string]any) model.FileRecord {
 // parseRemoteRecord decrypts path for encrypted vaults
 func (s *remoteSession) parseRemoteRecord(message map[string]any) model.FileRecord {
 	record := parseRemoteRecord(message)
-	fmt.Printf("DEBUG parseRemoteRecord: encrypted path from server: %q\n", record.Path)
-	s.Logger.Debug().Str("encrypted_path", record.Path).Msg("decrypting path")
-	s.Logger.Debug().Bool("enc_nil", s.enc == nil).Msg("encryption provider")
+	s.Logger.Debug().Str("path", record.Path).Msg("decrypting path")
 	if s.enc != nil && record.Path != "" {
 		decryptedPath, err := s.enc.DecryptPath(record.Path)
 		if err != nil {
 			s.Logger.Warn().Err(err).Str("path", record.Path).Msg("failed to decrypt path, skipping record")
-			record.Path = "" // Mark as invalid - skip this record
+			record.Path = ""
 		} else {
 			s.Logger.Debug().Str("decrypted_path", decryptedPath).Msg("path decrypted")
 			record.Path = decryptedPath
