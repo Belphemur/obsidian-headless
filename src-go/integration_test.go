@@ -17,6 +17,8 @@ import (
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/cli"
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/encryption"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/util"
 )
 
@@ -39,19 +41,19 @@ func TestGoCLIWorksWithMockServer(t *testing.T) {
 	mustWriteFile(t, filepath.Join(vaultA, "hello.md"), []byte("# Hello from A\n"))
 
 	runCLI(t, "login", "--email", testEmail, "--password", "secret")
-	createOutput := runCLI(t, "sync-create-remote", "--name", "Go Port Vault", "--encryption", "standard")
+	createOutput := runCLI(t, "sync-create-remote", "--name", "Go Port Vault", "--password", "sync-secret")
 	vaultID := parseTrailingID(createOutput)
 	if vaultID == "" {
 		t.Fatalf("expected vault id in %q", createOutput)
 	}
 
-	runCLI(t, "sync-setup", "--vault", vaultID, "--path", vaultA)
+	runCLI(t, "sync-setup", "--vault", vaultID, "--path", vaultA, "--password", "sync-secret")
 	runCLI(t, "sync", "--path", vaultA)
 	token, err := configpkg.LoadAuthToken()
 	if err != nil || token == "" {
 		t.Fatalf("failed to load auth token: %v", err)
 	}
-	pushRemoteFile(t, token, vaultID, "hello.md", []byte("# Updated from Remote\n"))
+	pushRemoteFile(t, token, vaultID, "sync-secret", "hello.md", []byte("# Updated from Remote\n"))
 	runCLI(t, "sync", "--path", vaultA)
 	content, err := os.ReadFile(filepath.Join(vaultA, "hello.md"))
 	if err != nil {
@@ -63,7 +65,7 @@ func TestGoCLIWorksWithMockServer(t *testing.T) {
 
 	mustWriteFile(t, filepath.Join(vaultA, "hello.md"), []byte("# Updated Locally Again\n"))
 	runCLI(t, "sync", "--path", vaultA)
-	pushRemoteFile(t, token, vaultID, "remote-only.md", []byte("# Remote only\n"))
+	pushRemoteFile(t, token, vaultID, "sync-secret", "remote-only.md", []byte("# Remote only\n"))
 	runCLI(t, "sync", "--path", vaultA)
 	content, err = os.ReadFile(filepath.Join(vaultA, "remote-only.md"))
 	if err != nil {
@@ -188,8 +190,45 @@ func postJSON(t *testing.T, endpoint string, body any, target any) {
 	}
 }
 
-func pushRemoteFile(t *testing.T, token, vaultID, path string, content []byte) {
+func getVault(t *testing.T, token, vaultID string) model.Vault {
 	t.Helper()
+	var resp struct {
+		Vaults []model.Vault `json:"vaults"`
+	}
+	postJSON(t, apiBase+"/vault/list", map[string]any{"token": token}, &resp)
+	for _, v := range resp.Vaults {
+		if v.ID == vaultID || v.UID == vaultID {
+			return v
+		}
+	}
+	t.Fatalf("vault %s not found", vaultID)
+	return model.Vault{}
+}
+
+func pushRemoteFile(t *testing.T, token, vaultID, password, path string, content []byte) {
+	t.Helper()
+
+	vault := getVault(t, token, vaultID)
+	version := encryption.EncryptionVersion(vault.EncryptionVersion)
+
+	var enc encryption.EncryptionProvider
+	var keyHash string
+	if version > 0 && password != "" {
+		rawKey, err := encryption.DeriveKey(password, vault.Salt)
+		if err != nil {
+			t.Fatalf("failed to derive key: %v", err)
+		}
+		var khErr error
+		keyHash, khErr = encryption.ComputeKeyHash(rawKey, vault.Salt, version)
+		if khErr != nil {
+			t.Fatalf("failed to compute key hash: %v", khErr)
+		}
+		enc, err = encryption.NewEncryptionProvider(version, rawKey, vault.Salt)
+		if err != nil {
+			t.Fatalf("failed to create encryption provider: %v", err)
+		}
+	}
+
 	conn, _, err := websocket.DefaultDialer.Dial("ws://127.0.0.1:3001", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -197,15 +236,16 @@ func pushRemoteFile(t *testing.T, token, vaultID, path string, content []byte) {
 	defer func() {
 		_ = conn.Close()
 	}()
+
 	if err := conn.WriteJSON(map[string]any{
 		"op":                 "init",
 		"token":              token,
 		"id":                 vaultID,
-		"keyhash":            "",
+		"keyhash":            keyHash,
 		"version":            0,
 		"initial":            false,
 		"device":             "test-remote",
-		"encryption_version": 0,
+		"encryption_version": vault.EncryptionVersion,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -218,17 +258,39 @@ func pushRemoteFile(t *testing.T, token, vaultID, path string, content []byte) {
 			break
 		}
 	}
+
+	hash := util.HashBytes(content)
 	now := time.Now().UnixMilli()
+
+	pushPath := path
+	pushHash := hash
+	pushContent := content
+	if enc != nil {
+		var encErr error
+		pushPath, encErr = enc.EncryptPath(path)
+		if encErr != nil {
+			t.Fatalf("failed to encrypt path: %v", encErr)
+		}
+		pushHash, encErr = enc.EncryptHash(hash)
+		if encErr != nil {
+			t.Fatalf("failed to encrypt hash: %v", encErr)
+		}
+		pushContent, encErr = enc.EncryptData(content)
+		if encErr != nil {
+			t.Fatalf("failed to encrypt content: %v", encErr)
+		}
+	}
+
 	if err := conn.WriteJSON(map[string]any{
 		"op":        "push",
-		"path":      path,
+		"path":      pushPath,
 		"extension": filepath.Ext(path),
-		"hash":      util.HashBytes(content),
+		"hash":      pushHash,
 		"ctime":     now,
 		"mtime":     now,
 		"folder":    false,
 		"deleted":   false,
-		"size":      len(content),
+		"size":      len(pushContent),
 		"pieces":    1,
 	}); err != nil {
 		t.Fatal(err)
@@ -246,7 +308,7 @@ func pushRemoteFile(t *testing.T, token, vaultID, path string, content []byte) {
 	if response["res"] != "next" {
 		t.Fatalf("expected next response, got %#v", response)
 	}
-	if err := conn.WriteMessage(websocket.BinaryMessage, content); err != nil {
+	if err := conn.WriteMessage(websocket.BinaryMessage, pushContent); err != nil {
 		t.Fatal(err)
 	}
 	for {
