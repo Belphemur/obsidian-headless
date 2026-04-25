@@ -24,6 +24,7 @@ func (r *rootCommand) ExecuteContext(ctx context.Context) error {
 func newRootCommand(app *App) *rootCommand {
 	viper.SetDefault("api-base", "https://api.obsidian.md")
 	viper.SetDefault("timeout", 30)
+	viper.SetDefault("log-level", "info")
 	viper.SetEnvPrefix("OBSIDIAN")
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
@@ -39,8 +40,10 @@ func newRootCommand(app *App) *rootCommand {
 	root.SetErr(app.stderr)
 	root.PersistentFlags().String("api-base", viper.GetString("api-base"), "Obsidian API base URL")
 	root.PersistentFlags().Int("timeout", viper.GetInt("timeout"), "HTTP timeout in seconds")
+	root.PersistentFlags().String("log-level", viper.GetString("log-level"), "Log level (debug, info, warn, error, fatal, panic, disabled, trace)")
 	_ = viper.BindPFlag("api-base", root.PersistentFlags().Lookup("api-base"))
 	_ = viper.BindPFlag("timeout", root.PersistentFlags().Lookup("timeout"))
+	_ = viper.BindPFlag("log-level", root.PersistentFlags().Lookup("log-level"))
 	root.AddCommand(newLoginCommand(app), newLogoutCommand(app))
 	addSyncCommands(root, app)
 	addPublishCommands(root, app)

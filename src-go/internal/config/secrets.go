@@ -1,9 +1,11 @@
 package config
 
 import (
+	"io"
 	"sync"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
+	"github.com/rs/zerolog"
 	"github.com/zalando/go-keyring"
 )
 
@@ -15,6 +17,7 @@ type SecretStore struct {
 	mu        sync.Mutex
 	masterKey []byte
 	fallback  *storage.StateStore
+	logger    zerolog.Logger
 }
 
 // NewSecretStore creates a new SecretStore, loading or creating the master key
@@ -24,7 +27,14 @@ func NewSecretStore() (*SecretStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SecretStore{masterKey: masterKey}, nil
+	return &SecretStore{masterKey: masterKey, logger: zerolog.New(io.Discard)}, nil
+}
+
+// SetLogger configures a logger for debug output from the secret store.
+func (s *SecretStore) SetLogger(logger zerolog.Logger) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.logger = logger
 }
 
 // Close closes the fallback database connection if it was opened.
@@ -47,6 +57,7 @@ func (s *SecretStore) Get(key string) (string, error) {
 	if err == nil {
 		return val, nil
 	}
+	s.logger.Debug().Str("key", key).Err(err).Msg("keyring get failed, falling back to encrypted db")
 	// keyring unavailable or not found — fall back to credentials.db
 	store, err := s.fallbackStore()
 	if err != nil {
@@ -67,6 +78,7 @@ func (s *SecretStore) Set(key, value string) error {
 		s.clearFallbackSecret(key)
 		return nil
 	}
+	s.logger.Debug().Str("key", key).Err(err).Msg("keyring set failed, falling back to encrypted db")
 	// keyring unavailable — fall back to credentials.db
 	store, err := s.fallbackStore()
 	if err != nil {
@@ -80,7 +92,9 @@ func (s *SecretStore) Delete(key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	_ = keyring.Delete(secretServiceName, key)
+	if err := keyring.Delete(secretServiceName, key); err != nil {
+		s.logger.Debug().Str("key", key).Err(err).Msg("keyring delete failed")
+	}
 	s.clearFallbackSecret(key)
 	return nil
 }

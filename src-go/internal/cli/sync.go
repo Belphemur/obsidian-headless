@@ -195,6 +195,7 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 					return err
 				}
 				defer store.Close()
+				store.SetLogger(app.logger)
 				if setErr := store.Set(fmt.Sprintf("vault:%s:encryption_key", cfg.VaultID), password); setErr != nil {
 					return setErr
 				}
@@ -367,6 +368,7 @@ func newSyncRunCommand(app *App) *cobra.Command {
 					return err
 				}
 				defer store.Close()
+				store.SetLogger(app.logger)
 				encKey, err := store.Get(fmt.Sprintf("vault:%s:encryption_key", cfg.VaultID))
 				// Fall back to old state.db location for backward compatibility
 				if encKey == "" && err == nil {

@@ -7,10 +7,12 @@ import (
 	"io"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/api"
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/logging"
 )
 
 type App struct {
@@ -18,6 +20,7 @@ type App struct {
 	stdout io.Writer
 	stderr io.Writer
 	root   command
+	logger zerolog.Logger
 }
 
 type command interface {
@@ -28,7 +31,18 @@ type command interface {
 func New(stdin io.Reader, stdout, stderr io.Writer) *App {
 	application := &App{stdin: stdin, stdout: stdout, stderr: stderr}
 	application.root = newRootCommand(application)
+	application.logger = application.initLogger()
 	return application
+}
+
+func (a *App) initLogger() zerolog.Logger {
+	levelStr := viper.GetString("log-level")
+	level, err := zerolog.ParseLevel(levelStr)
+	if err != nil {
+		level = zerolog.InfoLevel
+	}
+	zerolog.SetGlobalLevel(level)
+	return logging.NewConsoleLogger(a.stderr)
 }
 
 func (a *App) Execute(ctx context.Context) error {
