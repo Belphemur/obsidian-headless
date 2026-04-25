@@ -24,7 +24,7 @@ const (
 	chunkSize         = 2 * 1024 * 1024
 	maxRemoteFileSize = 200 * 1024 * 1024
 	staleLockAge      = 24 * time.Hour
-	syncInterval     = 30 * time.Second
+	syncInterval      = 30 * time.Second
 )
 
 type Engine struct {
@@ -35,12 +35,11 @@ type Engine struct {
 	enc    encryption.EncryptionProvider
 	rawKey []byte
 
-	conn       *websocket.Conn
-	remote     map[string]model.FileRecord
-	version    int64
-	initial    bool
-	stopClose  func() bool
-	onPush     chan model.FileRecord
+	conn      *websocket.Conn
+	remote    map[string]model.FileRecord
+	version   int64
+	initial   bool
+	stopClose func() bool
 
 	mu sync.Mutex
 }
@@ -70,12 +69,12 @@ func NewEngine(config model.SyncConfig, token string, logger zerolog.Logger) (*E
 	}
 
 	e.remote = make(map[string]model.FileRecord)
-	e.onPush = make(chan model.FileRecord, 1024)
 
 	return e, nil
 }
 
 func (e *Engine) RunOnce(ctx context.Context) error {
+	e.Logger.Info().Str("vault", e.Config.VaultID).Msg("sync start")
 	e.mu.Lock()
 	if e.conn == nil {
 		e.mu.Unlock()
@@ -143,7 +142,14 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	e.mu.Unlock()
 	e.Logger.Debug().Int("deleted_records", len(deletedRemote)).Msg("found deleted files from server")
 	plan := buildPlan(currentLocal, previousLocal, validRemote, previousRemote, deletedRemote)
-	e.Logger.Info().Int("planned_actions", len(plan)).Msg("sync plan created")
+	e.Logger.Info().
+		Int("planned_actions", len(plan)).
+		Int("local_files", len(currentLocal)).
+		Int("remote_files", len(validRemote)).
+		Int("deleted_remote", len(deletedRemote)).
+		Int("previous_local", len(previousLocal)).
+		Int("previous_remote", len(previousRemote)).
+		Msg("sync plan created")
 	for i, action := range plan {
 		e.Logger.Debug().Int("action", i).Str("kind", action.Kind).Str("path", action.Path).Msg("action")
 		if action.Path == "" {
@@ -220,10 +226,60 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	if err := store.SetVersion(e.version); err != nil {
 		return err
 	}
+
+	// Save current local state
+	if err := store.ReplaceLocalFiles(currentLocal); err != nil {
+		return fmt.Errorf("failed to save local state: %w", err)
+	}
+
+	// Save current remote state (encrypt paths for e2ee vaults)
+	e.mu.Lock()
+	remoteToSave := make(map[string]model.FileRecord, len(e.remote))
+	for path, record := range e.remote {
+		remoteToSave[path] = record
+	}
+	e.mu.Unlock()
+
+	if e.rawKey != nil {
+		encryptedRemote := make(map[string]model.FileRecord, len(remoteToSave))
+		for path, record := range remoteToSave {
+			encPath, err := e.enc.EncryptPath(path)
+			if err != nil {
+				e.Logger.Warn().Err(err).Str("path", path).Msg("failed to encrypt path for state")
+				encPath = path
+			}
+			record.Path = encPath
+			encryptedRemote[encPath] = record
+		}
+		remoteToSave = encryptedRemote
+	}
+
+	if err := store.ReplaceServerFiles(remoteToSave); err != nil {
+		return fmt.Errorf("failed to save remote state: %w", err)
+	}
+
+	e.Logger.Info().Str("vault", e.Config.VaultID).Msg("sync complete")
 	return store.SetInitial(false)
 }
 
+func (e *Engine) Close() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.stopClose != nil {
+		e.stopClose()
+		e.stopClose = nil
+	}
+	if e.conn != nil {
+		err := e.conn.Close()
+		e.conn = nil
+		return err
+	}
+	return nil
+}
+
 func (e *Engine) RunContinuous(ctx context.Context) error {
+	defer e.Close()
+
 	statePath, err := configpkg.StatePath(e.Config.VaultID, e.Config.StatePath)
 	if err != nil {
 		return err
@@ -278,16 +334,6 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			if err := e.RunOnce(ctx); err != nil {
 				e.Logger.Error().Err(err).Msg("periodic sync failed")
 			}
-		case push, ok := <-e.onPush:
-			if ok {
-				e.Logger.Info().Str("path", push.Path).Msg("received push from server")
-				e.mu.Lock()
-				e.remote[push.Path] = push
-				e.mu.Unlock()
-				if err := e.RunOnce(ctx); err != nil {
-					e.Logger.Error().Err(err).Msg("push-triggered sync failed")
-				}
-			}
 		}
 	}
 }
@@ -330,69 +376,52 @@ func (e *Engine) ensureConnected(ctx context.Context) error {
 		"encryption_version": e.Config.EncryptionVersion,
 	}
 
-	if err := writeJSON(conn, initMessage); err != nil {
+	if err := writeJSONLogged(conn, initMessage, e.Logger); err != nil {
 		e.stopClose()
 		_ = conn.Close()
 		return fmt.Errorf("failed to send init: %w", err)
 	}
 
-	e.conn = conn
-
-	go e.readLoop()
-
-	return nil
-}
-
-func (e *Engine) readLoop() {
-	e.mu.Lock()
-	conn := e.conn
-	if e.stopClose != nil {
+	// Read init response
+	var initResponse map[string]any
+	if err := readJSONLogged(conn, &initResponse, e.Logger); err != nil {
 		e.stopClose()
+		_ = conn.Close()
+		return fmt.Errorf("failed to read init response: %w", err)
 	}
-	e.mu.Unlock()
+	e.Logger.Debug().Interface("initResponse", initResponse).Msg("init response received")
+	if res, _ := initResponse["res"].(string); res == "err" || stringValue(initResponse["status"]) == "err" {
+		e.stopClose()
+		_ = conn.Close()
+		return fmt.Errorf("init failed: %s", stringValue(initResponse["msg"]))
+	}
 
+	// Read existing files and ready message
 	for {
-		e.mu.Lock()
-		if e.conn == nil {
-			e.mu.Unlock()
-			return
+		var msg map[string]any
+		if err := readJSONLogged(conn, &msg, e.Logger); err != nil {
+			e.stopClose()
+			_ = conn.Close()
+			return fmt.Errorf("failed to read ready message: %w", err)
 		}
-		msgType, payload, err := readMessage(conn)
-		e.mu.Unlock()
-
-		if err != nil {
-			e.Logger.Error().Err(err).Msg("websocket read error")
-			return
-		}
-
-		if msgType != websocket.TextMessage {
-			continue
-		}
-
-		message, err := decodeJSONMessage(payload)
-		if err != nil {
-			e.Logger.Error().Err(err).Msg("failed to decode message")
-			continue
-		}
-
-		if operation, _ := message["op"].(string); operation == "push" {
-			e.handlePush(message)
-		} else if operation, _ := message["op"].(string); operation == "ready" {
-			e.version = int64Value(message["version"])
+		e.Logger.Debug().Str("op", stringValue(msg["op"])).Interface("msg", msg).Msg("init handshake message")
+		if op, _ := msg["op"].(string); op == "ready" {
+			e.version = int64Value(msg["version"])
 			e.Logger.Info().Int64("version", e.version).Msg("received ready")
+			break
+		}
+		if op, _ := msg["op"].(string); op == "push" {
+			session := newRemoteSession(conn, e.remote, e.version, ctx, e.enc, e.Logger, e.rawKey)
+			record := session.parseRemoteRecord(msg)
+			if record.Path != "" {
+				e.remote[record.Path] = record
+				e.Logger.Debug().Str("path", record.Path).Int64("uid", record.UID).Msg("added remote file from init")
+			}
 		}
 	}
-}
 
-func (e *Engine) handlePush(msg map[string]any) {
-	session := newRemoteSession(e.conn, e.remote, e.version, context.Background(), e.enc, e.Logger, e.rawKey)
-	record := session.parseRemoteRecord(msg)
-	if record.Path == "" {
-		e.Logger.Warn().Msg("skipping record with failed decryption")
-		return
-	}
-	e.Logger.Debug().Str("path", record.Path).Msg("parsed push from server")
-	e.onPush <- record
+	e.conn = conn
+	return nil
 }
 
 func decodeJSONMessage(data []byte) (map[string]any, error) {

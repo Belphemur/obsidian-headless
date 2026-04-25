@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,13 +31,13 @@ type remoteSession struct {
 
 func newRemoteSession(conn *websocket.Conn, remote map[string]model.FileRecord, version int64, ctx context.Context, enc encryption.EncryptionProvider, logger zerolog.Logger, rawKey []byte) *remoteSession {
 	return &remoteSession{
-		conn:   conn,
-		remote: remote,
+		conn:    conn,
+		remote:  remote,
 		version: version,
-		ctx:    ctx,
-		enc:    enc,
-		Logger: logger,
-		rawKey: rawKey,
+		ctx:     ctx,
+		enc:     enc,
+		Logger:  logger,
+		rawKey:  rawKey,
 	}
 }
 
@@ -49,15 +50,15 @@ func (s *remoteSession) Close() error {
 func (s *remoteSession) writeJSON(msg map[string]any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return writeJSON(s.conn, msg)
+	return writeJSONLogged(s.conn, msg, s.Logger)
 }
 
 func (s *remoteSession) readJSON(v any) error {
-	return readJSON(s.conn, v)
+	return readJSONLogged(s.conn, v, s.Logger)
 }
 
 func (s *remoteSession) readMessage() (int, []byte, error) {
-	return readMessage(s.conn)
+	return readMessageLogged(s.conn, s.Logger)
 }
 
 func (s *remoteSession) parseRemoteRecord(msg map[string]any) model.FileRecord {
@@ -144,6 +145,7 @@ func (s *remoteSession) decryptData(data []byte) ([]byte, error) {
 }
 
 func (s *remoteSession) pull(uid int64) ([]byte, error) {
+	s.Logger.Debug().Int64("uid", uid).Msg("pull start")
 	if err := s.writeJSON(map[string]any{"op": "pull", "uid": uid}); err != nil {
 		return nil, err
 	}
@@ -157,6 +159,7 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 	if err := s.readJSON(&response); err != nil {
 		return nil, err
 	}
+	s.Logger.Debug().Str("res", response.Res).Int64("size", response.Size).Int("pieces", response.Pieces).Bool("deleted", response.Deleted).Msg("pull response")
 	if response.Res == "err" {
 		return nil, fmt.Errorf("%s", response.Msg)
 	}
@@ -169,9 +172,16 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		s.Logger.Debug().Int("index", i).Int("chunkSize", len(chunk)).Msg("pull chunk")
 		chunks = append(chunks, chunk)
 	}
-	return mergeChunks(chunks), nil
+	data := mergeChunks(chunks)
+	decrypted, err := s.decryptData(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt pulled content: %w", err)
+	}
+	s.Logger.Debug().Int("size", len(decrypted)).Msg("pull complete")
+	return decrypted, nil
 }
 
 func (s *remoteSession) push(record model.FileRecord, data []byte) error {
@@ -179,6 +189,8 @@ func (s *remoteSession) push(record model.FileRecord, data []byte) error {
 	if len(data) > 0 {
 		pieces = (len(data) + chunkSize - 1) / chunkSize
 	}
+
+	s.Logger.Debug().Str("path", record.Path).Int("size", len(data)).Int("pieces", pieces).Msg("push start")
 
 	s.justPushed = &model.FileRecord{
 		Path:    record.Path,
@@ -229,6 +241,7 @@ func (s *remoteSession) push(record model.FileRecord, data []byte) error {
 		return fmt.Errorf("push failed: %s", stringValue(response["msg"]))
 	}
 	if stringValue(response["res"]) == "ok" || stringValue(response["op"]) == "ok" {
+		s.Logger.Debug().Str("path", record.Path).Msg("push complete (dedup)")
 		return nil
 	}
 	if pieces > 0 && stringValue(response["res"]) != "next" {
@@ -236,6 +249,7 @@ func (s *remoteSession) push(record model.FileRecord, data []byte) error {
 	}
 	for index, start := 0, 0; start < len(encryptedContent); index, start = index+1, start+chunkSize {
 		end := min(start+chunkSize, len(encryptedContent))
+		s.Logger.Debug().Int("index", index).Int("chunkSize", end-start).Msg("push sending chunk")
 		if err := s.writeMessageToConn(s.conn, websocket.BinaryMessage, encryptedContent[start:end]); err != nil {
 			return err
 		}
@@ -265,6 +279,7 @@ func (s *remoteSession) push(record model.FileRecord, data []byte) error {
 		}
 		if index == pieces-1 {
 			if stringValue(response["res"]) == "ok" || stringValue(response["op"]) == "ok" {
+				s.Logger.Debug().Str("path", record.Path).Msg("push complete")
 				return nil
 			}
 			return fmt.Errorf("push failed: unexpected final response %q", stringValue(response["res"]))
@@ -274,6 +289,7 @@ func (s *remoteSession) push(record model.FileRecord, data []byte) error {
 }
 
 func (s *remoteSession) delete(path string) error {
+	s.Logger.Debug().Str("path", path).Msg("delete start")
 	encryptedPath := s.encryptPath(path)
 	if err := s.writeJSON(map[string]any{"op": "push", "path": encryptedPath, "extension": filepath.Ext(path), "hash": "", "ctime": time.Now().UnixMilli(), "mtime": time.Now().UnixMilli(), "folder": false, "deleted": true, "size": 0, "pieces": 0}); err != nil {
 		return err
@@ -298,6 +314,7 @@ func (s *remoteSession) delete(path string) error {
 		return fmt.Errorf("delete failed: %s", stringValue(response["msg"]))
 	}
 	if stringValue(response["res"]) == "ok" || stringValue(response["op"]) == "ok" {
+		s.Logger.Debug().Str("path", path).Msg("delete complete")
 		return nil
 	}
 	return fmt.Errorf("delete failed: unexpected response %q", stringValue(response["res"]))
@@ -313,10 +330,40 @@ func (s *remoteSession) writeMessageToConn(conn *websocket.Conn, msgType int, da
 	return conn.WriteMessage(msgType, data)
 }
 
+func writeJSONLogged(conn *websocket.Conn, msg map[string]any, logger zerolog.Logger) error {
+	data := mustMarshalJSON(msg)
+	logger.Debug().Str("direction", "send").Str("type", "text").RawJSON("body", data).Msg("ws")
+	return conn.WriteMessage(websocket.TextMessage, data)
+}
+
+func readJSONLogged(conn *websocket.Conn, v any, logger zerolog.Logger) error {
+	_, data, err := readMessageLogged(conn, logger)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, v)
+}
+
+func readMessageLogged(conn *websocket.Conn, logger zerolog.Logger) (int, []byte, error) {
+	msgType, data, err := conn.ReadMessage()
+	if err != nil {
+		logger.Debug().Str("direction", "recv").Err(err).Msg("ws read error")
+		return msgType, nil, err
+	}
+	if msgType == websocket.TextMessage {
+		logger.Debug().Str("direction", "recv").Str("type", "text").RawJSON("body", data).Msg("ws")
+	} else {
+		logger.Debug().Str("direction", "recv").Str("type", "binary").Int("size", len(data)).Msg("ws")
+	}
+	return msgType, data, nil
+}
+
+// Deprecated: use writeJSONLogged for new code.
 func writeJSON(conn *websocket.Conn, msg map[string]any) error {
 	return conn.WriteMessage(websocket.TextMessage, mustMarshalJSON(msg))
 }
 
+// Deprecated: use readJSONLogged for new code.
 func readJSON(conn *websocket.Conn, v any) error {
 	_, data, err := readMessage(conn)
 	if err != nil {
@@ -325,6 +372,7 @@ func readJSON(conn *websocket.Conn, v any) error {
 	return json.Unmarshal(data, v)
 }
 
+// Deprecated: use readMessageLogged for new code.
 func readMessage(conn *websocket.Conn) (int, []byte, error) {
 	msgType, data, err := conn.ReadMessage()
 	if err != nil {
@@ -406,5 +454,5 @@ func normalizeWSURL(host string) string {
 }
 
 func hasScheme(urlStr string) bool {
-	return len(urlStr) > 4 && (urlStr[:4] == "ws://" || urlStr[:5] == "wss://")
+	return strings.HasPrefix(urlStr, "ws://") || strings.HasPrefix(urlStr, "wss://")
 }
