@@ -15,7 +15,7 @@ const secretServiceName = "obsidian-headless"
 type SecretStore struct {
 	mu        sync.Mutex
 	masterKey []byte
-	fallback  *storage.StateStore
+	fallback  *storage.CredentialStore
 	logger    zerolog.Logger
 }
 
@@ -95,7 +95,7 @@ func (s *SecretStore) Delete(key string) error {
 	return nil
 }
 
-func (s *SecretStore) fallbackStore() (*storage.StateStore, error) {
+func (s *SecretStore) fallbackStore() (*storage.CredentialStore, error) {
 	if s.fallback != nil {
 		return s.fallback, nil
 	}
@@ -103,7 +103,7 @@ func (s *SecretStore) fallbackStore() (*storage.StateStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, err := storage.Open(dbPath)
+	store, err := storage.OpenCredentials(dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -113,17 +113,17 @@ func (s *SecretStore) fallbackStore() (*storage.StateStore, error) {
 
 func (s *SecretStore) clearFallbackSecret(key string) {
 	if s.fallback != nil {
-		_ = s.fallback.SetSecret(key, "", s.masterKey)
+		_ = s.fallback.DeleteSecret(key)
 		return
 	}
 	dbPath, err := CredentialsDBPath()
 	if err != nil {
 		return
 	}
-	store, err := storage.Open(dbPath)
+	store, err := storage.OpenCredentials(dbPath)
 	if err != nil {
 		return
 	}
 	defer store.Close()
-	_ = store.SetSecret(key, "", s.masterKey)
+	_ = store.DeleteSecret(key)
 }

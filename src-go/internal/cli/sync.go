@@ -10,7 +10,6 @@ import (
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/logging"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
 	syncpkg "github.com/Belphemur/obsidian-headless/src-go/internal/sync"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/util"
 )
@@ -368,29 +367,6 @@ func newSyncRunCommand(app *App) *cobra.Command {
 				}
 				defer store.Close()
 				encKey, err := store.Get(fmt.Sprintf("vault:%s:encryption_key", cfg.VaultID))
-				// Fall back to old state.db location for backward compatibility
-				if encKey == "" && err == nil {
-					masterKey, mkErr := configpkg.LoadOrCreateMasterKey()
-					if mkErr != nil {
-						return mkErr
-					}
-					statePath, spErr := configpkg.StatePath(cfg.VaultID, cfg.StatePath)
-					if spErr != nil {
-						return spErr
-					}
-					oldStore, stErr := storage.Open(statePath)
-					if stErr != nil {
-						return stErr
-					}
-					encKey, err = oldStore.GetSecret("encryption_key", masterKey)
-					oldStore.Close()
-					if err != nil {
-						return err
-					}
-					if encKey != "" {
-						_ = store.Set(fmt.Sprintf("vault:%s:encryption_key", cfg.VaultID), encKey)
-					}
-				}
 				if err != nil {
 					return err
 				}

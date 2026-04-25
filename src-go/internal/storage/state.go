@@ -223,30 +223,6 @@ func (s *StateStore) replaceTable(table string, records map[string]model.FileRec
 	return
 }
 
-// SetSecret stores a plaintext secret value under name, encrypted with AES-GCM
-// using masterKey (must be 32 bytes). Call LoadOrCreateMasterKey to obtain it.
-func (s *StateStore) SetSecret(name string, plaintext string, masterKey []byte) error {
-	enc, err := encrypt(masterKey, []byte(plaintext))
-	if err != nil {
-		return err
-	}
-	return s.setMeta("secret:"+name, enc)
-}
-
-// GetSecret retrieves and decrypts a secret previously stored with SetSecret.
-// Returns ("", nil) when the secret does not exist.
-func (s *StateStore) GetSecret(name string, masterKey []byte) (string, error) {
-	val, err := s.metaValue("secret:" + name)
-	if err != nil || val == "" {
-		return "", err
-	}
-	plain, err := decrypt(masterKey, val)
-	if err != nil {
-		return "", err
-	}
-	return string(plain), nil
-}
-
 func validateTableName(table string) (string, error) {
 	switch table {
 	case "local_files", "server_files":
