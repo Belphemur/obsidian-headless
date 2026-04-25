@@ -189,25 +189,13 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 			if err := configpkg.WriteSyncConfig(cfg); err != nil {
 				return err
 			}
-			// Store the encryption key in the vault's secrets store so it is
-			// never written to the plain-text config file.
 			if password != "" {
-				masterKey, mkErr := configpkg.LoadOrCreateMasterKey()
-				if mkErr != nil {
-					return mkErr
+				store, err := configpkg.NewSecretStore()
+				if err != nil {
+					return err
 				}
-				statePath, spErr := configpkg.StatePath(cfg.VaultID, cfg.StatePath)
-				if spErr != nil {
-					return spErr
-				}
-				store, stErr := storage.Open(statePath)
-				if stErr != nil {
-					return stErr
-				}
-				defer func() {
-					_ = store.Close()
-				}()
-				if setErr := store.SetSecret("encryption_key", password, masterKey); setErr != nil {
+				defer store.Close()
+				if setErr := store.Set(fmt.Sprintf("vault:%s:encryption_key", cfg.VaultID), password); setErr != nil {
 					return setErr
 				}
 			}
@@ -373,26 +361,38 @@ func newSyncRunCommand(app *App) *cobra.Command {
 			if cfg == nil {
 				return fmt.Errorf("no sync config for %s", localPath)
 			}
-			// Load the vault encryption key from the encrypted secrets store.
 			if cfg.EncryptionVersion != 0 {
-				masterKey, mkErr := configpkg.LoadOrCreateMasterKey()
-				if mkErr != nil {
-					return mkErr
+				store, err := configpkg.NewSecretStore()
+				if err != nil {
+					return err
 				}
-				statePath, spErr := configpkg.StatePath(cfg.VaultID, cfg.StatePath)
-				if spErr != nil {
-					return spErr
+				defer store.Close()
+				encKey, err := store.Get(fmt.Sprintf("vault:%s:encryption_key", cfg.VaultID))
+				// Fall back to old state.db location for backward compatibility
+				if encKey == "" && err == nil {
+					masterKey, mkErr := configpkg.LoadOrCreateMasterKey()
+					if mkErr != nil {
+						return mkErr
+					}
+					statePath, spErr := configpkg.StatePath(cfg.VaultID, cfg.StatePath)
+					if spErr != nil {
+						return spErr
+					}
+					oldStore, stErr := storage.Open(statePath)
+					if stErr != nil {
+						return stErr
+					}
+					encKey, err = oldStore.GetSecret("encryption_key", masterKey)
+					oldStore.Close()
+					if err != nil {
+						return err
+					}
+					if encKey != "" {
+						_ = store.Set(fmt.Sprintf("vault:%s:encryption_key", cfg.VaultID), encKey)
+					}
 				}
-				store, stErr := storage.Open(statePath)
-				if stErr != nil {
-					return stErr
-				}
-				defer func() {
-					_ = store.Close()
-				}()
-				encKey, ekErr := store.GetSecret("encryption_key", masterKey)
-				if ekErr != nil {
-					return ekErr
+				if err != nil {
+					return err
 				}
 				if encKey == "" {
 					return fmt.Errorf("missing encryption key for encrypted vault %q; re-run `sync-setup --password` or restore the secrets store", cfg.VaultID)

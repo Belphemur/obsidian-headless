@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -45,47 +44,31 @@ func CredentialsDBPath() (string, error) {
 }
 
 func SaveCredentials(email, password string) error {
-	dbPath, err := CredentialsDBPath()
-	if err != nil {
-		return err
-	}
-	store, err := storage.Open(dbPath)
+	store, err := NewSecretStore()
 	if err != nil {
 		return err
 	}
 	defer store.Close()
-	masterKey, err := LoadOrCreateMasterKey()
-	if err != nil {
+	if err := store.Set("email", email); err != nil {
 		return err
 	}
-	if err := store.SetSecret("email", email, masterKey); err != nil {
-		return err
-	}
-	if err := store.SetSecret("password", password, masterKey); err != nil {
+	if err := store.Set("password", password); err != nil {
 		return err
 	}
 	return nil
 }
 
 func LoadCredentials() (string, string, error) {
-	dbPath, err := CredentialsDBPath()
-	if err != nil {
-		return "", "", err
-	}
-	store, err := storage.Open(dbPath)
+	store, err := NewSecretStore()
 	if err != nil {
 		return "", "", err
 	}
 	defer store.Close()
-	masterKey, err := LoadOrCreateMasterKey()
+	email, err := store.Get("email")
 	if err != nil {
 		return "", "", err
 	}
-	email, err := store.GetSecret("email", masterKey)
-	if err != nil {
-		return "", "", err
-	}
-	password, err := store.GetSecret("password", masterKey)
+	password, err := store.Get("password")
 	if err != nil {
 		return "", "", err
 	}
@@ -93,21 +76,13 @@ func LoadCredentials() (string, string, error) {
 }
 
 func ClearCredentials() error {
-	dbPath, err := CredentialsDBPath()
-	if err != nil {
-		return err
-	}
-	store, err := storage.Open(dbPath)
+	store, err := NewSecretStore()
 	if err != nil {
 		return err
 	}
 	defer store.Close()
-	masterKey, err := LoadOrCreateMasterKey()
-	if err != nil {
-		return err
-	}
-	_ = store.SetSecret("email", "", masterKey)
-	_ = store.SetSecret("password", "", masterKey)
+	_ = store.Delete("email")
+	_ = store.Delete("password")
 	return nil
 }
 
@@ -115,52 +90,38 @@ func ensureDir(path string) error {
 	return os.MkdirAll(path, 0o700)
 }
 
-func authTokenPath() (string, error) {
-	base, err := BaseDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, "auth_token"), nil
-}
-
 func LoadAuthToken() (string, error) {
 	if token := strings.TrimSpace(os.Getenv("OBSIDIAN_AUTH_TOKEN")); token != "" {
 		return token, nil
 	}
-	path, err := authTokenPath()
+	store, err := NewSecretStore()
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(path)
+	defer store.Close()
+	token, err := store.Get("auth_token")
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
 		return "", err
 	}
-	return strings.TrimSpace(string(data)), nil
+	return strings.TrimSpace(token), nil
 }
 
 func SaveAuthToken(token string) error {
-	path, err := authTokenPath()
+	store, err := NewSecretStore()
 	if err != nil {
 		return err
 	}
-	if err := ensureDir(filepath.Dir(path)); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(strings.TrimSpace(token)), 0o600)
+	defer store.Close()
+	return store.Set("auth_token", strings.TrimSpace(token))
 }
 
 func ClearAuthToken() error {
-	path, err := authTokenPath()
+	store, err := NewSecretStore()
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
+	defer store.Close()
+	return store.Delete("auth_token")
 }
 
 // MasterKeyPath returns the path to the 32-byte master key used to encrypt
