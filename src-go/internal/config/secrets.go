@@ -68,6 +68,8 @@ func (s *SecretStore) Set(key, value string) error {
 	err := keyring.Set(secretServiceName, key, value)
 	if err == nil {
 		s.clearFallbackSecret(key)
+		s.logger.Debug().Str("key", key).Msg("keyring set successfully stored secret")
+
 		return nil
 	}
 	s.logger.Debug().Str("key", key).Err(err).Msg("keyring set failed, falling back to encrypted db")
@@ -87,6 +89,8 @@ func (s *SecretStore) Delete(key string) error {
 	if err := keyring.Delete(secretServiceName, key); err != nil {
 		s.logger.Debug().Str("key", key).Err(err).Msg("keyring delete failed")
 	}
+	s.logger.Debug().Str("key", key).Msg("keyring delete successfull")
+
 	s.clearFallbackSecret(key)
 	return nil
 }
