@@ -190,12 +190,11 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 				return err
 			}
 			if password != "" {
-				store, err := configpkg.NewSecretStore()
+				store, err := configpkg.NewSecretStore(app.logger)
 				if err != nil {
 					return err
 				}
 				defer store.Close()
-				store.SetLogger(app.logger)
 				if setErr := store.Set(fmt.Sprintf("vault:%s:encryption_key", cfg.VaultID), password); setErr != nil {
 					return setErr
 				}
@@ -363,12 +362,11 @@ func newSyncRunCommand(app *App) *cobra.Command {
 				return fmt.Errorf("no sync config for %s", localPath)
 			}
 			if cfg.EncryptionVersion != 0 {
-				store, err := configpkg.NewSecretStore()
+				store, err := configpkg.NewSecretStore(app.logger)
 				if err != nil {
 					return err
 				}
 				defer store.Close()
-				store.SetLogger(app.logger)
 				encKey, err := store.Get(fmt.Sprintf("vault:%s:encryption_key", cfg.VaultID))
 				// Fall back to old state.db location for backward compatibility
 				if encKey == "" && err == nil {

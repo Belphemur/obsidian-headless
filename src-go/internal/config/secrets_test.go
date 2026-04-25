@@ -1,8 +1,11 @@
 package config
 
 import (
+	"io"
 	"path/filepath"
 	"testing"
+
+	"github.com/rs/zerolog"
 )
 
 func TestSecretStoreRoundTrip(t *testing.T) {
@@ -10,7 +13,7 @@ func TestSecretStoreRoundTrip(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
-	store, err := NewSecretStore()
+	store, err := NewSecretStore(zerolog.New(io.Discard))
 	if err != nil {
 		t.Fatalf("NewSecretStore failed: %v", err)
 	}
@@ -49,7 +52,7 @@ func TestSecretStoreFallbackWhenKeyringUnavailable(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
-	store, err := NewSecretStore()
+	store, err := NewSecretStore(zerolog.New(io.Discard))
 	if err != nil {
 		t.Fatalf("NewSecretStore failed: %v", err)
 	}

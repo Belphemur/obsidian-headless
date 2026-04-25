@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/viper"
 
 	apipkg "github.com/Belphemur/obsidian-headless/src-go/internal/api"
-	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 )
 
 func newLoginCommand(app *App) *cobra.Command {
@@ -21,7 +20,7 @@ func newLoginCommand(app *App) *cobra.Command {
 		Short: "Log in to an Obsidian account",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Check if already logged in
-			existingToken, err := configpkg.LoadAuthToken()
+			existingToken, err := app.configManager.LoadAuthToken()
 			if err != nil {
 				return err
 			}
@@ -42,7 +41,7 @@ func newLoginCommand(app *App) *cobra.Command {
 			// If already logged in, sign out old session
 			if existingToken != "" {
 				_ = app.client().SignOut(cmd.Context(), existingToken)
-				_ = configpkg.ClearAuthToken()
+				_ = app.configManager.ClearAuthToken()
 			}
 
 			// Get credentials from flags or prompt
@@ -83,7 +82,7 @@ func newLoginCommand(app *App) *cobra.Command {
 				}
 			}
 
-			if err := configpkg.SaveAuthToken(response.Token); err != nil {
+			if err := app.configManager.SaveAuthToken(response.Token); err != nil {
 				return err
 			}
 			writeLines(app.stdout, "Login successful.")
@@ -107,14 +106,14 @@ func newLogoutCommand(app *App) *cobra.Command {
 		Use:   "logout",
 		Short: "Log out of the current account",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			token, err := configpkg.LoadAuthToken()
+			token, err := app.configManager.LoadAuthToken()
 			if err != nil {
 				return err
 			}
 			if token != "" {
 				_ = app.client().SignOut(cmd.Context(), token)
 			}
-			if err := configpkg.ClearAuthToken(); err != nil {
+			if err := app.configManager.ClearAuthToken(); err != nil {
 				return err
 			}
 			writeLines(app.stdout, "Logged out.")

@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"golang.org/x/term"
+
+	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 )
 
 type rootCommand struct {
@@ -34,6 +36,11 @@ func newRootCommand(app *App) *rootCommand {
 		Short:         "Go implementation of the Obsidian headless client",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			app.logger = app.initLogger()
+			app.configManager = configpkg.NewConfigManager(app.logger)
+			return nil
+		},
 	}
 	root.SetIn(app.stdin)
 	root.SetOut(app.stdout)

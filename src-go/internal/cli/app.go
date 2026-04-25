@@ -16,11 +16,12 @@ import (
 )
 
 type App struct {
-	stdin  io.Reader
-	stdout io.Writer
-	stderr io.Writer
-	root   command
-	logger zerolog.Logger
+	stdin         io.Reader
+	stdout        io.Writer
+	stderr        io.Writer
+	root          command
+	logger        zerolog.Logger
+	configManager *configpkg.ConfigManager
 }
 
 type command interface {
@@ -31,7 +32,6 @@ type command interface {
 func New(stdin io.Reader, stdout, stderr io.Writer) *App {
 	application := &App{stdin: stdin, stdout: stdout, stderr: stderr}
 	application.root = newRootCommand(application)
-	application.logger = application.initLogger()
 	return application
 }
 
@@ -59,7 +59,7 @@ func (a *App) client() *api.Client {
 }
 
 func (a *App) requireToken() (string, error) {
-	token, err := configpkg.LoadAuthToken()
+	token, err := a.configManager.LoadAuthToken()
 	if err != nil {
 		return "", err
 	}

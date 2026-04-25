@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/rs/zerolog"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/cli"
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
@@ -49,7 +51,7 @@ func TestGoCLIWorksWithMockServer(t *testing.T) {
 
 	runCLI(t, "sync-setup", "--vault", vaultID, "--path", vaultA, "--password", "sync-secret")
 	runCLI(t, "sync", "--path", vaultA)
-	token, err := configpkg.LoadAuthToken()
+	token, err := configpkg.NewConfigManager(zerolog.New(io.Discard)).LoadAuthToken()
 	if err != nil || token == "" {
 		t.Fatalf("failed to load auth token: %v", err)
 	}

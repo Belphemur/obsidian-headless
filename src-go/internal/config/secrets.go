@@ -1,7 +1,6 @@
 package config
 
 import (
-	"io"
 	"sync"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
@@ -22,19 +21,12 @@ type SecretStore struct {
 
 // NewSecretStore creates a new SecretStore, loading or creating the master key
 // needed for the encrypted-file fallback.
-func NewSecretStore() (*SecretStore, error) {
+func NewSecretStore(logger zerolog.Logger) (*SecretStore, error) {
 	masterKey, err := LoadOrCreateMasterKey()
 	if err != nil {
 		return nil, err
 	}
-	return &SecretStore{masterKey: masterKey, logger: zerolog.New(io.Discard)}, nil
-}
-
-// SetLogger configures a logger for debug output from the secret store.
-func (s *SecretStore) SetLogger(logger zerolog.Logger) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.logger = logger
+	return &SecretStore{masterKey: masterKey, logger: logger}, nil
 }
 
 // Close closes the fallback database connection if it was opened.

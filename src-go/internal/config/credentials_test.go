@@ -1,9 +1,12 @@
 package config
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/rs/zerolog"
 )
 
 func TestCredentials(t *testing.T) {
@@ -11,15 +14,17 @@ func TestCredentials(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
+	cm := NewConfigManager(zerolog.New(io.Discard))
+
 	email := "test@example.com"
 	password := "secret-password"
 
-	err := SaveCredentials(email, password)
+	err := cm.SaveCredentials(email, password)
 	if err != nil {
 		t.Fatalf("SaveCredentials failed: %v", err)
 	}
 
-	LoadedEmail, LoadedPassword, err := LoadCredentials()
+	LoadedEmail, LoadedPassword, err := cm.LoadCredentials()
 	if err != nil {
 		t.Fatalf("LoadCredentials failed: %v", err)
 	}
@@ -30,12 +35,12 @@ func TestCredentials(t *testing.T) {
 		t.Errorf("expected password %q, got %q", password, LoadedPassword)
 	}
 
-	err = ClearCredentials()
+	err = cm.ClearCredentials()
 	if err != nil {
 		t.Fatalf("ClearCredentials failed: %v", err)
 	}
 
-	clearedEmail, clearedPassword, err := LoadCredentials()
+	clearedEmail, clearedPassword, err := cm.LoadCredentials()
 	if err != nil {
 		t.Fatalf("LoadCredentials after clear failed: %v", err)
 	}
@@ -52,10 +57,12 @@ func TestCredentialsPersistMasterKey(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
+	cm := NewConfigManager(zerolog.New(io.Discard))
+
 	email := "test@example.com"
 	password := "secret-password"
 
-	err := SaveCredentials(email, password)
+	err := cm.SaveCredentials(email, password)
 	if err != nil {
 		t.Fatalf("SaveCredentials failed: %v", err)
 	}

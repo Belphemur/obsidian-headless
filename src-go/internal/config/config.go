@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/rs/zerolog"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -20,6 +21,103 @@ var (
 	ValidFileTypes        = []string{"image", "audio", "video", "pdf", "unsupported"}
 	ValidConfigCategories = []string{"app", "appearance", "appearance-data", "hotkey", "core-plugin", "core-plugin-data", "community-plugin", "community-plugin-data"}
 )
+
+// ConfigManager provides credential and auth-token operations with a configured logger.
+type ConfigManager struct {
+	logger zerolog.Logger
+}
+
+// NewConfigManager creates a new ConfigManager with the given logger.
+func NewConfigManager(logger zerolog.Logger) *ConfigManager {
+	return &ConfigManager{logger: logger}
+}
+
+func (cm *ConfigManager) secretStore() (*SecretStore, error) {
+	return NewSecretStore(cm.logger)
+}
+
+// SaveCredentials stores email and password in the secret store.
+func (cm *ConfigManager) SaveCredentials(email, password string) error {
+	store, err := cm.secretStore()
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	if err := store.Set("email", email); err != nil {
+		return err
+	}
+	if err := store.Set("password", password); err != nil {
+		return err
+	}
+	return nil
+}
+
+// LoadCredentials retrieves email and password from the secret store.
+func (cm *ConfigManager) LoadCredentials() (string, string, error) {
+	store, err := cm.secretStore()
+	if err != nil {
+		return "", "", err
+	}
+	defer store.Close()
+	email, err := store.Get("email")
+	if err != nil {
+		return "", "", err
+	}
+	password, err := store.Get("password")
+	if err != nil {
+		return "", "", err
+	}
+	return email, password, nil
+}
+
+// ClearCredentials removes email and password from the secret store.
+func (cm *ConfigManager) ClearCredentials() error {
+	store, err := cm.secretStore()
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	_ = store.Delete("email")
+	_ = store.Delete("password")
+	return nil
+}
+
+// LoadAuthToken retrieves the auth token from environment or secret store.
+func (cm *ConfigManager) LoadAuthToken() (string, error) {
+	if token := strings.TrimSpace(os.Getenv("OBSIDIAN_AUTH_TOKEN")); token != "" {
+		return token, nil
+	}
+	store, err := cm.secretStore()
+	if err != nil {
+		return "", err
+	}
+	defer store.Close()
+	token, err := store.Get("auth_token")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(token), nil
+}
+
+// SaveAuthToken stores the auth token in the secret store.
+func (cm *ConfigManager) SaveAuthToken(token string) error {
+	store, err := cm.secretStore()
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	return store.Set("auth_token", strings.TrimSpace(token))
+}
+
+// ClearAuthToken removes the auth token from the secret store.
+func (cm *ConfigManager) ClearAuthToken() error {
+	store, err := cm.secretStore()
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	return store.Delete("auth_token")
+}
 
 func BaseDir() (string, error) {
 	home, err := os.UserHomeDir()
@@ -43,85 +141,8 @@ func CredentialsDBPath() (string, error) {
 	return filepath.Join(base, "credentials.db"), nil
 }
 
-func SaveCredentials(email, password string) error {
-	store, err := NewSecretStore()
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-	if err := store.Set("email", email); err != nil {
-		return err
-	}
-	if err := store.Set("password", password); err != nil {
-		return err
-	}
-	return nil
-}
-
-func LoadCredentials() (string, string, error) {
-	store, err := NewSecretStore()
-	if err != nil {
-		return "", "", err
-	}
-	defer store.Close()
-	email, err := store.Get("email")
-	if err != nil {
-		return "", "", err
-	}
-	password, err := store.Get("password")
-	if err != nil {
-		return "", "", err
-	}
-	return email, password, nil
-}
-
-func ClearCredentials() error {
-	store, err := NewSecretStore()
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-	_ = store.Delete("email")
-	_ = store.Delete("password")
-	return nil
-}
-
 func ensureDir(path string) error {
 	return os.MkdirAll(path, 0o700)
-}
-
-func LoadAuthToken() (string, error) {
-	if token := strings.TrimSpace(os.Getenv("OBSIDIAN_AUTH_TOKEN")); token != "" {
-		return token, nil
-	}
-	store, err := NewSecretStore()
-	if err != nil {
-		return "", err
-	}
-	defer store.Close()
-	token, err := store.Get("auth_token")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(token), nil
-}
-
-func SaveAuthToken(token string) error {
-	store, err := NewSecretStore()
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-	return store.Set("auth_token", strings.TrimSpace(token))
-}
-
-func ClearAuthToken() error {
-	store, err := NewSecretStore()
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-	return store.Delete("auth_token")
 }
 
 // MasterKeyPath returns the path to the 32-byte master key used to encrypt
