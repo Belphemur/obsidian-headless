@@ -130,10 +130,10 @@ func (c *Client) CreateVault(ctx context.Context, token, name, keyHash, salt, re
 func (c *Client) ValidateVaultAccess(ctx context.Context, token, vaultID, keyHash, host string, supportedVersion int) error {
 	body := map[string]any{
 		"token":                        token,
-		"vault_uid":                    vaultID,
+		"uid":                          vaultID,
 		"host":                         host,
 		"supported_encryption_version": supportedVersion,
-		"encryption_version":           3,
+		"encryption_version":           supportedVersion,
 	}
 	if keyHash != "" {
 		body["keyhash"] = keyHash
