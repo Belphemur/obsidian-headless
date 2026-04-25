@@ -126,27 +126,20 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		return err
 	}
 	e.mu.Lock()
-	validRemote := make(map[string]model.FileRecord)
-	deletedRemote := make(map[string]model.FileRecord)
+	currentRemote := make(map[string]model.FileRecord)
 	for path, record := range e.remote {
 		if !isValidPath(path) {
 			e.Logger.Warn().Str("path", path).Msg("removing invalid path from remote")
 			continue
 		}
-		if record.Deleted {
-			deletedRemote[path] = record
-		} else {
-			validRemote[path] = record
-		}
+		currentRemote[path] = record
 	}
 	e.mu.Unlock()
-	e.Logger.Debug().Int("deleted_records", len(deletedRemote)).Msg("found deleted files from server")
-	plan := buildPlan(currentLocal, previousLocal, validRemote, previousRemote, deletedRemote)
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote)
 	e.Logger.Info().
 		Int("planned_actions", len(plan)).
 		Int("local_files", len(currentLocal)).
-		Int("remote_files", len(validRemote)).
-		Int("deleted_remote", len(deletedRemote)).
+		Int("remote_files", len(currentRemote)).
 		Int("previous_local", len(previousLocal)).
 		Int("previous_remote", len(previousRemote)).
 		Msg("sync plan created")

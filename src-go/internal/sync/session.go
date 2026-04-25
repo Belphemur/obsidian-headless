@@ -223,6 +223,7 @@ func (s *remoteSession) push(record model.FileRecord, data []byte) error {
 	}
 	var response map[string]any
 	for {
+		response = make(map[string]any)
 		if err := s.readJSON(&response); err != nil {
 			return fmt.Errorf("push readJSON error: %w", err)
 		}
@@ -255,6 +256,7 @@ func (s *remoteSession) push(record model.FileRecord, data []byte) error {
 		}
 		var response map[string]any
 		for {
+			response = make(map[string]any)
 			if err := s.readJSON(&response); err != nil {
 				return fmt.Errorf("push chunk readJSON error: %w", err)
 			}
@@ -296,6 +298,7 @@ func (s *remoteSession) delete(path string) error {
 	}
 	var response map[string]any
 	for {
+		response = make(map[string]any)
 		if err := s.readJSON(&response); err != nil {
 			return fmt.Errorf("delete readJSON error: %w", err)
 		}

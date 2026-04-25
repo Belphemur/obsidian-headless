@@ -11,9 +11,9 @@ type syncAction struct {
 	Kind string
 }
 
-func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, deletedRemote map[string]model.FileRecord) []syncAction {
+func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[string]model.FileRecord) []syncAction {
 	pathsSet := map[string]struct{}{}
-	for _, collection := range []map[string]model.FileRecord{currentLocal, previousLocal, currentRemote, previousRemote, deletedRemote} {
+	for _, collection := range []map[string]model.FileRecord{currentLocal, previousLocal, currentRemote, previousRemote} {
 		for path := range collection {
 			if isValidPath(path) {
 				pathsSet[path] = struct{}{}
@@ -31,31 +31,38 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, delet
 		previousL, hasPreviousL := previousLocal[path]
 		currentR, hasCurrentR := currentRemote[path]
 		previousR, hasPreviousR := previousRemote[path]
-		isDeleted := false
-		if dr, ok := deletedRemote[path]; ok && dr.Deleted {
-			isDeleted = true
-		}
 		localChanged := recordChanged(hasPreviousL, previousL, hasCurrentL, currentL)
 		remoteChanged := recordChanged(hasPreviousR, previousR, hasCurrentR, currentR)
-		if isDeleted {
-			actions = append(actions, syncAction{Path: path, Kind: "delete-remote"})
-			continue
-		}
+
+		// Server has an active (non-deleted) file
+		serverHasActiveFile := hasCurrentR && !currentR.Deleted
+		// Server has a deleted record for this file
+		serverHasDeletedRecord := hasCurrentR && currentR.Deleted
+
 		switch {
 		case remoteChanged && localChanged:
 			if chooseRemote(hasCurrentL, currentL, hasCurrentR, currentR, hasPreviousL, previousL, hasPreviousR, previousR) {
-				actions = append(actions, syncAction{Path: path, Kind: "download"})
-			} else if hasCurrentL {
+				if serverHasActiveFile {
+					actions = append(actions, syncAction{Path: path, Kind: "download"})
+				}
+				// If server record is deleted, nothing to download — let local win below
+			}
+			if hasCurrentL {
 				actions = append(actions, syncAction{Path: path, Kind: "upload"})
-			} else {
+			} else if serverHasActiveFile {
 				actions = append(actions, syncAction{Path: path, Kind: "delete-remote"})
 			}
 		case remoteChanged:
-			actions = append(actions, syncAction{Path: path, Kind: "download"})
+			if serverHasActiveFile {
+				actions = append(actions, syncAction{Path: path, Kind: "download"})
+			} else if serverHasDeletedRecord && hasCurrentL {
+				// Server deleted the file, but it was recreated locally
+				actions = append(actions, syncAction{Path: path, Kind: "upload"})
+			}
 		case localChanged:
 			if hasCurrentL {
 				actions = append(actions, syncAction{Path: path, Kind: "upload"})
-			} else {
+			} else if serverHasActiveFile {
 				actions = append(actions, syncAction{Path: path, Kind: "delete-remote"})
 			}
 		}
@@ -74,6 +81,10 @@ func recordChanged(hadBefore bool, before model.FileRecord, hasNow bool, now mod
 }
 
 func chooseRemote(hasCurrentL bool, currentL model.FileRecord, hasCurrentR bool, currentR model.FileRecord, hasPreviousL bool, previousL model.FileRecord, hasPreviousR bool, previousR model.FileRecord) bool {
+	// If remote file is deleted, local wins
+	if hasCurrentR && currentR.Deleted {
+		return false
+	}
 	localTime := int64(0)
 	remoteTime := int64(0)
 	if hasCurrentL {

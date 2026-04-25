@@ -39,13 +39,13 @@ func TestGoCLIWorksWithMockServer(t *testing.T) {
 	mustWriteFile(t, filepath.Join(vaultA, "hello.md"), []byte("# Hello from A\n"))
 
 	runCLI(t, "login", "--email", testEmail, "--password", "secret")
-	createOutput := runCLI(t, "sync-create-remote", "--name", "Go Port Vault", "--password", "sync-secret")
+	createOutput := runCLI(t, "sync-create-remote", "--name", "Go Port Vault", "--encryption", "standard")
 	vaultID := parseTrailingID(createOutput)
 	if vaultID == "" {
 		t.Fatalf("expected vault id in %q", createOutput)
 	}
 
-	runCLI(t, "sync-setup", "--vault", vaultID, "--path", vaultA, "--password", "sync-secret")
+	runCLI(t, "sync-setup", "--vault", vaultID, "--path", vaultA)
 	runCLI(t, "sync", "--path", vaultA)
 	token, err := configpkg.LoadAuthToken()
 	if err != nil || token == "" {
@@ -205,7 +205,7 @@ func pushRemoteFile(t *testing.T, token, vaultID, path string, content []byte) {
 		"version":            0,
 		"initial":            false,
 		"device":             "test-remote",
-		"encryption_version": 3,
+		"encryption_version": 0,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -234,8 +234,14 @@ func pushRemoteFile(t *testing.T, token, vaultID, path string, content []byte) {
 		t.Fatal(err)
 	}
 	var response map[string]any
-	if err := conn.ReadJSON(&response); err != nil {
-		t.Fatal(err)
+	for {
+		if err := conn.ReadJSON(&response); err != nil {
+			t.Fatal(err)
+		}
+		if op, ok := response["op"].(string); ok && op == "push" {
+			continue
+		}
+		break
 	}
 	if response["res"] != "next" {
 		t.Fatalf("expected next response, got %#v", response)
@@ -243,9 +249,15 @@ func pushRemoteFile(t *testing.T, token, vaultID, path string, content []byte) {
 	if err := conn.WriteMessage(websocket.BinaryMessage, content); err != nil {
 		t.Fatal(err)
 	}
-	response = map[string]any{}
-	if err := conn.ReadJSON(&response); err != nil {
-		t.Fatal(err)
+	for {
+		response = map[string]any{}
+		if err := conn.ReadJSON(&response); err != nil {
+			t.Fatal(err)
+		}
+		if op, ok := response["op"].(string); ok && op == "push" {
+			continue
+		}
+		break
 	}
 	if response["res"] != "ok" {
 		t.Fatalf("expected ok response, got %#v", response)
