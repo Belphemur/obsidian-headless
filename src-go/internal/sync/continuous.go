@@ -1,0 +1,324 @@
+package sync
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/gorilla/websocket"
+
+	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
+	watchpkg "github.com/Belphemur/obsidian-headless/src-go/internal/sync/watch"
+)
+
+const (
+	continuousDebounce = 500 * time.Millisecond
+	reconnectBackoff   = 5 * time.Second
+)
+
+type continuousState struct {
+	mu        sync.Mutex
+	conn      *websocket.Conn
+	remote    map[string]model.FileRecord
+	version   int64
+	stopClose func() bool
+}
+
+func (e *Engine) RunContinuous(ctx context.Context) error {
+	statePath, err := configpkg.StatePath(e.Config.VaultID, e.Config.StatePath)
+	if err != nil {
+		return err
+	}
+	store, err := storage.Open(statePath)
+	if err != nil {
+		return err
+	}
+	version, _ := store.Version()
+	initial, _ := store.Initial()
+	_ = store.Close()
+
+	cs := &continuousState{
+		remote:  make(map[string]model.FileRecord),
+		version: version,
+	}
+
+	defer func() {
+		cs.mu.Lock()
+		if cs.stopClose != nil {
+			cs.stopClose()
+			cs.stopClose = nil
+		}
+		if cs.conn != nil {
+			_ = cs.conn.Close()
+			cs.conn = nil
+		}
+		cs.mu.Unlock()
+	}()
+
+	connect := func() error {
+		cs.mu.Lock()
+		defer cs.mu.Unlock()
+
+		if cs.stopClose != nil {
+			cs.stopClose()
+			cs.stopClose = nil
+		}
+		if cs.conn != nil {
+			_ = cs.conn.Close()
+			cs.conn = nil
+		}
+		clear(cs.remote)
+
+		conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
+		if err != nil {
+			return fmt.Errorf("failed to dial websocket: %w", err)
+		}
+
+		stopClose := context.AfterFunc(ctx, func() {
+			_ = conn.Close()
+		})
+
+		newVersion, remote, err := e.handshake(ctx, conn, cs.version, initial)
+		if err != nil {
+			stopClose()
+			_ = conn.Close()
+			return err
+		}
+
+		cs.conn = conn
+		cs.stopClose = stopClose
+		cs.version = newVersion
+		cs.remote = remote
+		return nil
+	}
+
+	if err := connect(); err != nil {
+		return err
+	}
+
+	trigger := make(chan struct{}, 1)
+	var readPumpDone chan struct{}
+
+	var startReadPump func()
+	startReadPump = func() {
+		done := make(chan struct{})
+		readPumpDone = done
+		go func() {
+			defer close(done)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
+				cs.mu.Lock()
+				conn := cs.conn
+				remote := cs.remote
+				ver := cs.version
+				cs.mu.Unlock()
+
+				if conn == nil {
+					return
+				}
+
+				_, data, err := conn.ReadMessage()
+				if err != nil {
+					if ctx.Err() != nil {
+						return
+					}
+					if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+						e.Logger.Debug().Err(err).Msg("continuous: websocket closed normally")
+					} else {
+						e.Logger.Error().Err(err).Msg("continuous: websocket read error")
+					}
+					return
+				}
+
+				msg, err := decodeJSONMessage(data)
+				if err != nil {
+					e.Logger.Warn().Err(err).Msg("continuous: failed to decode message")
+					continue
+				}
+
+				op, _ := msg["op"].(string)
+				switch op {
+				case "push":
+					session := newRemoteSession(conn, remote, ver, ctx, e.enc, e.Logger, e.rawKey)
+					record := session.parseRemoteRecord(msg)
+					if record.Path != "" {
+						cs.mu.Lock()
+						cs.remote[record.Path] = record
+						cs.mu.Unlock()
+						e.Logger.Debug().Str("path", record.Path).Msg("continuous: received push")
+					}
+
+					select {
+					case trigger <- struct{}{}:
+					default:
+					}
+				case "ready":
+					cs.mu.Lock()
+					cs.version = int64Value(msg["version"])
+					cs.mu.Unlock()
+
+					e.Logger.Debug().Int64("version", cs.version).Msg("continuous: received ready")
+				}
+			}
+		}()
+	}
+
+	startReadPump()
+
+	watcher, err := watchpkg.New(e.Config.VaultPath, append([]string{e.configDir(), ".git"}, e.Config.IgnoreFolders...), e.Logger)
+	if err != nil {
+		return err
+	}
+	go watcher.Run(ctx)
+
+	var debounceTimer *time.Timer
+	var debounceMu sync.Mutex
+	var doSync func()
+
+	scheduleSync := func() {
+		debounceMu.Lock()
+		defer debounceMu.Unlock()
+		if debounceTimer != nil {
+			debounceTimer.Stop()
+		}
+		debounceTimer = time.AfterFunc(continuousDebounce, func() {
+			doSync()
+		})
+	}
+
+	doSync = func() {
+		lock, err := e.acquireLock()
+		if err != nil {
+			e.Logger.Error().Err(err).Msg("continuous: failed to acquire lock")
+			return
+		}
+		defer lock()
+
+		store, err := storage.Open(statePath)
+		if err != nil {
+			e.Logger.Error().Err(err).Msg("continuous: failed to open state DB")
+			return
+		}
+		defer func() { _ = store.Close() }()
+
+		previousLocal, previousRemote, err := e.loadState(store)
+		if err != nil {
+			e.Logger.Error().Err(err).Msg("continuous: failed to load state")
+			return
+		}
+
+		currentLocal, err := e.scanLocal()
+		if err != nil {
+			e.Logger.Error().Err(err).Msg("continuous: failed to scan local")
+			return
+		}
+
+		cs.mu.Lock()
+		currentRemote := make(map[string]model.FileRecord)
+		for path, record := range cs.remote {
+			if !isValidPath(path) {
+				continue
+			}
+			currentRemote[path] = record
+		}
+		version := cs.version
+		cs.mu.Unlock()
+
+		plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote)
+		e.Logger.Info().Int("planned_actions", len(plan)).Msg("continuous: sync plan created")
+
+		if len(plan) == 0 {
+			return
+		}
+
+		// Open a dedicated connection for plan execution
+		connB, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
+		if err != nil {
+			e.Logger.Error().Err(err).Msg("continuous: failed to dial execution connection")
+			return
+		}
+		defer func() {
+			_ = connB.Close()
+		}()
+
+		execVersion, remoteCopy, err := e.handshake(ctx, connB, version, false)
+		if err != nil {
+			e.Logger.Error().Err(err).Msg("continuous: failed to handshake execution connection")
+			return
+		}
+
+		session := newRemoteSession(connB, remoteCopy, execVersion, ctx, e.enc, e.Logger, e.rawKey)
+		if err := e.executePlan(plan, currentLocal, session); err != nil {
+			e.Logger.Error().Err(err).Msg("continuous: failed to execute plan")
+			return
+		}
+
+		cs.mu.Lock()
+		versionForSave := cs.version
+		remoteForSave := make(map[string]model.FileRecord)
+		for path, record := range cs.remote {
+			if isValidPath(path) {
+				remoteForSave[path] = record
+			}
+		}
+		cs.mu.Unlock()
+
+		if err := e.saveState(store, currentLocal, remoteForSave, versionForSave); err != nil {
+			e.Logger.Error().Err(err).Msg("continuous: failed to save state")
+			return
+		}
+
+		e.Logger.Info().Msg("continuous: sync complete")
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-trigger:
+			scheduleSync()
+		case <-watcher.Out:
+			scheduleSync()
+		case <-readPumpDone:
+			e.Logger.Info().Msg("continuous: readPump exited, reconnecting...")
+			cs.mu.Lock()
+			if cs.stopClose != nil {
+				cs.stopClose()
+				cs.stopClose = nil
+			}
+			if cs.conn != nil {
+				_ = cs.conn.Close()
+				cs.conn = nil
+			}
+			clear(cs.remote)
+			cs.mu.Unlock()
+
+		reconnectLoop:
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-time.After(reconnectBackoff):
+					if err := connect(); err != nil {
+						e.Logger.Error().Err(err).Msg("continuous: reconnection failed, retrying...")
+						continue reconnectLoop
+					}
+					startReadPump()
+					select {
+					case trigger <- struct{}{}:
+					default:
+					}
+					break reconnectLoop
+				}
+			}
+		}
+	}
+}
