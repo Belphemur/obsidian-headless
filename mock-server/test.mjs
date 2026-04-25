@@ -254,7 +254,7 @@ describe("REST API", () => {
 
     const result = await post("/vault/access", {
       token: TEST_TOKEN,
-      uid: id,
+      vault_uid: id,
       keyhash: "any",
     });
     assert.equal(result.status, "ok");

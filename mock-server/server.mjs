@@ -193,9 +193,10 @@ const apiServer = http.createServer(async (req, res) => {
       case "/vault/access": {
         const user = requireToken(body, res);
         if (!user) return;
-        // Find vault by uid
+        // Find vault by vault_uid
+        const vaultUid = body.vault_uid;
         const vault = [...vaults.values()].find(
-          (v) => v.id === body.uid || v.uid === body.uid,
+          (v) => v.id === vaultUid || v.uid === vaultUid,
         );
         if (!vault) {
           sendJson(res, { error: "Vault not found" }, 404);
