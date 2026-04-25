@@ -2,8 +2,8 @@ package sync
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -235,9 +235,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	// Save current remote state (encrypt paths for e2ee vaults)
 	e.mu.Lock()
 	remoteToSave := make(map[string]model.FileRecord, len(e.remote))
-	for path, record := range e.remote {
-		remoteToSave[path] = record
-	}
+	maps.Copy(remoteToSave, e.remote)
 	e.mu.Unlock()
 
 	if e.rawKey != nil {
@@ -336,145 +334,4 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			}
 		}
 	}
-}
-
-func (e *Engine) ensureConnected(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if e.conn != nil {
-		return nil
-	}
-
-	keyHash := ""
-	if e.rawKey != nil {
-		derivedKeyHash, err := encryption.ComputeKeyHash(e.rawKey, e.Config.EncryptionSalt, encryption.EncryptionVersion(e.Config.EncryptionVersion))
-		if err != nil {
-			return fmt.Errorf("failed to compute key hash: %w", err)
-		}
-		e.Logger.Debug().Str("keyHash", derivedKeyHash).Msg("computed key hash for init")
-		keyHash = derivedKeyHash
-	}
-
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
-	if err != nil {
-		return fmt.Errorf("failed to dial websocket: %w", err)
-	}
-
-	e.stopClose = context.AfterFunc(ctx, func() {
-		_ = conn.Close()
-	})
-
-	initMessage := map[string]any{
-		"op":                 "init",
-		"token":              e.Token,
-		"id":                 e.Config.VaultID,
-		"keyhash":            keyHash,
-		"version":            e.version,
-		"initial":            e.initial,
-		"device":             e.deviceName(),
-		"encryption_version": e.Config.EncryptionVersion,
-	}
-
-	if err := writeJSONLogged(conn, initMessage, e.Logger); err != nil {
-		e.stopClose()
-		_ = conn.Close()
-		return fmt.Errorf("failed to send init: %w", err)
-	}
-
-	// Read init response
-	var initResponse map[string]any
-	if err := readJSONLogged(conn, &initResponse, e.Logger); err != nil {
-		e.stopClose()
-		_ = conn.Close()
-		return fmt.Errorf("failed to read init response: %w", err)
-	}
-	e.Logger.Debug().Interface("initResponse", initResponse).Msg("init response received")
-	if res, _ := initResponse["res"].(string); res == "err" || stringValue(initResponse["status"]) == "err" {
-		e.stopClose()
-		_ = conn.Close()
-		return fmt.Errorf("init failed: %s", stringValue(initResponse["msg"]))
-	}
-
-	// Read existing files and ready message
-	for {
-		var msg map[string]any
-		if err := readJSONLogged(conn, &msg, e.Logger); err != nil {
-			e.stopClose()
-			_ = conn.Close()
-			return fmt.Errorf("failed to read ready message: %w", err)
-		}
-		e.Logger.Debug().Str("op", stringValue(msg["op"])).Interface("msg", msg).Msg("init handshake message")
-		if op, _ := msg["op"].(string); op == "ready" {
-			e.version = int64Value(msg["version"])
-			e.Logger.Info().Int64("version", e.version).Msg("received ready")
-			break
-		}
-		if op, _ := msg["op"].(string); op == "push" {
-			session := newRemoteSession(conn, e.remote, e.version, ctx, e.enc, e.Logger, e.rawKey)
-			record := session.parseRemoteRecord(msg)
-			if record.Path != "" {
-				e.remote[record.Path] = record
-				e.Logger.Debug().Str("path", record.Path).Int64("uid", record.UID).Msg("added remote file from init")
-			}
-		}
-	}
-
-	e.conn = conn
-	return nil
-}
-
-func decodeJSONMessage(data []byte) (map[string]any, error) {
-	var msg map[string]any
-	err := json.Unmarshal(data, &msg)
-	return msg, err
-}
-
-func (e *Engine) deviceName() string {
-	if e.Config.DeviceName != "" {
-		return e.Config.DeviceName
-	}
-	name, err := os.Hostname()
-	if err != nil {
-		return "unknown"
-	}
-	return name
-}
-
-func (e *Engine) configDir() string {
-	return e.Config.ConfigDir
-}
-
-func (e *Engine) acquireLock() (func(), error) {
-	lockDir := configpkg.LockPath(e.Config.VaultPath, e.configDir())
-	if err := os.MkdirAll(lockDir, 0o755); err != nil {
-		return nil, err
-	}
-	lockName := e.Config.VaultID + ".lock"
-	lockFile := filepath.Join(lockDir, lockName)
-	f, err := os.Create(lockFile)
-	if err != nil {
-		if os.IsExist(err) {
-			info, statErr := os.Stat(lockFile)
-			if statErr == nil && time.Since(info.ModTime()) > staleLockAge {
-				if remErr := os.Remove(lockFile); remErr != nil {
-					return nil, fmt.Errorf("stale lock file but cannot remove: %w", remErr)
-				}
-				f, err = os.Create(lockFile)
-				if err != nil {
-					return nil, fmt.Errorf("lock file removed but cannot recreate: %w", err)
-				}
-			} else {
-				return nil, fmt.Errorf("sync in progress: %s", lockFile)
-			}
-		} else {
-			return nil, fmt.Errorf("cannot create lock file: %w", err)
-		}
-	}
-	host, _ := os.Hostname()
-	fmt.Fprintf(f, "%d %s %s\n", os.Getpid(), host, time.Now().Format(time.RFC3339))
-	f.Close()
-	return func() {
-		_ = os.Remove(lockFile)
-	}, nil
 }
