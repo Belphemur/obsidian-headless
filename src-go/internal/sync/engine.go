@@ -263,6 +263,17 @@ func (e *Engine) executePlan(plan []syncAction, currentLocal map[string]model.Fi
 			}
 			delete(session.remote, action.Path)
 			e.Logger.Info().Str("path", action.Path).Msg("deleted remote file")
+		case "delete-local":
+			localPath, err := util.SafeJoin(e.Config.VaultPath, action.Path)
+			if err != nil {
+				return err
+			}
+			if err := os.Remove(localPath); err != nil && !os.IsNotExist(err) {
+				e.Logger.Warn().Err(err).Str("path", action.Path).Msg("failed to delete local file")
+			}
+			delete(session.remote, action.Path)
+			delete(currentLocal, action.Path)
+			e.Logger.Info().Str("path", action.Path).Msg("deleted local file")
 		}
 	}
 	return nil

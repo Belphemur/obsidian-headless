@@ -44,8 +44,10 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[st
 			if chooseRemote(hasCurrentL, currentL, hasCurrentR, currentR, hasPreviousL, previousL, hasPreviousR, previousR) {
 				if serverHasActiveFile {
 					actions = append(actions, syncAction{Path: path, Kind: "download"})
+				} else if serverHasDeletedRecord {
+					// Server deleted, local changed - conflict. For now, let local win (upload)
+					// TODO: implement proper conflict resolution
 				}
-				// If server record is deleted, nothing to download — let local win below
 			}
 			if hasCurrentL {
 				actions = append(actions, syncAction{Path: path, Kind: "upload"})
@@ -56,8 +58,8 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[st
 			if serverHasActiveFile {
 				actions = append(actions, syncAction{Path: path, Kind: "download"})
 			} else if serverHasDeletedRecord && hasCurrentL {
-				// Server deleted the file, but it was recreated locally
-				actions = append(actions, syncAction{Path: path, Kind: "upload"})
+				// Server deleted the file and local hasn't changed - delete local copy
+				actions = append(actions, syncAction{Path: path, Kind: "delete-local"})
 			}
 		case localChanged:
 			if hasCurrentL {
