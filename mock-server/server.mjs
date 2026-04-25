@@ -398,27 +398,25 @@ wss.on("connection", (ws) => {
           }),
         );
 
-        // Send all existing files as pushes, then ready
+        // Send all files (including deleted) as pushes, then ready
         const files = vaultFiles.get(vaultId);
         if (files) {
           for (const [, record] of files) {
-            if (!record.deleted) {
-              ws.send(
-                JSON.stringify({
-                  op: "push",
-                  path: record.path,
-                  hash: record.hash || "",
-                  ctime: record.ctime || Date.now(),
-                  mtime: record.mtime || Date.now(),
-                  size: record.size || 0,
-                  folder: record.folder || false,
-                  deleted: false,
-                  uid: record.uid,
-                  device: record.device || deviceName,
-                  user: user.email,
-                }),
-              );
-            }
+            ws.send(
+              JSON.stringify({
+                op: "push",
+                path: record.path,
+                hash: record.hash || "",
+                ctime: record.ctime || Date.now(),
+                mtime: record.mtime || Date.now(),
+                size: record.size || 0,
+                folder: record.folder || false,
+                deleted: record.deleted || false,
+                uid: record.uid,
+                device: record.device || deviceName,
+                user: user.email,
+              }),
+            );
           }
         }
 
@@ -638,7 +636,8 @@ wss.on("connection", (ws) => {
  */
 function broadcastPush(vaultId, sender, record) {
   for (const client of wss.clients) {
-    if (client !== sender && client._vaultId === vaultId && client.readyState === 1) {
+    // Production broadcasts to ALL clients on the vault, including the sender
+    if (client._vaultId === vaultId && client.readyState === 1) {
       client.send(
         JSON.stringify({
           op: "push",
