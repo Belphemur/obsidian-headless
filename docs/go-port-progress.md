@@ -22,35 +22,23 @@
 - `npm test` reaches the mock-server suite, but the WebSocket assertions still fail under the available Node `v20.20.2` runtime because `WebSocket` is not globally defined there; the repository itself documents a newer Node runtime requirement.
 - Remaining work is focused on final repository-wide validation bookkeeping and opening the PR.
 
-## Review Fixes (April 2026)
+## Production Fixes (April 24, 2026)
 
-All open threads from copilot-pull-request-reviewer, gemini-code-assist, and
-coderabbitai have been addressed:
+The Go CLI has been validated against the production Obsidian Sync service:
 
-- **Secrets storage**: `EncryptionKey` is no longer written to the plain-text
-  config JSON (`json:"-"`). Instead it is AES-GCM encrypted with a
-  per-installation master key and stored in the vault's SQLite state DB.
-- **Auth token**: `LoadOrCreateMasterKey()` added to config package; ready for
-  future migration of auth token to the encrypted store.
-- **Config ID validation**: `validateConfigID` added to reject path-escaping
-  vault/site IDs in `SyncDir` / `PublishDir`.
-- **ValidateConfigDir**: now rejects `"."` and `".."`.
-- **api/client**: nil-target endpoints now decode and surface application-level
-  errors; `extractApplicationError` replaced with a single body-byte decode path.
-- **cli/sync**: unknown encryption modes now return an error (switch instead of
-  if); `ValidateVaultAccess` uses `vault.EncryptionVersion`.
-- **storage/state**: rollback guard fixed with named return; upsert strategy
-  (`INSERT … ON CONFLICT DO UPDATE`) replaces DELETE+INSERT.
-- **util/files**: `ScanVault` skips symlinks and streams SHA-256 via
-  `HashReader`; `SafeJoin` now rejects paths containing symlinked components.
-- **publish/engine**: symlink entries skipped in `scanLocal`.
-- **sync/engine**: watcher channel closure handled; WebSocket connections are
-  closed on context cancellation; `pull` validates actual byte count; cleanup
-  loop uses absolute vault root.
-- **sync/watch/watcher**: fullRescan guarded by `atomic.Bool`; per-subdirectory
-  goroutines; `addDirsRecursive` rewritten with `filepath.WalkDir` (no
-  deadlock); files in moved-in directories emit EventCreate.
-- **sync/watch/aggregator**: `emit` is now blocking so no events are silently
-  dropped.
-- **CI**: `.github/workflows/copilot-setup-steps.yml` provisions Node 24 and
-  Go 1.26.
+- **API client**: `ValidateVaultAccess` now sends correct `uid` field (was
+  `vault_uid`) and uses the vault's actual `encryption_version`.
+- **Sync engine**: Replaced concurrent `readLoop` with synchronous init handshake
+  to eliminate races where two goroutines read from the same WebSocket.
+- **State persistence**: `RunOnce` now saves local and remote file records after
+  sync to the SQLite state DB, preventing false re-syncs on subsequent runs.
+- **Content decryption**: `session.pull` now decrypts downloaded file content
+  before writing to disk (files were previously saved as encrypted blobs).
+- **WebSocket hang**: `Engine.Close` now cancels the `context.AfterFunc`
+  goroutine, allowing one-shot sync to exit cleanly.
+- **Verbose logging**: All WebSocket text/binary messages are logged with
+  direction, type, size, and payload for protocol reverse engineering.
+- **Mock server**: Updated to broadcast push echoes to all clients (including
+  sender) and send deleted files during init handshake.
+- **Protocol docs**: Updated `sync-protocol.md` with observed production
+  behavior: synchronous init flow, push echo semantics, and dual error formats.

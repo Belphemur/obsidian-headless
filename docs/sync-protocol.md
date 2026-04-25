@@ -101,6 +101,21 @@ On error:
 | `max_size` | number | Maximum file size in bytes (default: ~199 MB) |
 | `msg` | string | Error message (only on error) |
 
+### Init Handshake Flow
+
+After the initial `{"res":"ok"}` response, the server performs a **synchronous**
+handshake before the connection enters the normal read loop:
+
+1. Client sends `init` request
+2. Server responds with `{"res":"ok", ...}` (or error)
+3. Server sends **all** existing file records as `push` messages, **including**
+   deleted files (`deleted: true`)
+4. Server sends `{"op":"ready","version":N}` to signal completion
+
+The client **must** read these messages synchronously; starting a concurrent
+reader before the handshake completes will race with the synchronous reads and
+cause hangs or lost messages.
+
 ## Push Protocol
 
 ### Push Request (Client → Server)
@@ -159,7 +174,9 @@ or on the last chunk:
 
 ### Server Push Notification (Server → Client)
 
-When another device pushes a change:
+When any device (including the current client) pushes a change, the server
+broadcasts a push notification to **all** connected clients on the vault:
+
 ```json
 {
   "op": "push",
@@ -175,6 +192,11 @@ When another device pushes a change:
   "user": "user@example.com"
 }
 ```
+
+**Important**: The server echoes push notifications back to the sender. The
+client must detect and ignore these self-echoes to avoid infinite sync loops.
+A common approach is to compare the `device` and `mtime` fields with the most
+recently pushed file.
 
 ### Ready Notification (Server → Client)
 
@@ -207,14 +229,23 @@ this point.
   "res": "ok",
   "size": 1024,
   "pieces": 1,
-  "deleted": false
+  "deleted": false,
+  "hash": "<encrypted-or-raw-hash>"
 }
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `res` | string | `"ok"` or `"err"` |
+| `size` | number | Decrypted file size in bytes |
+| `pieces` | number | Number of binary chunks to follow |
+| `deleted` | boolean | Whether the file was deleted |
+| `hash` | string | Encrypted content hash (may be raw hex for legacy files) |
 
 If `deleted` is `true`, no binary data follows.
 
 Otherwise, the server sends `pieces` binary frames containing the encrypted file
-content. The client decrypts the concatenated result.
+content. The client concatenates the chunks and decrypts the result.
 
 ## Other Operations
 
@@ -320,14 +351,19 @@ structure. See [Encryption Protocol](./encryption-protocol.md) for details.
 
 ## Error Handling
 
-Server errors have the format:
+Server errors use one of two formats:
+
 ```json
 { "res": "err", "msg": "Human-readable error message" }
 ```
-or:
+
+or (observed during init):
+
 ```json
 { "status": "err", "message": "Human-readable error message" }
 ```
+
+The client should check both `res` and `status` fields for errors.
 
 The client uses exponential backoff for reconnection:
 - **Base delay**: 5 seconds
