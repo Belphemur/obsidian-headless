@@ -356,9 +356,9 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		e.Logger.Info().Msg("continuous: sync complete")
 	}
 
-	if initial {
-		scheduleSync()
-	}
+	// Always run a full sync on startup to catch local changes made
+	// while the client was stopped.
+	scheduleSync()
 
 	for {
 		select {
