@@ -190,18 +190,6 @@ func (e *Engine) loadState(store *storage.StateStore) (previousLocal, previousRe
 	if err != nil {
 		return nil, nil, err
 	}
-	if e.rawKey != nil {
-		decryptedRemote := make(map[string]model.FileRecord)
-		for path, record := range previousRemote {
-			decPath, err := e.enc.DecryptPath(path)
-			if err != nil {
-				e.Logger.Warn().Err(err).Str("path", path).Msg("failed to decrypt path from state")
-				decPath = path
-			}
-			decryptedRemote[decPath] = record
-		}
-		previousRemote = decryptedRemote
-	}
 	return previousLocal, previousRemote, nil
 }
 
@@ -296,24 +284,7 @@ func (e *Engine) saveState(store *storage.StateStore, currentLocal map[string]mo
 		return fmt.Errorf("failed to save local state: %w", err)
 	}
 
-	remoteToSave := make(map[string]model.FileRecord, len(currentRemote))
-	maps.Copy(remoteToSave, currentRemote)
-
-	if e.rawKey != nil {
-		encryptedRemote := make(map[string]model.FileRecord, len(remoteToSave))
-		for path, record := range remoteToSave {
-			encPath, err := e.enc.EncryptPath(path)
-			if err != nil {
-				e.Logger.Warn().Err(err).Str("path", path).Msg("failed to encrypt path for state")
-				encPath = path
-			}
-			record.Path = encPath
-			encryptedRemote[encPath] = record
-		}
-		remoteToSave = encryptedRemote
-	}
-
-	if err := store.ReplaceServerFiles(remoteToSave); err != nil {
+	if err := store.ReplaceServerFiles(currentRemote); err != nil {
 		return fmt.Errorf("failed to save remote state: %w", err)
 	}
 
