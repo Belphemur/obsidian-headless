@@ -280,6 +280,16 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		}
 
 		cs.mu.Lock()
+		// Merge changes made by executePlan (uploads/deletions) back into cs.remote
+		// so that saveState captures the true post-sync remote state.
+		for path := range currentRemote {
+			if _, ok := session.remote[path]; !ok {
+				delete(cs.remote, path)
+			}
+		}
+		for path, record := range session.remote {
+			cs.remote[path] = record
+		}
 		versionForSave := cs.version
 		remoteForSave := make(map[string]model.FileRecord)
 		for path, record := range cs.remote {
