@@ -16,16 +16,20 @@ import (
 )
 
 const (
-	continuousDebounce = 500 * time.Millisecond
-	reconnectBackoff   = 5 * time.Second
+	continuousDebounce      = 500 * time.Millisecond
+	reconnectBackoff        = 5 * time.Second
+	heartbeatInterval       = 20 * time.Second
+	heartbeatSendThreshold  = 10 * time.Second
+	heartbeatTimeout        = 120 * time.Second
 )
 
 type continuousState struct {
-	mu        sync.Mutex
-	conn      *websocket.Conn
-	remote    map[string]model.FileRecord
-	version   int64
-	stopClose func() bool
+	mu             sync.Mutex
+	conn           *websocket.Conn
+	remote         map[string]model.FileRecord
+	version        int64
+	stopClose      func() bool
+	lastMessageTs  time.Time
 }
 
 func (e *Engine) RunContinuous(ctx context.Context) error {
@@ -105,6 +109,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		cs.stopClose = stopClose
 		cs.version = newVersion
 		cs.remote = remote
+		cs.lastMessageTs = time.Now()
 		return nil
 	}
 
@@ -150,6 +155,10 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 					return
 				}
 
+				cs.mu.Lock()
+				cs.lastMessageTs = time.Now()
+				cs.mu.Unlock()
+
 				msg, err := decodeJSONMessage(data)
 				if err != nil {
 					e.Logger.Warn().Err(err).Msg("continuous: failed to decode message")
@@ -178,12 +187,51 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 					cs.mu.Unlock()
 
 					e.Logger.Debug().Int64("version", cs.version).Msg("continuous: received ready")
+				case "pong":
+					// Ignore pong responses
+				}
+			}
+		}()
+	}
+
+	startHeartbeat := func() {
+		go func() {
+			ticker := time.NewTicker(heartbeatInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					cs.mu.Lock()
+					conn := cs.conn
+					lastMsg := cs.lastMessageTs
+					cs.mu.Unlock()
+
+					if conn == nil {
+						return
+					}
+
+					elapsed := time.Since(lastMsg)
+					if elapsed >= heartbeatTimeout {
+						e.Logger.Warn().Dur("elapsed", elapsed).Msg("continuous: heartbeat timeout, closing connection")
+						_ = conn.Close()
+						return
+					}
+					if elapsed >= heartbeatSendThreshold {
+						if err := conn.WriteJSON(map[string]any{"op": "ping"}); err != nil {
+							e.Logger.Warn().Err(err).Msg("continuous: failed to send ping")
+						} else {
+							e.Logger.Debug().Msg("continuous: sent ping")
+						}
+					}
 				}
 			}
 		}()
 	}
 
 	startReadPump()
+	startHeartbeat()
 
 	watcher, err := watchpkg.New(e.Config.VaultPath, append([]string{e.configDir(), ".git"}, e.Config.IgnoreFolders...), e.Logger, rescanInterval)
 	if err != nil {
