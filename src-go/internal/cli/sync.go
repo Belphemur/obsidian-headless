@@ -178,6 +178,9 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := os.MkdirAll(absPath, 0o755); err != nil {
+				return fmt.Errorf("failed to create vault path %s: %w", absPath, err)
+			}
 			cfg := model.SyncConfig{VaultID: vault.ID, VaultName: vault.Name, VaultPath: absPath, Host: vault.Host, EncryptionVersion: vault.EncryptionVersion, EncryptionSalt: vault.Salt, ConflictStrategy: "merge", DeviceName: deviceName, ConfigDir: configDir, StatePath: statePath}
 			if cfg.DeviceName == "" {
 				cfg.DeviceName = configpkg.DefaultDeviceName()
