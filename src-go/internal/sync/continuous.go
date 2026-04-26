@@ -16,20 +16,20 @@ import (
 )
 
 const (
-	continuousDebounce      = 500 * time.Millisecond
-	reconnectBackoff        = 5 * time.Second
-	heartbeatInterval       = 20 * time.Second
-	heartbeatSendThreshold  = 10 * time.Second
-	heartbeatTimeout        = 120 * time.Second
+	continuousDebounce     = 500 * time.Millisecond
+	reconnectBackoff       = 5 * time.Second
+	heartbeatInterval      = 20 * time.Second
+	heartbeatSendThreshold = 10 * time.Second
+	heartbeatTimeout       = 120 * time.Second
 )
 
 type continuousState struct {
-	mu             sync.Mutex
-	conn           *websocket.Conn
-	remote         map[string]model.FileRecord
-	version        int64
-	stopClose      func() bool
-	lastMessageTs  time.Time
+	mu            sync.Mutex
+	conn          *websocket.Conn
+	remote        map[string]model.FileRecord
+	version       int64
+	stopClose     func() bool
+	lastMessageTs time.Time
 }
 
 func (e *Engine) RunContinuous(ctx context.Context) error {
@@ -318,7 +318,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		}
 
 		session := newRemoteSession(connB, currentRemote, execVersion, ctx, e.enc, e.Logger, e.rawKey)
-		if err := e.executePlan(plan, currentLocal, session); err != nil {
+		if err := e.executePlan(plan, currentLocal, previousRemote, session); err != nil {
 			e.Logger.Error().Err(err).Msg("continuous: failed to execute plan")
 			return
 		}
