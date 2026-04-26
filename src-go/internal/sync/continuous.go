@@ -260,15 +260,22 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			_ = connB.Close()
 		}()
 
-		execVersion, remoteCopy, err := e.handshake(ctx, connB, version, false)
+		execVersion, _, err := e.handshake(ctx, connB, version, false)
 		if err != nil {
 			e.Logger.Error().Err(err).Msg("continuous: failed to handshake execution connection")
 			return
 		}
 
-		session := newRemoteSession(connB, remoteCopy, execVersion, ctx, e.enc, e.Logger, e.rawKey)
+		session := newRemoteSession(connB, currentRemote, execVersion, ctx, e.enc, e.Logger, e.rawKey)
 		if err := e.executePlan(plan, currentLocal, session); err != nil {
 			e.Logger.Error().Err(err).Msg("continuous: failed to execute plan")
+			return
+		}
+
+		// Rescan local after executing the plan so state reflects downloaded files
+		currentLocal, err = e.scanLocal()
+		if err != nil {
+			e.Logger.Error().Err(err).Msg("continuous: failed to rescan local after sync")
 			return
 		}
 

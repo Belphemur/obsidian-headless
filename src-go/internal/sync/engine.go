@@ -149,6 +149,12 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	e.version = session.version
 	e.mu.Unlock()
 
+	// Rescan local after executing the plan so state reflects downloaded files
+	currentLocal, err = e.scanLocal()
+	if err != nil {
+		return err
+	}
+
 	if err := e.saveState(store, currentLocal, e.remote, session.version); err != nil {
 		return err
 	}
