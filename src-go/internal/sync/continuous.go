@@ -40,6 +40,18 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 	initial, _ := store.Initial()
 	_ = store.Close()
 
+	var rescanInterval time.Duration
+	if e.Config.SyncMode == "" || e.Config.SyncMode == "bidirectional" {
+		periodic := e.Config.PeriodicScan
+		if periodic == "" {
+			periodic = "1h"
+		}
+		rescanInterval, err = time.ParseDuration(periodic)
+		if err != nil {
+			return fmt.Errorf("invalid periodic-scan duration %q: %w", periodic, err)
+		}
+	}
+
 	cs := &continuousState{
 		remote:  make(map[string]model.FileRecord),
 		version: version,
@@ -102,8 +114,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 	trigger := make(chan struct{}, 1)
 	var readPumpDone chan struct{}
 
-	var startReadPump func()
-	startReadPump = func() {
+	startReadPump := func() {
 		done := make(chan struct{})
 		readPumpDone = done
 		go func() {
@@ -173,7 +184,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 
 	startReadPump()
 
-	watcher, err := watchpkg.New(e.Config.VaultPath, append([]string{e.configDir(), ".git"}, e.Config.IgnoreFolders...), e.Logger)
+	watcher, err := watchpkg.New(e.Config.VaultPath, append([]string{e.configDir(), ".git"}, e.Config.IgnoreFolders...), e.Logger, rescanInterval)
 	if err != nil {
 		return err
 	}

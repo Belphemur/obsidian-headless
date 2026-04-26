@@ -46,11 +46,11 @@ func newLoginCommand(app *App) *cobra.Command {
 
 			// Get credentials from flags or prompt
 			if email == "" {
-				fmt.Fprint(app.stdout, "Email: ")
-				fmt.Scanln(&email)
+				_, _ = fmt.Fprint(app.stdout, "Email: ")
+				_, _ = fmt.Scanln(&email)
 			}
 			if password == "" {
-				fmt.Fprint(app.stdout, "Password: ")
+				_, _ = fmt.Fprint(app.stdout, "Password: ")
 				pass, err := readPassword(app.stdin)
 				if err != nil {
 					return err
@@ -67,8 +67,8 @@ func newLoginCommand(app *App) *cobra.Command {
 				// Check if 2FA is required using APIError type (server returns 200 with error in body)
 				var apiErr *apipkg.APIError
 				if errors.As(err, &apiErr) && strings.Contains(strings.ToLower(apiErr.Message), "2fa") && mfa == "" {
-					fmt.Fprint(app.stdout, "2FA code: ")
-					fmt.Scanln(&mfa)
+					_, _ = fmt.Fprint(app.stdout, "2FA code: ")
+					_, _ = fmt.Scanln(&mfa)
 					if mfa != "" {
 						response, err = app.client().SignIn(cmd.Context(), email, password, mfa)
 						if err != nil {
@@ -93,10 +93,10 @@ func newLoginCommand(app *App) *cobra.Command {
 	command.Flags().StringVar(&password, "password", "", "account password")
 	command.Flags().StringVar(&mfa, "mfa", "", "MFA code")
 
-	viper.BindPFlag("email", command.Flags().Lookup("email"))
-	viper.BindPFlag("password", command.Flags().Lookup("password"))
-	viper.BindEnv("email", "OBSIDIAN_EMAIL")
-	viper.BindEnv("password", "OBSIDIAN_PASSWORD")
+	_ = viper.BindPFlag("email", command.Flags().Lookup("email"))
+	_ = viper.BindPFlag("password", command.Flags().Lookup("password"))
+	_ = viper.BindEnv("email", "OBSIDIAN_EMAIL")
+	_ = viper.BindEnv("password", "OBSIDIAN_PASSWORD")
 
 	return command
 }

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -247,6 +248,105 @@ func TestContinuousReconnection(t *testing.T) {
 	}
 
 	cancel()
+	if err := <-errCh; err != nil && err != context.Canceled {
+		t.Fatalf("RunContinuous error: %v", err)
+	}
+}
+
+func TestRunContinuousInvalidPeriodicScan(t *testing.T) {
+	e := &Engine{
+		Config: model.SyncConfig{
+			VaultID:      "test-invalid-periodic",
+			VaultPath:    t.TempDir(),
+			PeriodicScan: "not-a-duration",
+		},
+		Logger: testLogger(),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err := e.RunContinuous(ctx)
+	if err == nil {
+		t.Fatal("expected error for invalid periodic-scan duration, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid periodic-scan duration") {
+		t.Fatalf("expected invalid periodic-scan error, got: %v", err)
+	}
+}
+
+func TestRunContinuousPeriodicScanZero(t *testing.T) {
+	mock := newMockSyncServer(t)
+	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
+	defer server.Close()
+
+	u, _ := url.Parse(server.URL)
+	wsURL := "ws://" + u.Host
+
+	vault := t.TempDir()
+	statePath := filepath.Join(t.TempDir(), "state.db")
+
+	e := &Engine{
+		Config: model.SyncConfig{
+			VaultID:      "test-periodic-zero",
+			VaultPath:    vault,
+			Host:         wsURL,
+			StatePath:    statePath,
+			ConfigDir:    ".obsidian",
+			PeriodicScan: "0",
+		},
+		Logger: testLogger(),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- e.RunContinuous(ctx)
+	}()
+
+	time.Sleep(500 * time.Millisecond)
+	cancel()
+
+	if err := <-errCh; err != nil && err != context.Canceled {
+		t.Fatalf("RunContinuous error: %v", err)
+	}
+}
+
+func TestRunContinuousPeriodicScanEmptyDefault(t *testing.T) {
+	mock := newMockSyncServer(t)
+	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
+	defer server.Close()
+
+	u, _ := url.Parse(server.URL)
+	wsURL := "ws://" + u.Host
+
+	vault := t.TempDir()
+	statePath := filepath.Join(t.TempDir(), "state.db")
+
+	e := &Engine{
+		Config: model.SyncConfig{
+			VaultID:      "test-periodic-empty",
+			VaultPath:    vault,
+			Host:         wsURL,
+			StatePath:    statePath,
+			ConfigDir:    ".obsidian",
+			PeriodicScan: "",
+		},
+		Logger: testLogger(),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- e.RunContinuous(ctx)
+	}()
+
+	time.Sleep(500 * time.Millisecond)
+	cancel()
+
 	if err := <-errCh; err != nil && err != context.Canceled {
 		t.Fatalf("RunContinuous error: %v", err)
 	}

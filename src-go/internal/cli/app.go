@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -69,15 +68,4 @@ func (a *App) requireToken() (string, error) {
 	return token, nil
 }
 
-func (a *App) reader() *bufio.Reader {
-	return bufio.NewReader(a.stdin)
-}
 
-func (a *App) prompt(label string) (string, error) {
-	writeLines(a.stdout, label+": ")
-	line, err := a.reader().ReadString('\n')
-	if err != nil {
-		return "", err
-	}
-	return line, nil
-}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -126,6 +127,7 @@ Encryption modes:
 
 func newSyncSetupCommand(app *App) *cobra.Command {
 	var vaultSelector, localPath, password, deviceName, configDir, statePath string
+	var periodicScan string
 	command := &cobra.Command{
 		Use:   "sync-setup",
 		Short: "Attach a local folder to a remote vault",
@@ -181,12 +183,21 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 			if err := os.MkdirAll(absPath, 0o755); err != nil {
 				return fmt.Errorf("failed to create vault path %s: %w", absPath, err)
 			}
-			cfg := model.SyncConfig{VaultID: vault.ID, VaultName: vault.Name, VaultPath: absPath, Host: vault.Host, EncryptionVersion: vault.EncryptionVersion, EncryptionSalt: vault.Salt, ConflictStrategy: "merge", DeviceName: deviceName, ConfigDir: configDir, StatePath: statePath}
+			cfg := model.SyncConfig{VaultID: vault.ID, VaultName: vault.Name, VaultPath: absPath, Host: vault.Host, EncryptionVersion: vault.EncryptionVersion, EncryptionSalt: vault.Salt, ConflictStrategy: "merge", DeviceName: deviceName, ConfigDir: configDir, StatePath: statePath, PeriodicScan: periodicScan}
 			if cfg.DeviceName == "" {
 				cfg.DeviceName = configpkg.DefaultDeviceName()
 			}
 			if cfg.ConfigDir == "" {
 				cfg.ConfigDir = ".obsidian"
+			}
+			if cfg.PeriodicScan != "" {
+				d, err := time.ParseDuration(cfg.PeriodicScan)
+				if err != nil {
+					return fmt.Errorf("invalid periodic-scan duration %q: %w", cfg.PeriodicScan, err)
+				}
+				if d < 0 {
+					return fmt.Errorf("periodic-scan duration cannot be negative: %q", cfg.PeriodicScan)
+				}
 			}
 			if err := configpkg.WriteSyncConfig(cfg); err != nil {
 				return err
@@ -215,11 +226,13 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 	command.Flags().StringVar(&deviceName, "device-name", "", "device name")
 	command.Flags().StringVar(&configDir, "config-dir", ".obsidian", "config directory")
 	command.Flags().StringVar(&statePath, "state-path", "", "custom state database path (default: ~/.config/obsidian-headless/sync/{vaultID}/state.db)")
+	command.Flags().StringVar(&periodicScan, "periodic-scan", "1h", "periodic full rescan interval (e.g. 60s, 5m, 1h); set to 0 to disable. Only active in bidirectional mode.")
 	return command
 }
 
 func newSyncConfigCommand(app *App) *cobra.Command {
 	var localPath, mode, conflictStrategy, excludedFolders, fileTypes, configs, deviceName, configDir, statePath string
+	var periodicScan string
 	command := &cobra.Command{
 		Use:   "sync-config",
 		Short: "View or update sync settings",
@@ -285,6 +298,20 @@ func newSyncConfigCommand(app *App) *cobra.Command {
 				}
 				changed = true
 			}
+			if cmd.Flags().Changed("periodic-scan") {
+				if periodicScan == "" {
+					return fmt.Errorf("periodic-scan cannot be empty; use --periodic-scan=0 to disable")
+				}
+				d, err := time.ParseDuration(periodicScan)
+				if err != nil {
+					return fmt.Errorf("invalid periodic-scan duration %q: %w", periodicScan, err)
+				}
+				if d < 0 {
+					return fmt.Errorf("periodic-scan duration cannot be negative: %q", periodicScan)
+				}
+				cfg.PeriodicScan = periodicScan
+				changed = true
+			}
 			if !changed {
 				printSyncConfig(app, *cfg)
 				return nil
@@ -301,6 +328,7 @@ func newSyncConfigCommand(app *App) *cobra.Command {
 	command.Flags().StringVar(&deviceName, "device-name", "", "device name")
 	command.Flags().StringVar(&configDir, "config-dir", ".obsidian", "config directory")
 	command.Flags().StringVar(&statePath, "state-path", "", "custom state database path (default: ~/.config/obsidian-headless/sync/{vaultID}/state.db)")
+	command.Flags().StringVar(&periodicScan, "periodic-scan", "", "periodic full rescan interval (e.g. 60s, 5m, 1h); set to 0 to disable. Only active in bidirectional mode.")
 	return command
 }
 
@@ -423,6 +451,7 @@ func printSyncConfig(app *App, cfg model.SyncConfig) {
 		fmt.Sprintf("Conflict strategy: %s", valueOrDefault(cfg.ConflictStrategy, "merge")),
 		fmt.Sprintf("Device name: %s", valueOrDefault(cfg.DeviceName, configpkg.DefaultDeviceName())),
 		fmt.Sprintf("Config directory: %s", valueOrDefault(cfg.ConfigDir, ".obsidian")),
+		fmt.Sprintf("Periodic scan: %s", valueOrDefault(cfg.PeriodicScan, "1h")),
 		fmt.Sprintf("State DB: %s", statePath),
 	)
 }

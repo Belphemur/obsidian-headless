@@ -62,6 +62,7 @@ type SyncConfig struct {
 	AllowSpecialFiles []string `json:"allowSpecialFiles,omitempty"`
 	IgnoreFolders     []string `json:"ignoreFolders,omitempty"`
 	StatePath         string   `json:"statePath,omitempty"`
+	PeriodicScan      string   `json:"periodicScan,omitempty"`
 }
 
 type PublishConfig struct {

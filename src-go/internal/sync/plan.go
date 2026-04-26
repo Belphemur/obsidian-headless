@@ -42,12 +42,13 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[st
 		switch {
 		case remoteChanged && localChanged:
 			if chooseRemote(hasCurrentL, currentL, hasCurrentR, currentR, hasPreviousL, previousL, hasPreviousR, previousR) {
-				if serverHasActiveFile {
-					actions = append(actions, syncAction{Path: path, Kind: "download"})
-				} else if serverHasDeletedRecord {
-					// Server deleted, local changed - conflict. For now, let local win (upload)
-					// TODO: implement proper conflict resolution
-				}
+			if serverHasActiveFile {
+				actions = append(actions, syncAction{Path: path, Kind: "download"})
+			} else if serverHasDeletedRecord {
+				// Server deleted, local changed - conflict. For now, let local win (upload)
+				// TODO: implement proper conflict resolution
+				_ = serverHasDeletedRecord
+			}
 			}
 			if hasCurrentL {
 				actions = append(actions, syncAction{Path: path, Kind: "upload"})
@@ -103,30 +104,6 @@ func chooseRemote(hasCurrentL bool, currentL model.FileRecord, hasCurrentR bool,
 		return hasCurrentR && (!hasCurrentL || currentR.Hash != currentL.Hash)
 	}
 	return remoteTime > localTime
-}
-
-type syncActionKind int
-
-const (
-	actionDownload syncActionKind = iota
-	actionUpload
-	actionDeleteRemote
-	actionDeleteLocal
-)
-
-func (k syncActionKind) String() string {
-	switch k {
-	case actionDownload:
-		return "download"
-	case actionUpload:
-		return "upload"
-	case actionDeleteRemote:
-		return "delete-remote"
-	case actionDeleteLocal:
-		return "delete-local"
-	default:
-		return "unknown"
-	}
 }
 
 func isValidPath(path string) bool {
