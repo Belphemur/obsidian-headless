@@ -173,7 +173,14 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 
 	startReadPump()
 
-	watcher, err := watchpkg.New(e.Config.VaultPath, append([]string{e.configDir(), ".git"}, e.Config.IgnoreFolders...), e.Logger)
+	var rescanInterval time.Duration
+	if e.Config.PeriodicScan != "" && (e.Config.SyncMode == "" || e.Config.SyncMode == "bidirectional") {
+		rescanInterval, err = time.ParseDuration(e.Config.PeriodicScan)
+		if err != nil {
+			return fmt.Errorf("invalid periodic-scan duration %q: %w", e.Config.PeriodicScan, err)
+		}
+	}
+	watcher, err := watchpkg.New(e.Config.VaultPath, append([]string{e.configDir(), ".git"}, e.Config.IgnoreFolders...), e.Logger, rescanInterval)
 	if err != nil {
 		return err
 	}

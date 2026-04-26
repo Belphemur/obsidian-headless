@@ -19,32 +19,34 @@ const (
 )
 
 type Watcher struct {
-	root       string
-	fw         *fsnotify.Watcher
-	agg        *Aggregator
-	scanner    *Scanner
-	excludes   []string
-	logger     zerolog.Logger
-	Out        chan ScanEvent
-	rescanning atomic.Bool // guards against concurrent full-rescans
-	closing    atomic.Bool
-	wg         sync.WaitGroup
+	root           string
+	fw             *fsnotify.Watcher
+	agg            *Aggregator
+	scanner        *Scanner
+	excludes       []string
+	logger         zerolog.Logger
+	Out            chan ScanEvent
+	rescanInterval time.Duration
+	rescanning     atomic.Bool // guards against concurrent full-rescans
+	closing        atomic.Bool
+	wg             sync.WaitGroup
 }
 
-func New(root string, excludes []string, logger zerolog.Logger) (*Watcher, error) {
+func New(root string, excludes []string, logger zerolog.Logger, rescanInterval time.Duration) (*Watcher, error) {
 	fw, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
 	}
 	out := make(chan ScanEvent, eventBufSize)
 	watcher := &Watcher{
-		root:     root,
-		fw:       fw,
-		agg:      NewAggregator(out),
-		scanner:  NewScanner(),
-		excludes: excludes,
-		logger:   logger,
-		Out:      out,
+		root:           root,
+		fw:             fw,
+		agg:            NewAggregator(out),
+		scanner:        NewScanner(),
+		excludes:       excludes,
+		logger:         logger,
+		Out:            out,
+		rescanInterval: rescanInterval,
 	}
 	if err := watcher.addDirsRecursive(root); err != nil {
 		_ = fw.Close()
@@ -54,8 +56,13 @@ func New(root string, excludes []string, logger zerolog.Logger) (*Watcher, error
 }
 
 func (w *Watcher) Run(ctx context.Context) {
-	ticker := time.NewTicker(rescanInterval)
-	defer ticker.Stop()
+	var ticker *time.Ticker
+	var tickerCh <-chan time.Time
+	if w.rescanInterval > 0 {
+		ticker = time.NewTicker(w.rescanInterval)
+		defer ticker.Stop()
+		tickerCh = ticker.C
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -73,7 +80,7 @@ func (w *Watcher) Run(ctx context.Context) {
 				return
 			}
 			w.logger.Error().Err(err).Msg("fsnotify error")
-		case <-ticker.C:
+		case <-tickerCh:
 			w.startBackground(w.fullRescan)
 		}
 	}
