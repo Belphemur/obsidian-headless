@@ -294,7 +294,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		version := cs.version
 		cs.mu.Unlock()
 
-		plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote)
+		plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir())
 		e.Logger.Info().Int("planned_actions", len(plan)).Msg("continuous: sync plan created")
 
 		if len(plan) == 0 {

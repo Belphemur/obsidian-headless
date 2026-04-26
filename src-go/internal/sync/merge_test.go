@@ -51,7 +51,11 @@ func TestThreeWayMerge(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := threeWayMerge(tt.base, tt.local, tt.remote)
+			got, err := threeWayMerge(tt.base, tt.local, tt.remote)
+			if err != nil {
+				t.Errorf("threeWayMerge() unexpected error = %v", err)
+				return
+			}
 			if got != tt.want {
 				t.Errorf("threeWayMerge() = %q, want %q", got, tt.want)
 			}
@@ -83,7 +87,7 @@ func TestJSONMerge(t *testing.T) {
 			name:       "nested objects",
 			localJSON:  `{"x": {"a": 1}}`,
 			remoteJSON: `{"x": {"b": 2}}`,
-			want:       "{\n  \"x\": {\n    \"b\": 2\n  }\n}",
+			want:       "{\n  \"x\": {\n    \"a\": 1,\n    \"b\": 2\n  }\n}",
 		},
 		{
 			name:       "invalid local JSON",
@@ -144,6 +148,11 @@ func TestIsJSONConfigPath(t *testing.T) {
 		{"notes/config.json", ".obsidian", false},
 		{".obsidian/theme.css", ".obsidian", false},
 		{".obsidian/config.json", "", true},
+		{".obsidian/plugins/dataview/data.json", ".obsidian", true},
+		{".obsidian/themes/Things/manifest.json", ".obsidian", true},
+		{".obsidian\\plugins\\dataview\\data.json", ".obsidian", true},
+		{"custom-dir/app.json", "custom-dir", true},
+		{"custom-dir/plugins/x/data.json", "custom-dir", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

@@ -125,7 +125,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	version := e.version
 	e.mu.Unlock()
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote)
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir())
 	e.Logger.Info().
 		Int("planned_actions", len(plan)).
 		Int("local_files", len(currentLocal)).
@@ -148,7 +148,12 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 
 	e.mu.Lock()
 	e.version = session.version
-	maps.Copy(e.remote, currentRemote)
+	for path := range e.remote {
+		if _, ok := session.remote[path]; !ok {
+			delete(e.remote, path)
+		}
+	}
+	maps.Copy(e.remote, session.remote)
 	e.mu.Unlock()
 
 	// Rescan local after executing the plan so state reflects downloaded files
@@ -157,7 +162,14 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		return err
 	}
 
-	if err := e.saveState(store, currentLocal, currentRemote, session.version); err != nil {
+	updatedRemote := make(map[string]model.FileRecord)
+	for path, record := range session.remote {
+		if isValidPath(path) {
+			updatedRemote[path] = record
+		}
+	}
+
+	if err := e.saveState(store, currentLocal, updatedRemote, session.version); err != nil {
 		return err
 	}
 
@@ -314,16 +326,20 @@ func (e *Engine) mergeTextFile(path string, currentLocal, previousRemote map[str
 		return fmt.Errorf("read local: %w", err)
 	}
 
+	localRecord, hasLocal := currentLocal[path]
+	if !hasLocal {
+		return fmt.Errorf("local record missing for merge of %q", path)
+	}
+
 	baseRecord, hasBase := previousRemote[path]
 	var baseContent []byte
 	if hasBase && baseRecord.UID > 0 {
 		baseContent, err = session.pull(baseRecord.UID)
 		if err != nil {
-			e.Logger.Warn().Err(err).Str("path", path).Msg("failed to pull base version for merge")
-			baseContent = localContent
+			return fmt.Errorf("pull base for three-way merge: %w", err)
 		}
 	} else {
-		baseContent = localContent
+		return fmt.Errorf("no base version available for three-way merge of %q", path)
 	}
 
 	remoteRecord := session.remote[path]
@@ -332,7 +348,10 @@ func (e *Engine) mergeTextFile(path string, currentLocal, previousRemote map[str
 		return fmt.Errorf("pull remote: %w", err)
 	}
 
-	merged := threeWayMerge(string(baseContent), string(localContent), string(remoteContent))
+	merged, err := threeWayMerge(string(baseContent), string(localContent), string(remoteContent))
+	if err != nil {
+		return fmt.Errorf("three-way merge failed: %w", err)
+	}
 	mergedBytes := []byte(merged)
 
 	record := model.FileRecord{
@@ -340,11 +359,15 @@ func (e *Engine) mergeTextFile(path string, currentLocal, previousRemote map[str
 		Size:   int64(len(mergedBytes)),
 		Hash:   util.HashBytes(mergedBytes),
 		CTime:  remoteRecord.CTime,
-		MTime:  max(remoteRecord.MTime, currentLocal[path].MTime),
+		MTime:  max(remoteRecord.MTime, localRecord.MTime),
 		Folder: false,
 	}
 	if err := util.WriteFileWithTimes(e.Config.VaultPath, record, mergedBytes); err != nil {
 		return err
+	}
+
+	if err := session.push(record, mergedBytes); err != nil {
+		return fmt.Errorf("push merged text file: %w", err)
 	}
 
 	currentLocal[path] = record
@@ -361,6 +384,11 @@ func (e *Engine) mergeJSONFile(path string, currentLocal, previousRemote map[str
 	localContent, err := os.ReadFile(localPath)
 	if err != nil {
 		return fmt.Errorf("read local: %w", err)
+	}
+
+	localRecord, hasLocal := currentLocal[path]
+	if !hasLocal {
+		return fmt.Errorf("local record missing for merge of %q", path)
 	}
 
 	remoteRecord := session.remote[path]
@@ -380,11 +408,15 @@ func (e *Engine) mergeJSONFile(path string, currentLocal, previousRemote map[str
 		Size:   int64(len(mergedBytes)),
 		Hash:   util.HashBytes(mergedBytes),
 		CTime:  remoteRecord.CTime,
-		MTime:  max(remoteRecord.MTime, currentLocal[path].MTime),
+		MTime:  max(remoteRecord.MTime, localRecord.MTime),
 		Folder: false,
 	}
 	if err := util.WriteFileWithTimes(e.Config.VaultPath, record, mergedBytes); err != nil {
 		return err
+	}
+
+	if err := session.push(record, mergedBytes); err != nil {
+		return fmt.Errorf("push merged JSON config file: %w", err)
 	}
 
 	currentLocal[path] = record

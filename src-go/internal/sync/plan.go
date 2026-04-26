@@ -41,7 +41,7 @@ type syncAction struct {
 	Kind syncActionKind
 }
 
-func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[string]model.FileRecord) []syncAction {
+func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[string]model.FileRecord, configDir string) []syncAction {
 	pathsSet := map[string]struct{}{}
 	for _, collection := range []map[string]model.FileRecord{currentLocal, previousLocal, currentRemote, previousRemote} {
 		for path := range collection {
@@ -82,16 +82,25 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[st
 				// Neither side has an active file, nothing to do
 				break
 			}
-			// Both sides have active changes. Use merge for supported types,
-			// otherwise fall back to mtime-based winner.
-			if isMergeablePath(path) {
-				actions = append(actions, syncAction{Path: path, Kind: syncActionMergeText})
-			} else if isJSONConfigPath(path, ".obsidian") {
-				actions = append(actions, syncAction{Path: path, Kind: syncActionMergeJSON})
-			} else if chooseRemote(hasCurrentL, currentL, hasCurrentR, currentR, hasPreviousL, previousL, hasPreviousR, previousR) {
-				actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
+			if hasCurrentL {
+				// Both sides have active changes. Use merge for supported types,
+				// otherwise fall back to mtime-based winner.
+				if isMergeablePath(path) {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionMergeText})
+				} else if isJSONConfigPath(path, configDir) {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionMergeJSON})
+				} else if chooseRemote(hasCurrentL, currentL, hasCurrentR, currentR, hasPreviousL, previousL, hasPreviousR, previousR) {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
+				} else {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionUpload})
+				}
 			} else {
-				actions = append(actions, syncAction{Path: path, Kind: syncActionUpload})
+				// Local deleted, remote changed - fall back to mtime-based winner.
+				if chooseRemote(hasCurrentL, currentL, hasCurrentR, currentR, hasPreviousL, previousL, hasPreviousR, previousR) {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
+				} else if serverHasActiveFile {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionDeleteRemote})
+				}
 			}
 		case remoteChanged:
 			if serverHasActiveFile {

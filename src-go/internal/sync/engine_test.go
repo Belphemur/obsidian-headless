@@ -363,7 +363,7 @@ func TestExecutePlan(t *testing.T) {
 	currentRemote := remote
 	previousRemote := map[string]model.FileRecord{}
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote)
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian")
 	if len(plan) != 2 {
 		t.Fatalf("expected 2 actions, got %d: %+v", len(plan), plan)
 	}
