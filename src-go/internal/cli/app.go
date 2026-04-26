@@ -67,5 +67,3 @@ func (a *App) requireToken() (string, error) {
 	}
 	return token, nil
 }
-
-

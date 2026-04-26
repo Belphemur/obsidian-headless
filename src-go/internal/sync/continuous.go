@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -287,9 +288,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 				delete(cs.remote, path)
 			}
 		}
-		for path, record := range session.remote {
-			cs.remote[path] = record
-		}
+		maps.Copy(cs.remote, session.remote)
 		versionForSave := cs.version
 		remoteForSave := make(map[string]model.FileRecord)
 		for path, record := range cs.remote {

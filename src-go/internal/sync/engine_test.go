@@ -286,7 +286,7 @@ func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 				if err := conn.WriteJSON(map[string]any{"res": "next"}); err != nil {
 					return
 				}
-				for i := 0; i < pieces; i++ {
+				for i := range pieces {
 					_, chunk, err := conn.ReadMessage()
 					if err != nil {
 						return

@@ -6,9 +6,33 @@ import (
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 )
 
+type syncActionKind int
+
+const (
+	syncActionDownload syncActionKind = iota
+	syncActionUpload
+	syncActionDeleteRemote
+	syncActionDeleteLocal
+)
+
+func (k syncActionKind) String() string {
+	switch k {
+	case syncActionDownload:
+		return "download"
+	case syncActionUpload:
+		return "upload"
+	case syncActionDeleteRemote:
+		return "delete-remote"
+	case syncActionDeleteLocal:
+		return "delete-local"
+	default:
+		return "unknown"
+	}
+}
+
 type syncAction struct {
 	Path string
-	Kind string
+	Kind syncActionKind
 }
 
 func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[string]model.FileRecord) []syncAction {
@@ -42,31 +66,31 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[st
 		switch {
 		case remoteChanged && localChanged:
 			if chooseRemote(hasCurrentL, currentL, hasCurrentR, currentR, hasPreviousL, previousL, hasPreviousR, previousR) {
-			if serverHasActiveFile {
-				actions = append(actions, syncAction{Path: path, Kind: "download"})
-			} else if serverHasDeletedRecord {
-				// Server deleted, local changed - conflict. For now, let local win (upload)
-				// TODO: implement proper conflict resolution
-				_ = serverHasDeletedRecord
-			}
+				if serverHasActiveFile {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
+				} else if serverHasDeletedRecord {
+					// Server deleted, local changed - conflict. For now, let local win (upload)
+					// TODO: implement proper conflict resolution
+					_ = serverHasDeletedRecord
+				}
 			}
 			if hasCurrentL {
-				actions = append(actions, syncAction{Path: path, Kind: "upload"})
+				actions = append(actions, syncAction{Path: path, Kind: syncActionUpload})
 			} else if serverHasActiveFile {
-				actions = append(actions, syncAction{Path: path, Kind: "delete-remote"})
+				actions = append(actions, syncAction{Path: path, Kind: syncActionDeleteRemote})
 			}
 		case remoteChanged:
 			if serverHasActiveFile {
-				actions = append(actions, syncAction{Path: path, Kind: "download"})
+				actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
 			} else if serverHasDeletedRecord && hasCurrentL {
 				// Server deleted the file and local hasn't changed - delete local copy
-				actions = append(actions, syncAction{Path: path, Kind: "delete-local"})
+				actions = append(actions, syncAction{Path: path, Kind: syncActionDeleteLocal})
 			}
 		case localChanged:
 			if hasCurrentL {
-				actions = append(actions, syncAction{Path: path, Kind: "upload"})
+				actions = append(actions, syncAction{Path: path, Kind: syncActionUpload})
 			} else if serverHasActiveFile {
-				actions = append(actions, syncAction{Path: path, Kind: "delete-remote"})
+				actions = append(actions, syncAction{Path: path, Kind: syncActionDeleteRemote})
 			}
 		}
 	}

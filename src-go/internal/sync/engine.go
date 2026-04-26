@@ -134,7 +134,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		Msg("sync plan created")
 
 	for i, action := range plan {
-		e.Logger.Debug().Int("action", i).Str("kind", action.Kind).Str("path", action.Path).Msg("action")
+		e.Logger.Debug().Int("action", i).Str("kind", action.Kind.String()).Str("path", action.Path).Msg("action")
 		if action.Path == "" {
 			e.Logger.Error().Msg("EMPTY PATH IN ACTION!")
 		}
@@ -211,13 +211,13 @@ func (e *Engine) scanLocal() (map[string]model.FileRecord, error) {
 // executePlan executes a list of sync actions.
 func (e *Engine) executePlan(plan []syncAction, currentLocal map[string]model.FileRecord, session *remoteSession) error {
 	for _, action := range plan {
-		e.Logger.Debug().Str("kind", action.Kind).Str("path", action.Path).Msg("action")
+		e.Logger.Debug().Str("kind", action.Kind.String()).Str("path", action.Path).Msg("action")
 		if action.Path == "" {
 			e.Logger.Error().Msg("EMPTY PATH IN ACTION!")
 			continue
 		}
 		switch action.Kind {
-		case "download":
+		case syncActionDownload:
 			record, exists := session.remote[action.Path]
 			if !exists {
 				e.Logger.Warn().Str("path", action.Path).Msg("download: remote record not found, skipping")
@@ -246,7 +246,7 @@ func (e *Engine) executePlan(plan []syncAction, currentLocal map[string]model.Fi
 				return err
 			}
 			e.Logger.Info().Str("path", action.Path).Msg("downloaded remote file")
-		case "upload":
+		case syncActionUpload:
 			record := currentLocal[action.Path]
 			if !filepath.IsLocal(filepath.FromSlash(action.Path)) {
 				return fmt.Errorf("invalid local file path %q", action.Path)
@@ -263,13 +263,13 @@ func (e *Engine) executePlan(plan []syncAction, currentLocal map[string]model.Fi
 				return err
 			}
 			e.Logger.Info().Str("path", action.Path).Msg("uploaded local file")
-		case "delete-remote":
+		case syncActionDeleteRemote:
 			if err := session.delete(action.Path); err != nil {
 				return err
 			}
 			delete(session.remote, action.Path)
 			e.Logger.Info().Str("path", action.Path).Msg("deleted remote file")
-		case "delete-local":
+		case syncActionDeleteLocal:
 			localPath, err := util.SafeJoin(e.Config.VaultPath, action.Path)
 			if err != nil {
 				return err
