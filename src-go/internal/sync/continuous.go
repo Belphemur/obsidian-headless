@@ -234,7 +234,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 	startReadPump()
 	startHeartbeat()
 
-	watcher, err := watchpkg.New(e.Config.VaultPath, append([]string{e.configDir(), ".git"}, e.Config.IgnoreFolders...), e.Logger, rescanInterval)
+	watcher, err := watchpkg.New(e.Config.VaultPath, append([]string{".git"}, e.Config.IgnoreFolders...), e.Logger, rescanInterval)
 	if err != nil {
 		return err
 	}

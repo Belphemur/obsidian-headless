@@ -62,7 +62,7 @@ func ScanVault(root, configDir string, ignored []string) (map[string]model.FileR
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if rel == configDir || strings.HasPrefix(rel, configDir+"/") || strings.HasPrefix(rel, ".git/") || rel == ".git" {
+		if rel == ".git" || strings.HasPrefix(rel, ".git/") {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -75,6 +75,13 @@ func ScanVault(root, configDir string, ignored []string) (map[string]model.FileR
 				}
 				return nil
 			}
+		}
+		// Skip hidden files (match TypeScript: paths starting with ".")
+		if strings.HasPrefix(filepath.Base(rel), ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if d.Type()&os.ModeSymlink != 0 {
 			// Skip symlinks to avoid following pointers outside the vault.
