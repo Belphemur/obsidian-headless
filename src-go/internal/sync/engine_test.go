@@ -363,14 +363,14 @@ func TestExecutePlan(t *testing.T) {
 	currentRemote := remote
 	previousRemote := map[string]model.FileRecord{}
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote)
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian")
 	if len(plan) != 2 {
 		t.Fatalf("expected 2 actions, got %d: %+v", len(plan), plan)
 	}
 
 	ctx := context.Background()
 	session := newRemoteSession(conn, remote, 1, ctx, nil, testLogger(), nil)
-	if err := e.executePlan(plan, currentLocal, session); err != nil {
+	if err := e.executePlan(plan, currentLocal, previousRemote, session); err != nil {
 		t.Fatal(err)
 	}
 

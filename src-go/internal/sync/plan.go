@@ -13,6 +13,8 @@ const (
 	syncActionUpload
 	syncActionDeleteRemote
 	syncActionDeleteLocal
+	syncActionMergeText
+	syncActionMergeJSON
 )
 
 func (k syncActionKind) String() string {
@@ -25,6 +27,10 @@ func (k syncActionKind) String() string {
 		return "delete-remote"
 	case syncActionDeleteLocal:
 		return "delete-local"
+	case syncActionMergeText:
+		return "merge-text"
+	case syncActionMergeJSON:
+		return "merge-json"
 	default:
 		return "unknown"
 	}
@@ -35,7 +41,7 @@ type syncAction struct {
 	Kind syncActionKind
 }
 
-func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[string]model.FileRecord) []syncAction {
+func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[string]model.FileRecord, configDir string) []syncAction {
 	pathsSet := map[string]struct{}{}
 	for _, collection := range []map[string]model.FileRecord{currentLocal, previousLocal, currentRemote, previousRemote} {
 		for path := range collection {
@@ -65,19 +71,36 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[st
 
 		switch {
 		case remoteChanged && localChanged:
-			if chooseRemote(hasCurrentL, currentL, hasCurrentR, currentR, hasPreviousL, previousL, hasPreviousR, previousR) {
-				if serverHasActiveFile {
-					actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
-				} else if serverHasDeletedRecord {
-					// Server deleted, local changed - conflict. For now, let local win (upload)
-					// TODO: implement proper conflict resolution
-					_ = serverHasDeletedRecord
+			if serverHasDeletedRecord {
+				// Server deleted, local changed - let local win (upload)
+				if hasCurrentL {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionUpload})
 				}
+				break
+			}
+			if !serverHasActiveFile {
+				// Neither side has an active file, nothing to do
+				break
 			}
 			if hasCurrentL {
-				actions = append(actions, syncAction{Path: path, Kind: syncActionUpload})
-			} else if serverHasActiveFile {
-				actions = append(actions, syncAction{Path: path, Kind: syncActionDeleteRemote})
+				// Both sides have active changes. Use merge for supported types,
+				// otherwise fall back to mtime-based winner.
+				if isMergeablePath(path) {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionMergeText})
+				} else if isJSONConfigPath(path, configDir) {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionMergeJSON})
+				} else if chooseRemote(hasCurrentL, currentL, hasCurrentR, currentR, hasPreviousL, previousL, hasPreviousR, previousR) {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
+				} else {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionUpload})
+				}
+			} else {
+				// Local deleted, remote changed - fall back to mtime-based winner.
+				if chooseRemote(hasCurrentL, currentL, hasCurrentR, currentR, hasPreviousL, previousL, hasPreviousR, previousR) {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
+				} else if serverHasActiveFile {
+					actions = append(actions, syncAction{Path: path, Kind: syncActionDeleteRemote})
+				}
 			}
 		case remoteChanged:
 			if serverHasActiveFile {

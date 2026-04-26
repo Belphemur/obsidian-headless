@@ -125,7 +125,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	version := e.version
 	e.mu.Unlock()
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote)
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir())
 	e.Logger.Info().
 		Int("planned_actions", len(plan)).
 		Int("local_files", len(currentLocal)).
@@ -142,13 +142,18 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	}
 
 	session := newRemoteSession(e.conn, currentRemote, version, ctx, e.enc, e.Logger, e.rawKey)
-	if err := e.executePlan(plan, currentLocal, session); err != nil {
+	if err := e.executePlan(plan, currentLocal, previousRemote, session); err != nil {
 		return err
 	}
 
 	e.mu.Lock()
 	e.version = session.version
-	maps.Copy(e.remote, currentRemote)
+	for path := range e.remote {
+		if _, ok := session.remote[path]; !ok {
+			delete(e.remote, path)
+		}
+	}
+	maps.Copy(e.remote, session.remote)
 	e.mu.Unlock()
 
 	// Rescan local after executing the plan so state reflects downloaded files
@@ -157,7 +162,14 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		return err
 	}
 
-	if err := e.saveState(store, currentLocal, currentRemote, session.version); err != nil {
+	updatedRemote := make(map[string]model.FileRecord)
+	for path, record := range session.remote {
+		if isValidPath(path) {
+			updatedRemote[path] = record
+		}
+	}
+
+	if err := e.saveState(store, currentLocal, updatedRemote, session.version); err != nil {
 		return err
 	}
 
@@ -199,7 +211,7 @@ func (e *Engine) scanLocal() (map[string]model.FileRecord, error) {
 }
 
 // executePlan executes a list of sync actions.
-func (e *Engine) executePlan(plan []syncAction, currentLocal map[string]model.FileRecord, session *remoteSession) error {
+func (e *Engine) executePlan(plan []syncAction, currentLocal map[string]model.FileRecord, previousRemote map[string]model.FileRecord, session *remoteSession) error {
 	for _, action := range plan {
 		e.Logger.Debug().Str("kind", action.Kind.String()).Str("path", action.Path).Msg("action")
 		if action.Path == "" {
@@ -270,8 +282,145 @@ func (e *Engine) executePlan(plan []syncAction, currentLocal map[string]model.Fi
 			delete(session.remote, action.Path)
 			delete(currentLocal, action.Path)
 			e.Logger.Info().Str("path", action.Path).Msg("deleted local file")
+		case syncActionMergeText:
+			if err := e.mergeTextFile(action.Path, currentLocal, previousRemote, session); err != nil {
+				e.Logger.Warn().Err(err).Str("path", action.Path).Msg("merge failed, falling back to download")
+				record := session.remote[action.Path]
+				record.Path = action.Path
+				content, pullErr := session.pull(record.UID)
+				if pullErr != nil {
+					return pullErr
+				}
+				if writeErr := util.WriteFileWithTimes(e.Config.VaultPath, record, content); writeErr != nil {
+					return writeErr
+				}
+				e.Logger.Info().Str("path", action.Path).Msg("downloaded remote file (merge fallback)")
+			}
+		case syncActionMergeJSON:
+			if err := e.mergeJSONFile(action.Path, currentLocal, previousRemote, session); err != nil {
+				e.Logger.Warn().Err(err).Str("path", action.Path).Msg("JSON merge failed, falling back to download")
+				record := session.remote[action.Path]
+				record.Path = action.Path
+				content, pullErr := session.pull(record.UID)
+				if pullErr != nil {
+					return pullErr
+				}
+				if writeErr := util.WriteFileWithTimes(e.Config.VaultPath, record, content); writeErr != nil {
+					return writeErr
+				}
+				e.Logger.Info().Str("path", action.Path).Msg("downloaded remote file (JSON merge fallback)")
+			}
 		}
 	}
+	return nil
+}
+
+// mergeTextFile performs a three-way merge for a Markdown file.
+func (e *Engine) mergeTextFile(path string, currentLocal, previousRemote map[string]model.FileRecord, session *remoteSession) error {
+	localPath, err := util.SafeJoin(e.Config.VaultPath, path)
+	if err != nil {
+		return err
+	}
+	localContent, err := os.ReadFile(localPath)
+	if err != nil {
+		return fmt.Errorf("read local: %w", err)
+	}
+
+	localRecord, hasLocal := currentLocal[path]
+	if !hasLocal {
+		return fmt.Errorf("local record missing for merge of %q", path)
+	}
+
+	baseRecord, hasBase := previousRemote[path]
+	var baseContent []byte
+	if hasBase && baseRecord.UID > 0 {
+		baseContent, err = session.pull(baseRecord.UID)
+		if err != nil {
+			return fmt.Errorf("pull base for three-way merge: %w", err)
+		}
+	} else {
+		return fmt.Errorf("no base version available for three-way merge of %q", path)
+	}
+
+	remoteRecord := session.remote[path]
+	remoteContent, err := session.pull(remoteRecord.UID)
+	if err != nil {
+		return fmt.Errorf("pull remote: %w", err)
+	}
+
+	merged, err := threeWayMerge(string(baseContent), string(localContent), string(remoteContent))
+	if err != nil {
+		return fmt.Errorf("three-way merge failed: %w", err)
+	}
+	mergedBytes := []byte(merged)
+
+	record := model.FileRecord{
+		Path:   path,
+		Size:   int64(len(mergedBytes)),
+		Hash:   util.HashBytes(mergedBytes),
+		CTime:  remoteRecord.CTime,
+		MTime:  max(remoteRecord.MTime, localRecord.MTime),
+		Folder: false,
+	}
+	if err := util.WriteFileWithTimes(e.Config.VaultPath, record, mergedBytes); err != nil {
+		return err
+	}
+
+	if err := session.push(record, mergedBytes); err != nil {
+		return fmt.Errorf("push merged text file: %w", err)
+	}
+
+	currentLocal[path] = record
+	e.Logger.Info().Str("path", path).Msg("merged text file")
+	return nil
+}
+
+// mergeJSONFile performs a JSON object-key merge for a config file.
+func (e *Engine) mergeJSONFile(path string, currentLocal, previousRemote map[string]model.FileRecord, session *remoteSession) error {
+	localPath, err := util.SafeJoin(e.Config.VaultPath, path)
+	if err != nil {
+		return err
+	}
+	localContent, err := os.ReadFile(localPath)
+	if err != nil {
+		return fmt.Errorf("read local: %w", err)
+	}
+
+	localRecord, hasLocal := currentLocal[path]
+	if !hasLocal {
+		return fmt.Errorf("local record missing for merge of %q", path)
+	}
+
+	remoteRecord := session.remote[path]
+	remoteContent, err := session.pull(remoteRecord.UID)
+	if err != nil {
+		return fmt.Errorf("pull remote: %w", err)
+	}
+
+	merged, err := jsonMerge(string(localContent), string(remoteContent))
+	if err != nil {
+		return err
+	}
+	mergedBytes := []byte(merged)
+
+	record := model.FileRecord{
+		Path:   path,
+		Size:   int64(len(mergedBytes)),
+		Hash:   util.HashBytes(mergedBytes),
+		CTime:  remoteRecord.CTime,
+		MTime:  max(remoteRecord.MTime, localRecord.MTime),
+		Folder: false,
+	}
+	if err := util.WriteFileWithTimes(e.Config.VaultPath, record, mergedBytes); err != nil {
+		return err
+	}
+
+	if err := session.push(record, mergedBytes); err != nil {
+		return fmt.Errorf("push merged JSON config file: %w", err)
+	}
+
+	currentLocal[path] = record
+	e.Logger.Info().Str("path", path).Msg("merged JSON config file")
 	return nil
 }
 
