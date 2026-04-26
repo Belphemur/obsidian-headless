@@ -191,8 +191,12 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 				cfg.ConfigDir = ".obsidian"
 			}
 			if cfg.PeriodicScan != "" {
-				if _, err := time.ParseDuration(cfg.PeriodicScan); err != nil {
+				d, err := time.ParseDuration(cfg.PeriodicScan)
+				if err != nil {
 					return fmt.Errorf("invalid periodic-scan duration %q: %w", cfg.PeriodicScan, err)
+				}
+				if d < 0 {
+					return fmt.Errorf("periodic-scan duration cannot be negative: %q", cfg.PeriodicScan)
 				}
 			}
 			if err := configpkg.WriteSyncConfig(cfg); err != nil {
@@ -295,10 +299,15 @@ func newSyncConfigCommand(app *App) *cobra.Command {
 				changed = true
 			}
 			if cmd.Flags().Changed("periodic-scan") {
-				if periodicScan != "" {
-					if _, err := time.ParseDuration(periodicScan); err != nil {
-						return fmt.Errorf("invalid periodic-scan duration %q: %w", periodicScan, err)
-					}
+				if periodicScan == "" {
+					return fmt.Errorf("periodic-scan cannot be empty; use --periodic-scan=0 to disable")
+				}
+				d, err := time.ParseDuration(periodicScan)
+				if err != nil {
+					return fmt.Errorf("invalid periodic-scan duration %q: %w", periodicScan, err)
+				}
+				if d < 0 {
+					return fmt.Errorf("periodic-scan duration cannot be negative: %q", periodicScan)
 				}
 				cfg.PeriodicScan = periodicScan
 				changed = true

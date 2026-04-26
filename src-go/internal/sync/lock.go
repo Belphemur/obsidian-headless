@@ -36,7 +36,7 @@ func (e *Engine) acquireLock() (func(), error) {
 		}
 	}
 	host, _ := os.Hostname()
-	fmt.Fprintf(f, "%d %s %s\n", os.Getpid(), host, time.Now().Format(time.RFC3339))
+	_, _ = fmt.Fprintf(f, "%d %s %s\n", os.Getpid(), host, time.Now().Format(time.RFC3339))
 	f.Close()
 	return func() {
 		_ = os.Remove(lockFile)

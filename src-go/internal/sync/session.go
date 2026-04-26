@@ -323,12 +323,6 @@ func (s *remoteSession) delete(path string) error {
 	return fmt.Errorf("delete failed: unexpected response %q", stringValue(response["res"]))
 }
 
-func (s *remoteSession) writeMessage(msgType int, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.conn.WriteMessage(msgType, data)
-}
-
 func (s *remoteSession) writeMessageToConn(conn *websocket.Conn, msgType int, data []byte) error {
 	return conn.WriteMessage(msgType, data)
 }
@@ -359,33 +353,6 @@ func readMessageLogged(conn *websocket.Conn, logger zerolog.Logger) (int, []byte
 		logger.Debug().Str("direction", "recv").Str("type", "binary").Int("size", len(data)).Msg("ws")
 	}
 	return msgType, data, nil
-}
-
-// Deprecated: use writeJSONLogged for new code.
-func writeJSON(conn *websocket.Conn, msg map[string]any) error {
-	return conn.WriteMessage(websocket.TextMessage, mustMarshalJSON(msg))
-}
-
-// Deprecated: use readJSONLogged for new code.
-func readJSON(conn *websocket.Conn, v any) error {
-	_, data, err := readMessage(conn)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, v)
-}
-
-// Deprecated: use readMessageLogged for new code.
-func readMessage(conn *websocket.Conn) (int, []byte, error) {
-	msgType, data, err := conn.ReadMessage()
-	if err != nil {
-		return msgType, nil, err
-	}
-	return msgType, data, nil
-}
-
-func writeMessage(conn *websocket.Conn, msgType int, data []byte) error {
-	return conn.WriteMessage(msgType, data)
 }
 
 func mustMarshalJSON(v any) []byte {
@@ -448,9 +415,10 @@ func normalizeWSURL(host string) string {
 	if err != nil {
 		return host
 	}
-	if u.Scheme == "http" {
+	switch u.Scheme {
+	case "http":
 		u.Scheme = "ws"
-	} else if u.Scheme == "https" {
+	case "https":
 		u.Scheme = "wss"
 	}
 	return u.String()

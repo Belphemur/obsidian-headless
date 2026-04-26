@@ -13,10 +13,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const (
-	rescanInterval = 60 * time.Second
-	eventBufSize   = 1024
-)
+const eventBufSize = 1024
 
 type Watcher struct {
 	root           string

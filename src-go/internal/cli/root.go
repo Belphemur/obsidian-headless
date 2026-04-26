@@ -67,7 +67,7 @@ func readPassword(input io.Reader) (string, error) {
 	termFD, ok := input.(*os.File)
 	if !ok || !term.IsTerminal(int(termFD.Fd())) {
 		var password string
-		fmt.Scanln(&password)
+		_, _ = fmt.Scanln(&password)
 		return password, nil
 	}
 	passwordBytes, err := term.ReadPassword(int(termFD.Fd()))
