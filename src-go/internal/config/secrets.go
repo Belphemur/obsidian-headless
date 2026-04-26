@@ -1,14 +1,13 @@
 package config
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
+	"github.com/byteness/keyring"
 	"github.com/rs/zerolog"
-	"github.com/zalando/go-keyring"
 )
-
-const secretServiceName = "obsidian-headless"
 
 // SecretStore provides unified access to OS keyring with encrypted-file fallback.
 // All methods are safe to call concurrently.
@@ -17,6 +16,7 @@ type SecretStore struct {
 	masterKey []byte
 	fallback  *storage.CredentialStore
 	logger    zerolog.Logger
+	keyring   keyring.Keyring
 }
 
 // NewSecretStore creates a new SecretStore, loading or creating the master key
@@ -26,7 +26,27 @@ func NewSecretStore(logger zerolog.Logger) (*SecretStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SecretStore{masterKey: masterKey, logger: logger}, nil
+	cfg := keyring.Config{
+		ServiceName: AppName,
+	}
+
+	hasKwallet := slices.Contains(keyring.AvailableBackends(), keyring.KWalletBackend)
+	if hasKwallet {
+		cfg = keyring.Config{
+			AllowedBackends: []keyring.BackendType{keyring.KWalletBackend},
+			ServiceName:     "kdewallet",
+			KWalletAppID:    AppName,
+			KWalletFolder:   "",
+		}
+	}
+
+	ring, err := keyring.Open(cfg)
+	if err != nil {
+		logger.Debug().Err(err).Msg("keyring open failed, will use fallback only")
+		ring = nil
+	}
+
+	return &SecretStore{masterKey: masterKey, logger: logger, keyring: ring}, nil
 }
 
 // Close closes the fallback database connection if it was opened.
@@ -45,11 +65,13 @@ func (s *SecretStore) Get(key string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	val, err := keyring.Get(secretServiceName, key)
-	if err == nil {
-		return val, nil
+	if s.keyring != nil {
+		item, err := s.keyring.Get(key)
+		if err == nil {
+			return string(item.Data), nil
+		}
+		s.logger.Debug().Str("key", key).Err(err).Msg("keyring get failed, falling back to encrypted db")
 	}
-	s.logger.Debug().Str("key", key).Err(err).Msg("keyring get failed, falling back to encrypted db")
 	// keyring unavailable or not found — fall back to credentials.db
 	store, err := s.fallbackStore()
 	if err != nil {
@@ -65,14 +87,19 @@ func (s *SecretStore) Set(key, value string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	err := keyring.Set(secretServiceName, key, value)
-	if err == nil {
-		s.clearFallbackSecret(key)
-		s.logger.Debug().Str("key", key).Msg("keyring set successfully stored secret")
+	if s.keyring != nil {
+		err := s.keyring.Set(keyring.Item{
+			Key:  key,
+			Data: []byte(value),
+		})
+		if err == nil {
+			s.clearFallbackSecret(key)
+			s.logger.Debug().Str("key", key).Msg("keyring set successfully stored secret")
 
-		return nil
+			return nil
+		}
+		s.logger.Debug().Str("key", key).Err(err).Msg("keyring set failed, falling back to encrypted db")
 	}
-	s.logger.Debug().Str("key", key).Err(err).Msg("keyring set failed, falling back to encrypted db")
 	// keyring unavailable — fall back to credentials.db
 	store, err := s.fallbackStore()
 	if err != nil {
@@ -86,10 +113,13 @@ func (s *SecretStore) Delete(key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := keyring.Delete(secretServiceName, key); err != nil {
-		s.logger.Debug().Str("key", key).Err(err).Msg("keyring delete failed")
+	if s.keyring != nil {
+		if err := s.keyring.Remove(key); err != nil {
+			s.logger.Debug().Str("key", key).Err(err).Msg("keyring delete failed")
+		} else {
+			s.logger.Debug().Str("key", key).Msg("keyring delete successful")
+		}
 	}
-	s.logger.Debug().Str("key", key).Msg("keyring delete successfull")
 
 	s.clearFallbackSecret(key)
 	return nil
