@@ -235,6 +235,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 
 		cs.mu.Lock()
 		currentRemote := make(map[string]model.FileRecord)
+		maps.Copy(currentRemote, previousRemote)
 		for path, record := range cs.remote {
 			if !isValidPath(path) {
 				continue

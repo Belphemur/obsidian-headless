@@ -114,6 +114,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 
 	e.mu.Lock()
 	currentRemote := make(map[string]model.FileRecord)
+	maps.Copy(currentRemote, previousRemote)
 	for path, record := range e.remote {
 		if !isValidPath(path) {
 			e.Logger.Warn().Str("path", path).Msg("removing invalid path from remote")
@@ -140,13 +141,14 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		}
 	}
 
-	session := newRemoteSession(e.conn, e.remote, version, ctx, e.enc, e.Logger, e.rawKey)
+	session := newRemoteSession(e.conn, currentRemote, version, ctx, e.enc, e.Logger, e.rawKey)
 	if err := e.executePlan(plan, currentLocal, session); err != nil {
 		return err
 	}
 
 	e.mu.Lock()
 	e.version = session.version
+	maps.Copy(e.remote, currentRemote)
 	e.mu.Unlock()
 
 	// Rescan local after executing the plan so state reflects downloaded files
@@ -155,7 +157,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		return err
 	}
 
-	if err := e.saveState(store, currentLocal, e.remote, session.version); err != nil {
+	if err := e.saveState(store, currentLocal, currentRemote, session.version); err != nil {
 		return err
 	}
 
