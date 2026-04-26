@@ -77,10 +77,8 @@ func ScanVault(root, configDir string, ignored []string) (map[string]model.FileR
 			}
 		}
 		// Skip hidden files (match TypeScript: paths starting with ".")
-		if strings.HasPrefix(filepath.Base(rel), ".") {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
+		// Only skip files, not directories — .obsidian must be walked.
+		if !d.IsDir() && strings.HasPrefix(filepath.Base(rel), ".") {
 			return nil
 		}
 		if d.Type()&os.ModeSymlink != 0 {

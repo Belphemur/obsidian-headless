@@ -195,7 +195,7 @@ func (e *Engine) loadState(store *storage.StateStore) (previousLocal, previousRe
 
 // scanLocal scans the vault for current local files.
 func (e *Engine) scanLocal() (map[string]model.FileRecord, error) {
-	return util.ScanVault(e.Config.VaultPath, e.configDir(), e.Config.IgnoreFolders)
+	return util.ScanVault(e.Config.VaultPath, e.configDir(), e.ignoreList())
 }
 
 // executePlan executes a list of sync actions.
