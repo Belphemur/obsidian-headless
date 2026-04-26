@@ -13,6 +13,56 @@ import (
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 )
 
+func TestContinuousInitialSync(t *testing.T) {
+	mock := newMockSyncServer(t)
+	mock.addRecord("remote.md", 1, []byte("remote content"))
+
+	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
+	defer server.Close()
+
+	u, _ := url.Parse(server.URL)
+	wsURL := "ws://" + u.Host
+
+	vault := t.TempDir()
+	statePath := filepath.Join(t.TempDir(), "state.db")
+
+	e := &Engine{
+		Config: model.SyncConfig{
+			VaultID:   "test-continuous-initial-vault",
+			VaultPath: vault,
+			Host:      wsURL,
+			StatePath: statePath,
+			ConfigDir: ".obsidian",
+		},
+		Logger: testLogger(),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- e.RunContinuous(ctx)
+	}()
+
+	// Wait for initial connection, handshake, debounce (500ms) and sync
+	time.Sleep(3 * time.Second)
+
+	// Verify remote file was downloaded without any local changes
+	data, err := os.ReadFile(filepath.Join(vault, "remote.md"))
+	if err != nil {
+		t.Fatalf("remote file was not downloaded during initial sync: %v", err)
+	}
+	if string(data) != "remote content" {
+		t.Fatalf("unexpected content: %q", string(data))
+	}
+
+	cancel()
+	if err := <-errCh; err != nil && err != context.Canceled {
+		t.Fatalf("RunContinuous error: %v", err)
+	}
+}
+
 func TestContinuousWatcherSync(t *testing.T) {
 	mock := newMockSyncServer(t)
 

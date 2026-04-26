@@ -279,6 +279,10 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		e.Logger.Info().Msg("continuous: sync complete")
 	}
 
+	if initial {
+		scheduleSync()
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
