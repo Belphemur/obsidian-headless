@@ -213,6 +213,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 					}
 
 					elapsed := time.Since(lastMsg)
+					e.Logger.Debug().Dur("elapsed", elapsed).Msg("continuous: heartbeat check")
 					if elapsed >= heartbeatTimeout {
 						e.Logger.Warn().Dur("elapsed", elapsed).Msg("continuous: heartbeat timeout, closing connection")
 						_ = conn.Close()
@@ -222,7 +223,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 						if err := conn.WriteJSON(map[string]any{"op": "ping"}); err != nil {
 							e.Logger.Warn().Err(err).Msg("continuous: failed to send ping")
 						} else {
-							e.Logger.Debug().Msg("continuous: sent ping")
+							e.Logger.Debug().Dur("elapsed", elapsed).Msg("continuous: sent ping")
 						}
 					}
 				}
