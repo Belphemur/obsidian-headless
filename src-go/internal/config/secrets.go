@@ -36,7 +36,7 @@ func NewSecretStore(logger zerolog.Logger) (*SecretStore, error) {
 			AllowedBackends: []keyring.BackendType{keyring.KWalletBackend},
 			ServiceName:     "kdewallet",
 			KWalletAppID:    AppName,
-			KWalletFolder:   "",
+			KWalletFolder:   "Obsidian Sync Headless",
 		}
 	}
 
