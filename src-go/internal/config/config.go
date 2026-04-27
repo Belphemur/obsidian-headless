@@ -73,6 +73,56 @@ func (cm *ConfigManager) ClearAuthToken() error {
 	return store.Delete("auth_token")
 }
 
+func vaultEncryptionKey(vaultID string) string {
+	return fmt.Sprintf("vault:%s:encryption_key", vaultID)
+}
+
+func vaultEncryptionSaltKey(vaultID string) string {
+	return fmt.Sprintf("vault:%s:encryption_salt", vaultID)
+}
+
+// LoadVaultSecrets retrieves the encryption key and salt for a vault from the secret store.
+func (cm *ConfigManager) LoadVaultSecrets(vaultID string) (key, salt string, err error) {
+	store, err := cm.secretStore()
+	if err != nil {
+		return "", "", err
+	}
+	defer store.Close()
+	key, err = store.Get(vaultEncryptionKey(vaultID))
+	if err != nil {
+		return "", "", err
+	}
+	salt, err = store.Get(vaultEncryptionSaltKey(vaultID))
+	if err != nil {
+		return "", "", err
+	}
+	return key, salt, nil
+}
+
+// SaveVaultSecrets stores the encryption key and salt for a vault in the secret store.
+func (cm *ConfigManager) SaveVaultSecrets(vaultID, key, salt string) error {
+	store, err := cm.secretStore()
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	if err := store.Set(vaultEncryptionKey(vaultID), key); err != nil {
+		return err
+	}
+	return store.Set(vaultEncryptionSaltKey(vaultID), salt)
+}
+
+// ClearVaultSecrets removes the encryption key and salt for a vault from the secret store.
+func (cm *ConfigManager) ClearVaultSecrets(vaultID string) error {
+	store, err := cm.secretStore()
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	_ = store.Delete(vaultEncryptionKey(vaultID))
+	return store.Delete(vaultEncryptionSaltKey(vaultID))
+}
+
 func BaseDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
