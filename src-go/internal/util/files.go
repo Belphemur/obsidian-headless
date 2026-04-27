@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/djherbis/times"
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/scrypt"
 	"golang.org/x/text/unicode/norm"
@@ -105,11 +106,16 @@ func ScanVault(root, configDir string, ignored []string) (map[string]model.FileR
 			return closeErr
 		}
 		mtime := info.ModTime().UnixMilli()
+		ctime := mtime
+		ts, err := times.Stat(path)
+		if err == nil && ts.HasBirthTime() {
+			ctime = ts.BirthTime().UnixMilli()
+		}
 		files[rel] = model.FileRecord{
 			Path:   rel,
 			Size:   info.Size(),
 			Hash:   hash,
-			CTime:  mtime,
+			CTime:  ctime,
 			MTime:  mtime,
 			Folder: false,
 		}
@@ -145,7 +151,13 @@ func WriteFileWithTimes(root string, record model.FileRecord, content []byte) er
 		return err
 	}
 	mtime := time.UnixMilli(record.MTime)
-	return os.Chtimes(fullPath, mtime, mtime)
+	if err := os.Chtimes(fullPath, mtime, mtime); err != nil {
+		return err
+	}
+	if record.CTime > 0 && record.CTime != record.MTime {
+		_ = setBirthTime(fullPath, time.UnixMilli(record.CTime))
+	}
+	return nil
 }
 
 func SafeJoin(root, relative string) (string, error) {
