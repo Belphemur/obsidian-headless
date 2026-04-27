@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 	"golang.org/x/term"
 
+	"github.com/Belphemur/obsidian-headless/src-go/internal/buildinfo"
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 )
 
@@ -34,6 +35,7 @@ func newRootCommand(app *App) *rootCommand {
 	root := &cobra.Command{
 		Use:           "ob",
 		Short:         "Go implementation of the Obsidian headless client",
+		Version:       buildinfo.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
