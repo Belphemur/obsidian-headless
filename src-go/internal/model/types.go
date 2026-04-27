@@ -53,7 +53,7 @@ type SyncConfig struct {
 	Host              string   `json:"host"`
 	EncryptionVersion int      `json:"encryptionVersion"`
 	EncryptionKey     string   `json:"-"` // not persisted; loaded at runtime from the secrets store
-	EncryptionSalt    string   `json:"encryptionSalt"`
+	EncryptionSalt    string   `json:"-"` // not persisted; loaded at runtime from the secrets store
 	ConflictStrategy  string   `json:"conflictStrategy"`
 	SyncMode          string   `json:"syncMode,omitempty"`
 	DeviceName        string   `json:"deviceName,omitempty"`
