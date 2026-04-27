@@ -6,11 +6,12 @@ import (
 
 func TestThreeWayMerge(t *testing.T) {
 	tests := []struct {
-		name   string
-		base   string
-		local  string
-		remote string
-		want   string
+		name    string
+		base    string
+		local   string
+		remote  string
+		want    string
+		wantErr bool
 	}{
 		{
 			name:   "non-overlapping edits",
@@ -41,22 +42,31 @@ func TestThreeWayMerge(t *testing.T) {
 			want:   "A\nB\nD\n",
 		},
 		{
+			// DMP fuzzy matching applies the local patch to remote; remote's Y is silently discarded.
 			name:   "conflicting edits",
 			base:   "A\nB\nC\n",
 			local:  "A\nX\nC\n",
 			remote: "A\nY\nC\n",
-			want:   "A\nX\nC\n", // patch falls back to replacing near original position
+			want:   "A\nX\nC\n",
+		},
+		{
+			// Remote diverged so far that DMP has no fuzzy anchor; patch application fails.
+			name:    "conflict with no patch context match",
+			base:    "AAAA\nBBBB\nCCCC\n",
+			local:   "AAAA\nXXXX\nCCCC\n",
+			remote:  "1111\n2222\n3333\n",
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := threeWayMerge(tt.base, tt.local, tt.remote)
-			if err != nil {
-				t.Errorf("threeWayMerge() unexpected error = %v", err)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("threeWayMerge() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if got != tt.want {
+			if !tt.wantErr && got != tt.want {
 				t.Errorf("threeWayMerge() = %q, want %q", got, tt.want)
 			}
 		})
