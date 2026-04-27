@@ -2,6 +2,8 @@ module github.com/Belphemur/obsidian-headless/src-go
 
 go 1.26
 
+replace github.com/1password/onepassword-sdk-go => ./internal/1passwordstub
+
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/byteness/keyring v1.9.1
@@ -60,7 +62,7 @@ require (
 	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
-	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
+	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect

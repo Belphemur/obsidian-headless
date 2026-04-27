@@ -1,0 +1,70 @@
+# This workflow will build, test and check linting for the 1Password Go SDK.
+name: Validate
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+
+jobs:
+
+  test:
+    name: Build & Test
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        # supported versions at the time of writing (Nov. 3rd, 2025)
+        # https://go.dev/dl/
+        go-version: [ '1.24', '1.25' ]
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Integration Test
+        if: github.repository_owner == '1Password' # don't run integration tests on forked PRs because those don't have access to pipeline secrets
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TEST_SA_TOKEN }}
+        run: go test -v ./integration_tests/...
+
+      - name: Unit Test
+        run: go test -v ./internal/...
+  
+  example_test:
+    name: Run Example Code
+    needs: test  
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run Example Test
+        run: go run example/service_account/main.go
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.EXAMPLE_TESTS_OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_VAULT_ID: ${{ secrets.EXAMPLE_TESTS_OP_VAULT_ID }}
+
+  golangci:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '^1.24'
+
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Lint with golanci-lint
+        uses: golangci/golangci-lint-action@v9

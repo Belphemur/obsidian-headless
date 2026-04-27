@@ -1,0 +1,24 @@
+name: Notify about PR ready for review
+
+on:
+  # Run this workflow from the target branch. We do this because GitHub doesn't allow reading secrets from forked PRs
+  # source branch, and it would cause problems for PRs opened by dependabot.
+  pull_request_target:
+    branches: ["main"]
+    types: [ opened, ready_for_review ]
+
+  # Allows to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  slackNotification:
+    name: Slack Notification
+    if: startsWith(github.head_ref, 'dependabot/') # This step only runs when PR has dependabot/ HEAD
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Slack Notification
+        uses: kv109/action-ready-for-review@76820bc668c3ce6c9be0c9322d07c2d8804dbd7a
+        env:
+          SLACK_CHANNEL: sdk-security-alerts
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
