@@ -15,7 +15,7 @@ We use GoReleaser v2 with `dockers_v2` for multi-arch Docker manifests to build 
 - Uses s6-overlay v3 for init/process supervision
 
 ## Key Files
-- `.goreleaser.yml` — GoReleaser configuration
+- `.goreleaser.yml` (repo root) — GoReleaser configuration
 - `.github/workflows/release.yml` — GitHub Actions release workflow
 - `build/Dockerfile` — Docker image build
 - `build/rootfs/` — s6-overlay service definitions
