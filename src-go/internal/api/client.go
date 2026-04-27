@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,10 +13,12 @@ import (
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 )
 
+const userAgent = "obsidian-headless"
+
 type Client struct {
 	apiBase        string
+	publishAPIBase string
 	http           *http.Client
-	defaultHeaders map[string]string
 }
 
 type apiError struct {
@@ -46,10 +47,15 @@ func New(apiBase string, timeout time.Duration) *Client {
 	if apiBase == "" {
 		apiBase = "https://api.obsidian.md"
 	}
+	publishAPIBase := "https://publish.obsidian.md"
+	// Use same base for local testing
+	if strings.Contains(apiBase, "127.0.0.1") || strings.Contains(apiBase, "localhost") {
+		publishAPIBase = apiBase
+	}
 	return &Client{
 		apiBase:        strings.TrimRight(apiBase, "/"),
+		publishAPIBase: strings.TrimRight(publishAPIBase, "/"),
 		http:           &http.Client{Timeout: timeout},
-		defaultHeaders: map[string]string{"Origin": "https://obsidian.md"},
 	}
 }
 
@@ -60,7 +66,9 @@ func (c *Client) SignIn(ctx context.Context, email, password, mfa string) (*mode
 	}
 
 	var response model.SignInResponse
-	if err := c.postJSON(ctx, c.apiBase+"/user/signin", body, &response); err != nil {
+	if err := c.postJSON(ctx, c.apiBase+"/user/signin", body, &response, &RequestOptions{
+		Headers: map[string]string{"Origin": "https://obsidian.md"},
+	}); err != nil {
 		return nil, err
 	}
 	return &response, nil
@@ -161,12 +169,12 @@ func (c *Client) CreatePublishSite(ctx context.Context, token string) (*model.Pu
 
 func (c *Client) SetPublishSlug(ctx context.Context, token, siteID, host, slug string) error {
 	body := map[string]any{"token": token, "id": siteID, "host": host, "slug": slug}
-	return c.postJSON(ctx, hostAPIURL(host, "/api/slug"), body, nil)
+	return c.postJSON(ctx, c.publishAPIBase+"/api/slug", body, nil)
 }
 
 func (c *Client) GetPublishSlugs(ctx context.Context, token string, ids []string) (map[string]string, error) {
 	response := map[string]string{}
-	if err := c.postJSON(ctx, c.apiBase+"/api/slugs", map[string]any{"token": token, "ids": ids}, &response); err != nil {
+	if err := c.postJSON(ctx, c.publishAPIBase+"/api/slugs", map[string]any{"token": token, "ids": ids}, &response); err != nil {
 		return nil, err
 	}
 	return response, nil
@@ -176,7 +184,7 @@ func (c *Client) ListPublishedFiles(ctx context.Context, token string, site mode
 	var response struct {
 		Files []model.PublishFile `json:"files"`
 	}
-	body := map[string]any{"token": token, "id": site.ID, "host": site.Host}
+	body := map[string]any{"token": token, "id": site.ID, "version": 2}
 	if err := c.postJSON(ctx, hostAPIURL(site.Host, "/api/list"), body, &response); err != nil {
 		return nil, err
 	}
@@ -184,33 +192,51 @@ func (c *Client) ListPublishedFiles(ctx context.Context, token string, site mode
 }
 
 func (c *Client) UploadPublishedFile(ctx context.Context, token string, site model.PublishSite, path, hash string, content []byte) error {
-	body := map[string]any{
-		"token":   token,
-		"id":      site.ID,
-		"host":    site.Host,
-		"path":    path,
-		"hash":    hash,
-		"content": base64.StdEncoding.EncodeToString(content),
+	endpoint := hostAPIURL(site.Host, "/api/upload")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(content))
+	if err != nil {
+		return err
 	}
-	return c.postJSON(ctx, hostAPIURL(site.Host, "/api/put"), body, nil)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("obs-token", token)
+	req.Header.Set("obs-id", site.ID)
+	req.Header.Set("obs-path", url.PathEscape(path))
+	req.Header.Set("obs-hash", hash)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+		return err
+	}
+	if code, _ := result["code"].(string); code != "" {
+		if msg, _ := result["message"].(string); msg != "" {
+			return &APIError{StatusCode: resp.StatusCode, Message: msg, Code: code}
+		}
+	}
+	return nil
 }
 
 func (c *Client) DeletePublishedFile(ctx context.Context, token string, site model.PublishSite, path string) error {
-	body := map[string]any{"token": token, "id": site.ID, "host": site.Host, "path": path}
-	return c.postJSON(ctx, hostAPIURL(site.Host, "/api/delete"), body, nil)
+	body := map[string]any{"token": token, "id": site.ID, "path": path}
+	return c.postJSON(ctx, hostAPIURL(site.Host, "/api/remove"), body, nil)
 }
 
 func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target any, opts ...*RequestOptions) error {
 	// Always send OPTIONS preflight first (matches TypeScript client behavior)
 	preflightReq, _ := http.NewRequestWithContext(ctx, http.MethodOptions, endpoint, nil)
-	for k, v := range c.defaultHeaders {
-		preflightReq.Header.Set(k, v)
-	}
-	if len(opts) > 0 && opts[0] != nil && opts[0].Headers != nil {
-		for k, v := range opts[0].Headers {
-			preflightReq.Header.Set(k, v)
-		}
-	}
 	if resp, err := c.http.Do(preflightReq); err == nil {
 		resp.Body.Close()
 	}
@@ -224,9 +250,7 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	for k, v := range c.defaultHeaders {
-		request.Header.Set(k, v)
-	}
+	request.Header.Set("User-Agent", userAgent)
 	if len(opts) > 0 && opts[0] != nil && opts[0].Headers != nil {
 		for k, v := range opts[0].Headers {
 			request.Header.Set(k, v)
