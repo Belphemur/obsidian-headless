@@ -1,12 +1,8 @@
 package api
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -15,34 +11,14 @@ import (
 
 const userAgent = "obsidian-headless"
 
+// Client is an HTTP client for the Obsidian REST API.
 type Client struct {
 	apiBase        string
 	publishAPIBase string
 	http           *http.Client
 }
 
-type apiError struct {
-	Error   string `json:"error"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-// APIError represents an error response from the Obsidian API.
-type APIError struct {
-	StatusCode int
-	Message    string
-	Code       string
-}
-
-func (e *APIError) Error() string {
-	return e.Message
-}
-
-// RequestOptions allows customizing individual API requests.
-type RequestOptions struct {
-	Headers map[string]string
-}
-
+// New creates a new API client.
 func New(apiBase string, timeout time.Duration) *Client {
 	if apiBase == "" {
 		apiBase = "https://api.obsidian.md"
@@ -59,255 +35,72 @@ func New(apiBase string, timeout time.Duration) *Client {
 	}
 }
 
+// SignIn authenticates a user.
 func (c *Client) SignIn(ctx context.Context, email, password, mfa string) (*model.SignInResponse, error) {
-	body := map[string]any{"email": email, "password": password}
-	if mfa != "" {
-		body["mfa"] = mfa
-	}
-
-	var response model.SignInResponse
-	if err := c.postJSON(ctx, c.apiBase+"/user/signin", body, &response, &RequestOptions{
-		Headers: map[string]string{"Origin": "https://obsidian.md"},
-	}); err != nil {
-		return nil, err
-	}
-	return &response, nil
+	return c.signIn(ctx, email, password, mfa)
 }
 
+// SignOut invalidates a token.
 func (c *Client) SignOut(ctx context.Context, token string) error {
-	return c.postJSON(ctx, c.apiBase+"/user/signout", map[string]any{"token": token}, nil)
+	return c.signOut(ctx, token)
 }
 
+// UserInfo returns information about the authenticated user.
 func (c *Client) UserInfo(ctx context.Context, token string) (*model.UserInfo, error) {
-	var response model.UserInfo
-	if err := c.postJSON(ctx, c.apiBase+"/user/info", map[string]any{"token": token}, &response); err != nil {
-		return nil, err
-	}
-	return &response, nil
+	return c.userInfo(ctx, token)
 }
 
+// Regions returns available vault regions.
 func (c *Client) Regions(ctx context.Context, token string) ([]model.Region, error) {
-	var response struct {
-		Regions []model.Region `json:"regions"`
-	}
-	if err := c.postJSON(ctx, c.apiBase+"/vault/regions", map[string]any{"token": token}, &response); err != nil {
-		return nil, err
-	}
-	return response.Regions, nil
+	return c.regions(ctx, token)
 }
 
+// ListVaults returns the vaults accessible by the token.
 func (c *Client) ListVaults(ctx context.Context, token string, supportedVersion int) ([]model.Vault, error) {
-	var response struct {
-		Vaults []model.Vault `json:"vaults"`
-	}
-	body := map[string]any{"token": token, "supported_encryption_version": supportedVersion}
-	if err := c.postJSON(ctx, c.apiBase+"/vault/list", body, &response); err != nil {
-		return nil, err
-	}
-	return response.Vaults, nil
+	return c.listVaults(ctx, token, supportedVersion)
 }
 
+// CreateVault creates a new vault.
 func (c *Client) CreateVault(ctx context.Context, token, name, keyHash, salt, region string, encryptionVersion int) (*model.Vault, error) {
-	body := map[string]any{
-		"token":              token,
-		"name":               name,
-		"keyhash":            keyHash,
-		"salt":               salt,
-		"encryption_version": encryptionVersion,
-		"region":             region,
-	}
-	var created struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	}
-	if err := c.postJSON(ctx, c.apiBase+"/vault/create", body, &created); err != nil {
-		return nil, err
-	}
-	vaults, err := c.ListVaults(ctx, token, encryptionVersion)
-	if err != nil {
-		return nil, err
-	}
-	for _, vault := range vaults {
-		if vault.ID == created.ID {
-			return &vault, nil
-		}
-	}
-	return &model.Vault{ID: created.ID, UID: created.ID, Name: created.Name}, nil
+	return c.createVault(ctx, token, name, keyHash, salt, region, encryptionVersion)
 }
 
+// ValidateVaultAccess validates access to a vault.
 func (c *Client) ValidateVaultAccess(ctx context.Context, token, vaultID, keyHash, host string, supportedVersion int) error {
-	body := map[string]any{
-		"token":                        token,
-		"vault_uid":                    vaultID,
-		"host":                         host,
-		"supported_encryption_version": supportedVersion,
-		"encryption_version":           supportedVersion,
-	}
-	if keyHash != "" {
-		body["keyhash"] = keyHash
-	}
-	return c.postJSON(ctx, c.apiBase+"/vault/access", body, nil)
+	return c.validateVaultAccess(ctx, token, vaultID, keyHash, host, supportedVersion)
 }
 
+// ListPublishSites returns the publish sites for the user.
 func (c *Client) ListPublishSites(ctx context.Context, token string) ([]model.PublishSite, error) {
-	var response struct {
-		Sites []model.PublishSite `json:"sites"`
-	}
-	if err := c.postJSON(ctx, c.apiBase+"/publish/list", map[string]any{"token": token}, &response); err != nil {
-		return nil, err
-	}
-	return response.Sites, nil
+	return c.listPublishSites(ctx, token)
 }
 
+// CreatePublishSite creates a new publish site.
 func (c *Client) CreatePublishSite(ctx context.Context, token string) (*model.PublishSite, error) {
-	var response model.PublishSite
-	if err := c.postJSON(ctx, c.apiBase+"/publish/create", map[string]any{"token": token}, &response); err != nil {
-		return nil, err
-	}
-	return &response, nil
+	return c.createPublishSite(ctx, token)
 }
 
+// SetPublishSlug sets the slug for a publish site.
 func (c *Client) SetPublishSlug(ctx context.Context, token, siteID, host, slug string) error {
-	body := map[string]any{"token": token, "id": siteID, "host": host, "slug": slug}
-	return c.postJSON(ctx, c.publishAPIBase+"/api/slug", body, nil)
+	return c.setPublishSlug(ctx, token, siteID, host, slug)
 }
 
+// GetPublishSlugs returns slugs for the given site IDs.
 func (c *Client) GetPublishSlugs(ctx context.Context, token string, ids []string) (map[string]string, error) {
-	response := map[string]string{}
-	if err := c.postJSON(ctx, c.publishAPIBase+"/api/slugs", map[string]any{"token": token, "ids": ids}, &response); err != nil {
-		return nil, err
-	}
-	return response, nil
+	return c.getPublishSlugs(ctx, token, ids)
 }
 
+// ListPublishedFiles returns the published files for a site.
 func (c *Client) ListPublishedFiles(ctx context.Context, token string, site model.PublishSite) ([]model.PublishFile, error) {
-	var response struct {
-		Files []model.PublishFile `json:"files"`
-	}
-	body := map[string]any{"token": token, "id": site.ID, "version": 2}
-	if err := c.postJSON(ctx, hostAPIURL(site.Host, "/api/list"), body, &response); err != nil {
-		return nil, err
-	}
-	return response.Files, nil
+	return c.listPublishedFiles(ctx, token, site)
 }
 
+// UploadPublishedFile uploads a file to a publish site.
 func (c *Client) UploadPublishedFile(ctx context.Context, token string, site model.PublishSite, path, hash string, content []byte) error {
-	endpoint := hostAPIURL(site.Host, "/api/upload")
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(content))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("obs-token", token)
-	req.Header.Set("obs-id", site.ID)
-	req.Header.Set("obs-path", url.PathEscape(path))
-	req.Header.Set("obs-hash", hash)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	var result map[string]any
-	if err := json.Unmarshal(bodyBytes, &result); err != nil {
-		return err
-	}
-	if code, _ := result["code"].(string); code != "" {
-		if msg, _ := result["message"].(string); msg != "" {
-			return &APIError{StatusCode: resp.StatusCode, Message: msg, Code: code}
-		}
-	}
-	return nil
+	return c.uploadPublishedFile(ctx, token, site, path, hash, content)
 }
 
+// DeletePublishedFile removes a file from a publish site.
 func (c *Client) DeletePublishedFile(ctx context.Context, token string, site model.PublishSite, path string) error {
-	body := map[string]any{"token": token, "id": site.ID, "path": path}
-	return c.postJSON(ctx, hostAPIURL(site.Host, "/api/remove"), body, nil)
-}
-
-func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target any, opts ...*RequestOptions) error {
-	// Always send OPTIONS preflight first (matches TypeScript client behavior)
-	preflightReq, _ := http.NewRequestWithContext(ctx, http.MethodOptions, endpoint, nil)
-	if resp, err := c.http.Do(preflightReq); err == nil {
-		resp.Body.Close()
-	}
-
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("User-Agent", userAgent)
-	if len(opts) > 0 && opts[0] != nil && opts[0].Headers != nil {
-		for k, v := range opts[0].Headers {
-			request.Header.Set(k, v)
-		}
-	}
-	response, err := c.http.Do(request)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = response.Body.Close()
-	}()
-	bodyBytes, err := io.ReadAll(response.Body)
-	if err != nil {
-		return err
-	}
-
-	// Check for application-level error in response body (matches TypeScript client)
-	var appErr apiError
-	if decErr := json.Unmarshal(bodyBytes, &appErr); decErr == nil {
-		if appErr.Error != "" {
-			return &APIError{StatusCode: response.StatusCode, Message: appErr.Error, Code: appErr.Code}
-		}
-	}
-
-	// Also check HTTP status codes for errors
-	if response.StatusCode >= 400 {
-		message := appErr.Message
-		if message == "" {
-			message = response.Status
-		}
-		return &APIError{StatusCode: response.StatusCode, Message: message, Code: appErr.Code}
-	}
-
-	if target == nil {
-		if appErr.Message != "" {
-			return &APIError{StatusCode: response.StatusCode, Message: appErr.Message, Code: appErr.Code}
-		}
-		return nil
-	}
-	if appErr.Message != "" && appErr.Code != "" {
-		return &APIError{StatusCode: response.StatusCode, Message: appErr.Message, Code: appErr.Code}
-	}
-	return json.Unmarshal(bodyBytes, target)
-}
-
-func hostAPIURL(host, path string) string {
-	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
-		return strings.TrimRight(host, "/") + path
-	}
-	hostname := host
-	if parsed, err := url.Parse(host); err == nil && parsed.Host != "" {
-		hostname = parsed.Host
-	}
-	protocol := "https://"
-	if strings.HasPrefix(hostname, "localhost") || strings.HasPrefix(hostname, "127.0.0.1") {
-		protocol = "http://"
-	}
-	return protocol + strings.TrimRight(hostname, "/") + path
+	return c.deletePublishedFile(ctx, token, site, path)
 }
