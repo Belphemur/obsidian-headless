@@ -51,6 +51,17 @@ ob sync
 ob sync --continuous
 ```
 
+## Docker
+
+A ready-to-use Docker image is available for running continuous sync in a container. See [`build/README.md`](build/README.md) for the full Docker quick start, environment variables, and troubleshooting guide.
+
+```bash
+docker run --rm -it \
+  -v ./config:/home/obsidian/.config \
+  --entrypoint get-token \
+  ghcr.io/belphemur/obsidian-headless:latest
+```
+
 ## Global options
 
 These flags are available on every command:
