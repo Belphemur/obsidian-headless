@@ -4,14 +4,12 @@ on:
   pull_request:
     paths:
       - "src/**"
-      - "legacy/mock-server/**"
       - ".github/workflows/go-ci.yml"
   push:
     branches:
       - main
     paths:
       - "src/**"
-      - "legacy/mock-server/**"
       - ".github/workflows/go-ci.yml"
   workflow_dispatch:
 
@@ -49,12 +47,4 @@ jobs:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: legacy/package-lock.json
-
-      - run: npm ci
-        working-directory: legacy
       - run: go test ./...
