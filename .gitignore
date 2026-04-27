@@ -2,5 +2,5 @@
 /dist
 /pkg
 /bin
-ob
-ob-go
+/ob
+/ob-go
