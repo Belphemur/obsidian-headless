@@ -69,8 +69,8 @@ node cli.js login --email test@example.com --password any
 - `POST /api/slug` — Set site slug
 - `POST /api/slugs` — Get slug mappings
 - `POST /api/list` — List published files
-- `POST /api/put` — Upload a file
-- `POST /api/delete` — Delete a file
+- `POST /api/upload` — Upload a file (raw binary with `obs-token`, `obs-id`, `obs-path`, `obs-hash` headers)
+- `POST /api/remove` — Delete a file
 
 ### WebSocket Sync
 
