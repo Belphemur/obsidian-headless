@@ -6,6 +6,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -77,4 +80,54 @@ func readPassword(input io.Reader) (string, error) {
 		return "", err
 	}
 	return string(passwordBytes), nil
+}
+
+type cliSpinner struct {
+	w       io.Writer
+	msg     string
+	done    chan struct{}
+	stopped chan struct{}
+	tick    *time.Ticker
+	once    sync.Once
+}
+
+func newSpinner(w io.Writer, msg string) *cliSpinner {
+	return &cliSpinner{w: w, msg: msg}
+}
+
+func (s *cliSpinner) Start() {
+	// Only animate if output is a terminal
+	if f, ok := s.w.(*os.File); !ok || !term.IsTerminal(int(f.Fd())) {
+		return
+	}
+	s.done = make(chan struct{})
+	s.stopped = make(chan struct{})
+	s.tick = time.NewTicker(100 * time.Millisecond)
+	go func() {
+		defer close(s.stopped)
+		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		i := 0
+		for {
+			select {
+			case <-s.tick.C:
+				_, _ = fmt.Fprintf(s.w, "\r%s %s", frames[i%len(frames)], s.msg)
+				i++
+			case <-s.done:
+				s.tick.Stop()
+				clearLen := utf8.RuneCountInString(frames[0]) + 1 + utf8.RuneCountInString(s.msg)
+				_, _ = fmt.Fprintf(s.w, "\r%s\r", strings.Repeat(" ", clearLen))
+				return
+			}
+		}
+	}()
+}
+
+func (s *cliSpinner) Stop() {
+	s.once.Do(func() {
+		if s.done == nil {
+			return
+		}
+		close(s.done)
+		<-s.stopped
+	})
 }

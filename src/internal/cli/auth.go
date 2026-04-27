@@ -56,21 +56,29 @@ func newLoginCommand(app *App) *cobra.Command {
 					return err
 				}
 				password = pass
+				_, _ = fmt.Fprintln(app.stdout)
 			}
 			if email == "" || password == "" {
 				return fmt.Errorf("both --email and --password are required")
 			}
 
 			// Attempt login
+			sp := newSpinner(app.stderr, "Logging in...")
+			sp.Start()
 			response, err := app.client().SignIn(cmd.Context(), email, password, mfa)
+			sp.Stop()
 			if err != nil {
 				// Check if 2FA is required using APIError type (server returns 200 with error in body)
 				var apiErr *apipkg.APIError
 				if errors.As(err, &apiErr) && strings.Contains(strings.ToLower(apiErr.Message), "2fa") && mfa == "" {
+					writeLines(app.stdout, "")
 					_, _ = fmt.Fprint(app.stdout, "2FA code: ")
 					_, _ = fmt.Scanln(&mfa)
 					if mfa != "" {
+						sp := newSpinner(app.stderr, "Logging in...")
+						sp.Start()
 						response, err = app.client().SignIn(cmd.Context(), email, password, mfa)
+						sp.Stop()
 						if err != nil {
 							return fmt.Errorf("login failed: %w", err)
 						}
