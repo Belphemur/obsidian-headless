@@ -138,6 +138,30 @@ When making design decisions, architectural changes, or significant implementati
 
 Before proposing or implementing new design changes, check existing memories with `serena_list_memories` and `serena_read_memory` to ensure consistency with prior decisions.
 
+## Secret Storage
+
+Sensitive values (auth tokens, vault encryption keys, encryption salts) are stored via the OS keyring (with an encrypted SQLite fallback). By default, `NewSecretStore` and `NewConfigManager` read/write keys unprefixed.
+
+### Test Isolation via `_OBSIDIAN_HEADLESS_TEST_SECRET_PREFIX`
+
+To prevent tests from overwriting real user secrets in the OS keyring, **every test package that exercises secret storage must set the environment variable `_OBSIDIAN_HEADLESS_TEST_SECRET_PREFIX`** (e.g. to `test:`). The constructors automatically detect this variable and prepend the prefix to every secret key.
+
+**Why this matters:** Tests that create vaults, log in, or set encryption passwords would otherwise write keys like `auth_token` and `vault:<id>:encryption_key` directly into the user's OS keyring, polluting or overwriting their actual production credentials.
+
+**Enforce it in `TestMain` so it applies to every test in the package:**
+
+```go
+func TestMain(m *testing.M) {
+    os.Setenv("_OBSIDIAN_HEADLESS_TEST_SECRET_PREFIX", "test:")
+    code := m.Run()
+    os.Exit(code)
+}
+```
+
+This is already in place for:
+- `src-go/internal/config` package tests
+- `src-go` integration tests
+
 ## Code Quality
 
 Run the following commands before committing:
