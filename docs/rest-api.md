@@ -8,7 +8,7 @@ headless client for authentication, vault management, and publish operations.
 | Service | Base URL |
 |---------|----------|
 | Obsidian API | `https://api.obsidian.md` |
-| Publish API | `https://publish-main.obsidian.md` |
+| Publish API | `https://publish.obsidian.md` |
 | Host API | `https://<site-host>` (per-site, from publish config) |
 
 ## Authentication
@@ -238,6 +238,8 @@ These use the per-site host URL.
 
 Set the slug for a publish site.
 
+**URL:** `https://publish.obsidian.md/api/slug`
+
 **Request:**
 ```json
 {
@@ -252,6 +254,8 @@ Set the slug for a publish site.
 
 Get slug mappings for sites.
 
+**URL:** `https://publish.obsidian.md/api/slugs`
+
 **Request:**
 ```json
 {
@@ -264,12 +268,14 @@ Get slug mappings for sites.
 
 List published files for a site.
 
+**URL:** `https://<site-host>/api/list`
+
 **Request:**
 ```json
 {
   "token": "abc123...",
-  "host": "publish-1.obsidian.md",
-  "id": "site-id"
+  "id": "site-id",
+  "version": 2
 }
 ```
 
@@ -286,31 +292,32 @@ List published files for a site.
 }
 ```
 
-### POST `/api/put`
+### POST `/api/upload`
 
 Upload a file to the publish site.
 
-**Request:**
-```json
-{
-  "token": "abc123...",
-  "host": "publish-1.obsidian.md",
-  "id": "site-id",
-  "path": "notes/hello.md",
-  "hash": "abc123...",
-  "content": "<base64-encoded-content>"
-}
-```
+**URL:** `https://<site-host>/api/upload`
 
-### POST `/api/delete`
+Sends raw binary data with metadata in custom headers:
+
+| Header | Value |
+|--------|-------|
+| `Content-Type` | `application/octet-stream` |
+| `obs-token` | Authentication token |
+| `obs-id` | Site ID |
+| `obs-path` | URL-encoded file path |
+| `obs-hash` | Content hash |
+
+### POST `/api/remove`
 
 Remove a file from the publish site.
 
+**URL:** `https://<site-host>/api/remove`
+
 **Request:**
 ```json
 {
   "token": "abc123...",
-  "host": "publish-1.obsidian.md",
   "id": "site-id",
   "path": "notes/hello.md"
 }

@@ -274,17 +274,26 @@ const apiServer = http.createServer(async (req, res) => {
         return;
       }
 
-      case "/api/put": {
-        const user = requireToken(body, res);
-        if (!user) return;
-        const filesMap = publishFiles.get(body.id);
+      case "/api/upload": {
+        const token = req.headers["obs-token"];
+        const id = req.headers["obs-id"];
+        const path = decodeURIComponent(req.headers["obs-path"] || "");
+        const hash = req.headers["obs-hash"];
+        const user = tokens.get(token);
+        if (!user) {
+          sendJson(res, { code: "auth", message: "Invalid token" }, 401);
+          return;
+        }
+        const chunks = [];
+        for await (const chunk of req) {
+          chunks.push(chunk);
+        }
+        const content = Buffer.concat(chunks);
+        const filesMap = publishFiles.get(id);
         if (filesMap) {
-          const content = body.content
-            ? Buffer.from(body.content, "base64")
-            : Buffer.alloc(0);
-          filesMap.set(body.path, {
-            path: body.path,
-            hash: body.hash,
+          filesMap.set(path, {
+            path,
+            hash,
             size: content.byteLength,
             content,
           });
@@ -293,7 +302,7 @@ const apiServer = http.createServer(async (req, res) => {
         return;
       }
 
-      case "/api/delete": {
+      case "/api/remove": {
         const user = requireToken(body, res);
         if (!user) return;
         const fm = publishFiles.get(body.id);

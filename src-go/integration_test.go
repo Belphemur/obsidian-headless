@@ -105,7 +105,7 @@ func TestGoCLIWorksWithMockServer(t *testing.T) {
 			Path string `json:"path"`
 		} `json:"files"`
 	}{}
-	postJSON(t, siteHost+"/api/list", map[string]any{"token": token, "id": siteID, "host": siteHost}, &published)
+	postJSON(t, siteHost+"/api/list", map[string]any{"token": token, "id": siteID, "version": 2}, &published)
 	found := false
 	for _, file := range published.Files {
 		if file.Path == "public.md" {

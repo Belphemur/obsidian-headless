@@ -93,11 +93,6 @@ func newLoginCommand(app *App) *cobra.Command {
 	command.Flags().StringVar(&password, "password", "", "account password")
 	command.Flags().StringVar(&mfa, "mfa", "", "MFA code")
 
-	_ = viper.BindPFlag("email", command.Flags().Lookup("email"))
-	_ = viper.BindPFlag("password", command.Flags().Lookup("password"))
-	_ = viper.BindEnv("email", "OBSIDIAN_EMAIL")
-	_ = viper.BindEnv("password", "OBSIDIAN_PASSWORD")
-
 	return command
 }
 

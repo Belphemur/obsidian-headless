@@ -59,47 +59,6 @@ func TestConfigManagerLoadAuthTokenFromEnv(t *testing.T) {
 	}
 }
 
-func TestConfigManagerCredentialsRoundTrip(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-
-	cm := NewConfigManager(zerolog.New(io.Discard))
-
-	email := "user@example.com"
-	password := "hunter2"
-
-	if err := cm.SaveCredentials(email, password); err != nil {
-		t.Fatalf("SaveCredentials failed: %v", err)
-	}
-
-	loadedEmail, loadedPassword, err := cm.LoadCredentials()
-	if err != nil {
-		t.Fatalf("LoadCredentials failed: %v", err)
-	}
-	if loadedEmail != email {
-		t.Errorf("expected email %q, got %q", email, loadedEmail)
-	}
-	if loadedPassword != password {
-		t.Errorf("expected password %q, got %q", password, loadedPassword)
-	}
-
-	if err := cm.ClearCredentials(); err != nil {
-		t.Fatalf("ClearCredentials failed: %v", err)
-	}
-
-	clearedEmail, clearedPassword, err := cm.LoadCredentials()
-	if err != nil {
-		t.Fatalf("LoadCredentials after clear failed: %v", err)
-	}
-	if clearedEmail != "" {
-		t.Errorf("expected empty email after clear, got %q", clearedEmail)
-	}
-	if clearedPassword != "" {
-		t.Errorf("expected empty password after clear, got %q", clearedPassword)
-	}
-}
-
 func TestConfigManagerMasterKeyCreated(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

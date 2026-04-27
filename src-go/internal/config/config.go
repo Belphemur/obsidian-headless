@@ -36,52 +36,6 @@ func (cm *ConfigManager) secretStore() (*SecretStore, error) {
 	return NewSecretStore(cm.logger)
 }
 
-// SaveCredentials stores email and password in the secret store.
-func (cm *ConfigManager) SaveCredentials(email, password string) error {
-	store, err := cm.secretStore()
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-	if err := store.Set("email", email); err != nil {
-		return err
-	}
-	if err := store.Set("password", password); err != nil {
-		return err
-	}
-	return nil
-}
-
-// LoadCredentials retrieves email and password from the secret store.
-func (cm *ConfigManager) LoadCredentials() (string, string, error) {
-	store, err := cm.secretStore()
-	if err != nil {
-		return "", "", err
-	}
-	defer store.Close()
-	email, err := store.Get("email")
-	if err != nil {
-		return "", "", err
-	}
-	password, err := store.Get("password")
-	if err != nil {
-		return "", "", err
-	}
-	return email, password, nil
-}
-
-// ClearCredentials removes email and password from the secret store.
-func (cm *ConfigManager) ClearCredentials() error {
-	store, err := cm.secretStore()
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-	_ = store.Delete("email")
-	_ = store.Delete("password")
-	return nil
-}
-
 // LoadAuthToken retrieves the auth token from environment or secret store.
 func (cm *ConfigManager) LoadAuthToken() (string, error) {
 	if token := strings.TrimSpace(os.Getenv("OBSIDIAN_AUTH_TOKEN")); token != "" {
