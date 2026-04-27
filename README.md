@@ -5,7 +5,7 @@ Sync and publish your vaults from the command line without the desktop app.
 
 Built with Go `1.26`.
 
-- Entry point: `src-go/cmd/ob-go/main.go`
+- Entry point: `src/cmd/ob-go/main.go`
 - Key libraries: Cobra, Viper, zerolog, `modernc.org/sqlite`, `gorilla/websocket`, `fsnotify`
 
 ## Install
@@ -17,7 +17,7 @@ go install github.com/Belphemur/obsidian-headless/src-go/cmd/ob-go@latest
 Or build from source:
 
 ```bash
-cd src-go
+cd src
 go build -o ob ./cmd/ob-go
 ```
 

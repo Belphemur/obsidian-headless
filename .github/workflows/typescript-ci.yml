@@ -3,21 +3,21 @@ name: TypeScript CI
 on:
   pull_request:
     paths:
-      - "src/**"
-      - "mock-server/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
+      - "legacy/src/**"
+      - "legacy/mock-server/**"
+      - "legacy/package.json"
+      - "legacy/package-lock.json"
+      - "legacy/tsconfig.json"
       - ".github/workflows/typescript-ci.yml"
   push:
     branches:
       - main
     paths:
-      - "src/**"
-      - "mock-server/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
+      - "legacy/src/**"
+      - "legacy/mock-server/**"
+      - "legacy/package.json"
+      - "legacy/package-lock.json"
+      - "legacy/tsconfig.json"
       - ".github/workflows/typescript-ci.yml"
   workflow_dispatch:
 
@@ -27,6 +27,9 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy
     steps:
       - uses: actions/checkout@v5
 
@@ -34,12 +37,16 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: legacy/package-lock.json
 
       - run: npm ci
       - run: npm run lint
 
   verify:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy
     steps:
       - uses: actions/checkout@v5
 
@@ -47,6 +54,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: legacy/package-lock.json
 
       - run: npm ci
       - run: npm run build

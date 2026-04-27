@@ -17,9 +17,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: src-go/go.mod
+          go-version-file: src/go.mod
           cache: true
-          cache-dependency-path: src-go/go.sum
+          cache-dependency-path: src/go.sum
 
       - name: Verify Go installation
         run: |
@@ -28,7 +28,7 @@ jobs:
 
       - name: Download Go dependencies
         run: |
-          cd src-go
+          cd src
           go mod download
           go mod verify
 
@@ -37,9 +37,11 @@ jobs:
         with:
           node-version: "lts/*"
           cache: npm
+          cache-dependency-path: legacy/package-lock.json
 
       - name: Install npm dependencies
         run: npm ci
+        working-directory: legacy
 
       - name: Verify Node installation
         run: |

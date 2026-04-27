@@ -7,10 +7,11 @@ APIs for development and testing. All data is stored in-memory and lost on resta
 
 ```bash
 # Install the ws package (required for WebSocket server)
+cd legacy
 npm install --save-dev ws
 
 # Run the mock server
-node mock-server/server.mjs
+node legacy/mock-server/server.mjs
 ```
 
 ## Ports
@@ -36,10 +37,11 @@ The server starts with a test user and token:
 
 ```bash
 # Build the TypeScript source
+cd legacy
 npm run build
 
 # Login (creates a new token on the mock server)
-node dist/cli/main.js login --email test@example.com --password any
+node legacy/dist/cli/main.js login --email test@example.com --password any
 
 # Or use the pre-seeded token by writing it to the config
 mkdir -p ~/.config/obsidian-headless
@@ -50,7 +52,7 @@ echo -n "test-token-12345" > ~/.config/obsidian-headless/auth_token
 
 ```bash
 # Login
-node cli.js login --email test@example.com --password any
+node legacy/cli.js login --email test@example.com --password any
 ```
 
 ## Supported Endpoints
@@ -88,7 +90,7 @@ node cli.js login --email test@example.com --password any
 Set the API port via environment variable:
 
 ```bash
-API_PORT=4000 node mock-server/server.mjs
+API_PORT=4000 node legacy/mock-server/server.mjs
 ```
 
 The WebSocket port is always 3001.
