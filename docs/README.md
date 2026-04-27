@@ -18,14 +18,10 @@ Publish services.
 ## Quick Start
 
 ```bash
-# Install dependencies
-npm install
-
-# Build TypeScript
-npm run build
-
-# Run CLI
-node dist/cli/main.js --help
+# Build and run the Go CLI
+cd src-go
+go build -o ob ./cmd/ob-go
+./ob --help
 
 # Run mock server (for development/testing)
 node mock-server/server.mjs

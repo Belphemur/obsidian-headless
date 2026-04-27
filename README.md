@@ -3,29 +3,22 @@
 Headless client for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish).
 Sync and publish your vaults from the command line without the desktop app.
 
-Requires Node.js 24 or later.
-
-## Go port
-
-An in-progress Go implementation now lives in `src-go/`.
+Built with Go `1.26`.
 
 - Entry point: `src-go/cmd/ob-go/main.go`
-- Module target: Go `1.26.0`
 - Key libraries: Cobra, Viper, zerolog, `modernc.org/sqlite`, `gorilla/websocket`, `fsnotify`
-
-Run it locally with:
-
-```bash
-cd src-go
-GOTOOLCHAIN=go1.26.0 go run ./cmd/ob-go --help
-```
-
-Progress and implementation plan are tracked in `docs/go-port-progress.md`.
 
 ## Install
 
 ```bash
-npm install -g obsidian-headless
+go install github.com/Belphemur/obsidian-headless/src-go/cmd/ob-go@latest
+```
+
+Or build from source:
+
+```bash
+cd src-go
+go build -o ob ./cmd/ob-go
 ```
 
 ## Authentication
@@ -57,6 +50,16 @@ ob sync
 # Run continuous sync (watches for changes)
 ob sync --continuous
 ```
+
+## Global options
+
+These flags are available on every command:
+
+| Option | Description |
+|---|---|
+| `--api-base <url>` | Obsidian API base URL (default: `https://api.obsidian.md`) |
+| `--timeout <seconds>` | HTTP timeout in seconds (default: `30`) |
+| `--log-level <level>` | Log level: `debug`, `info`, `warn`, `error`, `fatal`, `panic`, `disabled`, `trace` (default: `info`) |
 
 ## Commands
 
@@ -90,29 +93,30 @@ Create a new remote vault.
 ob sync-create-remote --name "Vault Name" [--encryption <standard|e2ee>] [--password <password>] [--region <region>]
 ```
 
-| Option | Description                                              |
-|---|----------------------------------------------------------|
-| `--name` | Vault name (required)                                    |
-| `--encryption` | `standard` for managed encryption, `e2ee` for end-to-end |
-| `--password` | End-to-end encryption password (prompted if omitted)     |
-| `--region` | Server region (automatic if omitted)                     |
+| Option | Description |
+|---|---|
+| `--name` | Vault name (required) |
+| `--encryption` | `standard` for managed encryption, `e2ee` for end-to-end (default: `e2ee`) |
+| `--password` | End-to-end encryption password (prompted if omitted) |
+| `--region` | Server region (automatic if omitted) |
 
 ### `ob sync-setup`
 
 Set up sync between a local vault and a remote vault.
 
 ```
-ob sync-setup --vault <id-or-name> [--path <local-path>] [--password <password>] [--device-name <name>] [--config-dir <name>] [--state-path <path>]
+ob sync-setup --vault <id-or-name> [--path <local-path>] [--password <password>] [--device-name <name>] [--config-dir <name>] [--state-path <path>] [--periodic-scan <duration>]
 ```
 
-| Option | Description                                                     |
-|---|-----------------------------------------------------------------|
-| `--vault` | Remote vault ID or name (required)                              |
-| `--path` | Local directory (default: current directory)                    |
-| `--password` | E2E encryption password (prompted if omitted)                   |
-| `--device-name` | Device name to identify this client in the sync version history |
-| `--config-dir` | Config directory name (default: `.obsidian`)                    |
-| `--state-path` | Custom path for the SQLite state database (default: auto)       |
+| Option | Description |
+|---|---|
+| `--vault` | Remote vault ID or name (required) |
+| `--path` | Local directory (default: current directory) |
+| `--password` | E2E encryption password (prompted if omitted) |
+| `--device-name` | Device name to identify this client in the sync version history (default: hostname) |
+| `--config-dir` | Config directory name (default: `.obsidian`) |
+| `--state-path` | Custom path for the SQLite state database (default: auto) |
+| `--periodic-scan` | Periodic full rescan interval, e.g. `60s`, `5m`, `1h`; set to `0` to disable. Only active in bidirectional mode (default: `1h`) |
 
 ### `ob sync`
 
@@ -140,7 +144,7 @@ Run with no options to display the current configuration.
 | Option | Description |
 |---|---|
 | `--path` | Local vault path (default: current directory) |
-| `--mode` | Sync mode: `bidirectional` (default), `pull-only` (only download, ignore local changes), or `mirror-remote` (only download, revert local changes) |
+| `--mode` | Sync mode: `bidirectional` (default), `pull` (only download, ignore local changes), or `mirror` (only download, revert local changes) |
 | `--conflict-strategy` | `merge` or `conflict` |
 | `--file-types` | Attachment types to sync: `image`, `audio`, `video`, `pdf`, `unsupported` (comma-separated, empty to clear) |
 | `--configs` | Config categories to sync: `app`, `appearance`, `appearance-data`, `hotkey`, `core-plugin`, `core-plugin-data`, `community-plugin`, `community-plugin-data` (comma-separated, empty to disable config syncing) |
@@ -148,6 +152,7 @@ Run with no options to display the current configuration.
 | `--device-name` | Device name to identify this client in the sync version history |
 | `--config-dir` | Config directory name (default: `.obsidian`) |
 | `--state-path` | Custom path for the SQLite state database |
+| `--periodic-scan` | Periodic full rescan interval, e.g. `60s`, `5m`, `1h`; set to `0` to disable. Only active in bidirectional mode |
 
 ### `ob sync-status`
 
@@ -198,7 +203,7 @@ ob publish-setup --site <id-or-slug> [--path <local-path>]
 
 Publish vault changes to a connected site. Scans for changes by comparing local file hashes against the remote site, then uploads new/changed files and removes deleted ones.
 
-Files are selected for publishing based on: frontmatter `publish: true/false` flag (highest priority), excluded/included folders (configured via `publish-config`), and the `--all` flag for untagged files.
+Files are selected for publishing based on: frontmatter `publish: true/false` flag (highest priority), included/excluded patterns (configured via `publish-config`), and the `--all` flag for untagged files.
 
 ```
 ob publish [--path <local-path>] [--dry-run] [--yes] [--all]
@@ -216,7 +221,7 @@ ob publish [--path <local-path>] [--dry-run] [--yes] [--all]
 View or change publish settings for a vault.
 
 ```
-ob publish-config [--path <local-path>] [--includes <folders>] [--excludes <folders>]
+ob publish-config [--path <local-path>] [--includes <patterns>] [--excludes <patterns>]
 ```
 
 Run with no options to display the current configuration.
@@ -224,37 +229,8 @@ Run with no options to display the current configuration.
 | Option | Description |
 |---|---|
 | `--path` | Local vault path (default: current directory) |
-| `--includes` | Folders to include, comma-separated (empty string to clear) |
-| `--excludes` | Folders to exclude, comma-separated (empty string to clear) |
-
-### `ob publish-site-options`
-
-View or update remote site options (appearance, navigation, etc.). Run with no options to display the current settings.
-
-```
-ob publish-site-options [--path <local-path>] [options]
-```
-
-| Option | Description |
-|---|---|
-| `--path` | Local vault path (default: current directory) |
-| `--site-name <name>` | Site name |
-| `--index-file <path>` | Home page file path |
-| `--logo <path>` | Logo file path (empty string to clear) |
-| `--default-theme <theme>` | Default theme: `light` or `dark` |
-| `--show-navigation <bool>` | Show navigation sidebar |
-| `--show-graph <bool>` | Show graph view |
-| `--show-outline <bool>` | Show table of contents |
-| `--show-search <bool>` | Show search |
-| `--show-backlinks <bool>` | Show backlinks |
-| `--show-hover-preview <bool>` | Show hover preview |
-| `--show-theme-toggle <bool>` | Show theme toggle |
-| `--readable-line-length <bool>` | Readable line length |
-| `--strict-line-breaks <bool>` | Strict line breaks |
-| `--hide-title <bool>` | Hide inline title |
-| `--sliding-window <bool>` | Sliding window mode |
-| `--nav-order <paths>` | Navigation ordering, comma-separated paths in display order (empty string to clear) |
-| `--nav-hidden <items>` | Navigation hidden items, comma-separated paths (empty string to clear) |
+| `--includes` | Include patterns, comma-separated (empty string to clear) |
+| `--excludes` | Exclude patterns, comma-separated (empty string to clear) |
 
 ### `ob publish-unlink`
 
@@ -264,20 +240,37 @@ Disconnect a vault from a publish site.
 ob publish-unlink [--path <local-path>]
 ```
 
-## Native modules
+## Documentation
 
-### btime
+Detailed documentation lives in the `docs/` directory:
 
-The `btime` directory contains a prebuilt native N-API addon for setting file creation time (birthtime) on Windows and macOS.
-This is used when downloading files from the server to preserve their original creation timestamps.
+| Document | Description |
+|----------|-------------|
+| [Architecture Overview](docs/architecture.md) | High-level module layout and data flow |
+| [Sync Protocol](docs/sync-protocol.md) | WebSocket sync protocol specification |
+| [Encryption Protocol](docs/encryption-protocol.md) | Encryption versions and key derivation |
+| [REST API](docs/rest-api.md) | HTTP API endpoints for authentication, vault and publish management |
+| [CLI Commands](docs/cli-commands.md) | Complete CLI command reference |
+| [Mock Server](docs/mock-server.md) | How to run and use the mock server for testing |
 
-Since it targets N-API version 3, the compiled `.node` binaries are ABI-stable and work across Node.js versions without recompilation.
+Implementation progress is tracked in `docs/go-port-progress.md`.
 
-On Linux, birthtime is not supported — the addon is not included and sync operates normally without it.
+## Configuration
 
-Prebuilt binaries are included for:
-- `win32-x64`
-- `win32-arm64`
-- `win32-ia32`
-- `darwin-x64`
-- `darwin-arm64`
+Configuration and state are stored under:
+
+- **Linux**: `~/.config/obsidian-headless/`
+- **macOS**: `~/.obsidian-headless/`
+
+Key files:
+
+| Path | Description |
+|------|-------------|
+| `auth_token` | Obsidian authentication token |
+| `credentials.db` | SQLite database for encrypted credentials |
+| `master.key` | Master encryption key |
+| `sync/{vaultID}/config.json` | Per-vault sync configuration |
+| `sync/{vaultID}/state.db` | Per-vault SQLite sync state (local/server file records) |
+| `publish/{siteID}/config.json` | Per-site publish configuration |
+
+Sensitive values (auth tokens, vault encryption keys, salts) are stored via the OS keyring when available, with an encrypted SQLite fallback.
