@@ -15,7 +15,7 @@ export HOME="${HOME:-/home/obsidian}"
 # s6-overlay v3 installs binaries under /command. When this script is used as
 # an entrypoint override, /init (which normally adjusts PATH) is bypassed, so
 # we ensure /command is on PATH here.
-export PATH="/command:$PATH"
+export PATH="/command${PATH:+:$PATH}"
 
 echo ""
 echo "=== obsidian-headless: Login ==="
