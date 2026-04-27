@@ -29,6 +29,12 @@ const (
 	testEmail = "test@example.com"
 )
 
+func TestMain(m *testing.M) {
+	os.Setenv("_OBSIDIAN_HEADLESS_TEST_SECRET_PREFIX", "test:")
+	code := m.Run()
+	os.Exit(code)
+}
+
 func TestGoCLIWorksWithMockServer(t *testing.T) {
 	cleanup := ensureMockServer(t)
 	defer cleanup()
