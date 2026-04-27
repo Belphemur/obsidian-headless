@@ -63,7 +63,7 @@ func newLoginCommand(app *App) *cobra.Command {
 			}
 
 			// Attempt login
-			sp := newSpinner(app.stdout, "Logging in...")
+			sp := newSpinner(app.stderr, "Logging in...")
 			sp.Start()
 			response, err := app.client().SignIn(cmd.Context(), email, password, mfa)
 			sp.Stop()
@@ -75,7 +75,7 @@ func newLoginCommand(app *App) *cobra.Command {
 					_, _ = fmt.Fprint(app.stdout, "2FA code: ")
 					_, _ = fmt.Scanln(&mfa)
 					if mfa != "" {
-						sp := newSpinner(app.stdout, "Logging in...")
+						sp := newSpinner(app.stderr, "Logging in...")
 						sp.Start()
 						response, err = app.client().SignIn(cmd.Context(), email, password, mfa)
 						sp.Stop()

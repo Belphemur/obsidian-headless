@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -82,10 +83,12 @@ func readPassword(input io.Reader) (string, error) {
 }
 
 type cliSpinner struct {
-	w    io.Writer
-	msg  string
-	done chan struct{}
-	tick *time.Ticker
+	w       io.Writer
+	msg     string
+	done    chan struct{}
+	stopped chan struct{}
+	tick    *time.Ticker
+	once    sync.Once
 }
 
 func newSpinner(w io.Writer, msg string) *cliSpinner {
@@ -93,9 +96,15 @@ func newSpinner(w io.Writer, msg string) *cliSpinner {
 }
 
 func (s *cliSpinner) Start() {
+	// Only animate if output is a terminal
+	if f, ok := s.w.(*os.File); !ok || !term.IsTerminal(int(f.Fd())) {
+		return
+	}
 	s.done = make(chan struct{})
+	s.stopped = make(chan struct{})
 	s.tick = time.NewTicker(100 * time.Millisecond)
 	go func() {
+		defer close(s.stopped)
 		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		i := 0
 		for {
@@ -114,5 +123,11 @@ func (s *cliSpinner) Start() {
 }
 
 func (s *cliSpinner) Stop() {
-	close(s.done)
+	s.once.Do(func() {
+		if s.done == nil {
+			return
+		}
+		close(s.done)
+		<-s.stopped
+	})
 }
