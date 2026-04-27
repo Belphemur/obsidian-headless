@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
 )
 
 func TestContinuousInitialSync(t *testing.T) {
@@ -347,6 +348,84 @@ func TestRunContinuousPeriodicScanEmptyDefault(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	cancel()
 
+	if err := <-errCh; err != nil && err != context.Canceled {
+		t.Fatalf("RunContinuous error: %v", err)
+	}
+}
+
+func TestContinuousInitialSyncWithStaleState(t *testing.T) {
+	mock := newMockSyncServer(t)
+	mock.addRecord("remote.md", 1, []byte("remote content"))
+
+	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
+	defer server.Close()
+
+	u, _ := url.Parse(server.URL)
+	wsURL := "ws://" + u.Host
+
+	vault := t.TempDir()
+	statePath := filepath.Join(t.TempDir(), "state.db")
+
+	// Pre-populate state DB with stale local state (simulating a vault move)
+	store, err := storage.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleLocal := map[string]model.FileRecord{
+		"remote.md": {Path: "remote.md", Hash: "stalehash", Size: 13, MTime: 1000},
+	}
+	staleRemote := map[string]model.FileRecord{
+		"remote.md": {Path: "remote.md", Hash: "stalehash", Size: 13, MTime: 1000},
+	}
+	if err := store.ReplaceLocalFiles(staleLocal); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceServerFiles(staleRemote); err != nil {
+		t.Fatal(err)
+	}
+	// Keep initial=true so the engine resets state and downloads
+	if err := store.SetInitial(true); err != nil {
+		t.Fatal(err)
+	}
+	store.Close()
+
+	e := &Engine{
+		Config: model.SyncConfig{
+			VaultID:   "test-continuous-stale-state-vault",
+			VaultPath: vault,
+			Host:      wsURL,
+			StatePath: statePath,
+			ConfigDir: ".obsidian",
+		},
+		Logger: testLogger(),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- e.RunContinuous(ctx)
+	}()
+
+	// Wait for initial connection, handshake, debounce (500ms) and sync
+	time.Sleep(3 * time.Second)
+
+	// Verify remote file was downloaded (not deleted from remote)
+	data, err := os.ReadFile(filepath.Join(vault, "remote.md"))
+	if err != nil {
+		t.Fatalf("remote file was not downloaded during initial sync with stale state: %v", err)
+	}
+	if string(data) != "remote content" {
+		t.Fatalf("unexpected content: %q", string(data))
+	}
+
+	// Verify the mock server still has the remote file
+	if len(mock.recordsByPath) != 1 {
+		t.Fatalf("remote file was incorrectly deleted from server; expected 1 record, got %d", len(mock.recordsByPath))
+	}
+
+	cancel()
 	if err := <-errCh; err != nil && err != context.Canceled {
 		t.Fatalf("RunContinuous error: %v", err)
 	}

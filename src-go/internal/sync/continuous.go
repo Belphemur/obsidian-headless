@@ -42,7 +42,6 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		return err
 	}
 	version, _ := store.Version()
-	initial, _ := store.Initial()
 	_ = store.Close()
 
 	var rescanInterval time.Duration
@@ -88,6 +87,13 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			cs.conn = nil
 		}
 		clear(cs.remote)
+
+		store, err := storage.Open(statePath)
+		if err != nil {
+			return fmt.Errorf("failed to open state db: %w", err)
+		}
+		initial, _ := store.Initial()
+		_ = store.Close()
 
 		conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
 		if err != nil {
@@ -274,6 +280,14 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		if err != nil {
 			e.Logger.Error().Err(err).Msg("continuous: failed to load state")
 			return
+		}
+
+		initial, _ := store.Initial()
+		if initial {
+			// During initial sync, ignore previous local and remote state
+			// so we download remote files instead of deleting them.
+			previousLocal = map[string]model.FileRecord{}
+			previousRemote = map[string]model.FileRecord{}
 		}
 
 		currentLocal, err := e.scanLocal()

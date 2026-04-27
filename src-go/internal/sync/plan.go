@@ -61,6 +61,12 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[st
 		previousL, hasPreviousL := previousLocal[path]
 		currentR, hasCurrentR := currentRemote[path]
 		previousR, hasPreviousR := previousRemote[path]
+
+		// Hash match: no changes needed
+		if hasCurrentL && hasCurrentR && !currentL.Folder && currentL.Hash == currentR.Hash {
+			continue
+		}
+
 		localChanged := recordChanged(hasPreviousL, previousL, hasCurrentL, currentL)
 		remoteChanged := recordChanged(hasPreviousR, previousR, hasCurrentR, currentR)
 

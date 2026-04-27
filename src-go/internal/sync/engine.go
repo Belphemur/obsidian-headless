@@ -107,6 +107,14 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		return err
 	}
 
+	initial, _ := store.Initial()
+	if initial {
+		// During initial sync, ignore previous local and remote state
+		// so we download remote files instead of deleting them.
+		previousLocal = map[string]model.FileRecord{}
+		previousRemote = map[string]model.FileRecord{}
+	}
+
 	currentLocal, err := e.scanLocal()
 	if err != nil {
 		return err

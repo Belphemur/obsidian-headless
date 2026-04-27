@@ -7,8 +7,10 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/encryption"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
 )
 
 func (e *Engine) ensureConnected(ctx context.Context) error {
@@ -19,6 +21,17 @@ func (e *Engine) ensureConnected(ctx context.Context) error {
 		return nil
 	}
 
+	statePath, err := configpkg.StatePath(e.Config.VaultID, e.Config.StatePath)
+	if err != nil {
+		return err
+	}
+	store, err := storage.Open(statePath)
+	if err != nil {
+		return fmt.Errorf("failed to open state db: %w", err)
+	}
+	initial, _ := store.Initial()
+	_ = store.Close()
+
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
 	if err != nil {
 		return fmt.Errorf("failed to dial websocket: %w", err)
@@ -28,7 +41,7 @@ func (e *Engine) ensureConnected(ctx context.Context) error {
 		_ = conn.Close()
 	})
 
-	version, remote, err := e.handshake(ctx, conn, e.version, e.initial)
+	version, remote, err := e.handshake(ctx, conn, e.version, initial)
 	if err != nil {
 		e.stopClose()
 		_ = conn.Close()
