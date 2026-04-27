@@ -9,7 +9,6 @@ on:
       - "package-lock.json"
       - "tsconfig.json"
       - ".github/workflows/typescript-ci.yml"
-      - ".github/workflows/typescript-cd.yml"
   push:
     branches:
       - main
@@ -20,7 +19,6 @@ on:
       - "package-lock.json"
       - "tsconfig.json"
       - ".github/workflows/typescript-ci.yml"
-      - ".github/workflows/typescript-cd.yml"
   workflow_dispatch:
 
 permissions:

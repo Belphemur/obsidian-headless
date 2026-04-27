@@ -6,7 +6,6 @@ on:
       - "src-go/**"
       - "mock-server/**"
       - ".github/workflows/go-ci.yml"
-      - ".github/workflows/go-cd.yml"
   push:
     branches:
       - main
@@ -14,7 +13,6 @@ on:
       - "src-go/**"
       - "mock-server/**"
       - ".github/workflows/go-ci.yml"
-      - ".github/workflows/go-cd.yml"
   workflow_dispatch:
 
 permissions:
