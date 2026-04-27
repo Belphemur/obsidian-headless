@@ -15,9 +15,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src
     outputs:
       release_created: ${{ steps.check_release.outputs.release_created }}
     steps:
@@ -41,7 +38,7 @@ jobs:
       - name: Docker Login
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ghcr
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -51,7 +48,6 @@ jobs:
           distribution: goreleaser
           version: "~> v2"
           args: release --clean
-          workdir: src
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -70,10 +66,10 @@ jobs:
         if: steps.check_release.outputs.release_created == 'true'
         uses: actions/attest-build-provenance@v2
         with:
-          subject-checksums: src/dist/checksums.txt
+          subject-checksums: dist/checksums.txt
 
       - name: Attest Build Provenance for Docker Images
         if: steps.check_release.outputs.release_created == 'true'
         uses: actions/attest-build-provenance@v2
         with:
-          subject-checksums: src/dist/digests.txt
+          subject-checksums: dist/digests.txt

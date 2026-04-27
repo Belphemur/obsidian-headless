@@ -35,12 +35,13 @@ changelog:
 # https://goreleaser.com/customization/hooks/
 before:
   hooks:
-    - go mod tidy
+    - cd src && go mod tidy
 
 # Configures the Go build process
 # https://goreleaser.com/customization/build/
 builds:
   - id: obsidian-headless
+    dir: src
     binary: ob
     main: ./cmd/ob-go
     goos:
@@ -101,7 +102,7 @@ dockers_v2:
   - id: obsidian-headless-image
     ids:
       - obsidian-headless
-    dockerfile: ../build/Dockerfile
+    dockerfile: build/Dockerfile
     platforms:
       - linux/amd64
       - linux/arm64
@@ -111,9 +112,9 @@ dockers_v2:
       - "{{ .Version }}"
       - latest
     extra_files:
-      - ../build/rootfs
-      - ../build/get-token.sh
-      - ../build/README.md
+      - build/rootfs
+      - build/get-token.sh
+      - build/README.md
     annotations:
       "org.opencontainers.image.description": "Obsidian headless client for syncing and publishing vaults without the desktop app."
       "org.opencontainers.image.created": "{{.Date}}"

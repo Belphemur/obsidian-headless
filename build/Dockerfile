@@ -38,7 +38,7 @@ RUN addgroup -g 1000 obsidian \
 # Copy the pre-built Go binary (goreleaser places it under $TARGETPLATFORM/)
 # We install it as 'ob' to maintain compatibility with existing scripts.
 # ---------------------------------------------------------------------------
-COPY $TARGETPLATFORM/obsidian-headless /usr/local/bin/ob
+COPY $TARGETPLATFORM/ob /usr/local/bin/ob
 RUN chmod +x /usr/local/bin/ob
 
 # ---------------------------------------------------------------------------
