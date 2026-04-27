@@ -15,6 +15,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-go
     outputs:
       release_created: ${{ steps.check_release.outputs.release_created }}
     steps:
@@ -45,13 +48,14 @@ jobs:
           distribution: goreleaser
           version: "~> v2"
           args: release --clean
+          workdir: src-go
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check if release was created
         id: check_release
         run: |
-          if [ -f ./dist/checksums.txt ] && [ -f ./dist/digests.txt ]; then
+          if [ -f dist/checksums.txt ] && [ -f dist/digests.txt ]; then
             echo "release_created=true" >> "$GITHUB_OUTPUT"
             echo "Release was created, attestation will proceed"
           else
@@ -63,10 +67,10 @@ jobs:
         if: steps.check_release.outputs.release_created == 'true'
         uses: actions/attest-build-provenance@v2
         with:
-          subject-checksums: ./dist/checksums.txt
+          subject-checksums: src-go/dist/checksums.txt
 
       - name: Attest Build Provenance for Docker Images
         if: steps.check_release.outputs.release_created == 'true'
         uses: actions/attest-build-provenance@v2
         with:
-          subject-checksums: ./dist/digests.txt
+          subject-checksums: src-go/dist/digests.txt
