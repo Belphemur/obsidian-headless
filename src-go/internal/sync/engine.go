@@ -150,7 +150,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	}
 
 	session := newRemoteSession(e.conn, currentRemote, version, ctx, e.enc, e.Logger, e.rawKey)
-	if err := e.executePlan(plan, currentLocal, previousRemote, session); err != nil {
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, session); err != nil {
 		return err
 	}
 
@@ -219,8 +219,12 @@ func (e *Engine) scanLocal() (map[string]model.FileRecord, error) {
 }
 
 // executePlan executes a list of sync actions.
-func (e *Engine) executePlan(plan []syncAction, currentLocal map[string]model.FileRecord, previousRemote map[string]model.FileRecord, session *remoteSession) error {
+func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLocal map[string]model.FileRecord, previousRemote map[string]model.FileRecord, session *remoteSession) error {
 	for _, action := range plan {
+		if err := ctx.Err(); err != nil {
+			e.Logger.Info().Err(err).Msg("sync cancelled, stopping plan execution")
+			return err
+		}
 		e.Logger.Debug().Str("kind", action.Kind.String()).Str("path", action.Path).Msg("action")
 		if action.Path == "" {
 			e.Logger.Error().Msg("EMPTY PATH IN ACTION!")

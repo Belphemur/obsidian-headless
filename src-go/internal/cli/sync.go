@@ -420,6 +420,7 @@ func newSyncRunCommand(app *App) *cobra.Command {
 				return err
 			}
 			if continuous {
+				defer engine.Close()
 				return engine.RunContinuous(cmd.Context())
 			}
 			defer engine.Close()

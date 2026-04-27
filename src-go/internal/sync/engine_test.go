@@ -370,7 +370,7 @@ func TestExecutePlan(t *testing.T) {
 
 	ctx := context.Background()
 	session := newRemoteSession(conn, remote, 1, ctx, nil, testLogger(), nil)
-	if err := e.executePlan(plan, currentLocal, previousRemote, session); err != nil {
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, session); err != nil {
 		t.Fatal(err)
 	}
 
