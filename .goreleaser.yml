@@ -35,7 +35,7 @@ changelog:
 # https://goreleaser.com/customization/hooks/
 before:
   hooks:
-    - cd src && go mod tidy
+    - sh -c "cd src && go mod tidy"
 
 # Configures the Go build process
 # https://goreleaser.com/customization/build/
