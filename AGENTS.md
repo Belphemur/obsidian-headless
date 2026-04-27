@@ -39,4 +39,10 @@ chore: update go.mod to use Go 1.26
 - `src/` - TypeScript implementation (legacy)
 - `src-go/` - Go implementation (active development)
 
+## Memory Management
+
+When making design decisions, architectural changes, or significant implementation choices, save a memory using the `serena_write_memory` tool. Use descriptive topic paths (e.g., `src-go/logging/log-rotation`).
+
+Before proposing or implementing new design changes, check existing memories with `serena_list_memories` and `serena_read_memory` to ensure consistency with prior decisions.
+
 See `src-go/AGENTS.md` for Go-specific agent configuration.

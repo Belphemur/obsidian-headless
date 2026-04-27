@@ -132,6 +132,12 @@ GOTOOLCHAIN=go1.26.0 go run ./cmd/ob-go --help
 - Include/exclude patterns from config
 - `--all` flag to publish untagged files
 
+## Memory Management
+
+When making design decisions, architectural changes, or significant implementation choices, save a memory using the `serena_write_memory` tool. Use descriptive topic paths (e.g., `src-go/logging/log-rotation`).
+
+Before proposing or implementing new design changes, check existing memories with `serena_list_memories` and `serena_read_memory` to ensure consistency with prior decisions.
+
 ## Code Quality
 
 Run the following commands before committing:
