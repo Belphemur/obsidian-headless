@@ -9,13 +9,18 @@ import (
 	"github.com/rs/zerolog"
 )
 
+func TestMain(m *testing.M) {
+	os.Setenv("_OBSIDIAN_HEADLESS_TEST_SECRET_PREFIX", "test:")
+	code := m.Run()
+	os.Exit(code)
+}
+
 func TestConfigManagerAuthTokenRoundTrip(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
-	prefix := "test:"
-	cm := newTestConfigManager(zerolog.New(io.Discard), &prefix)
+	cm := NewConfigManager(zerolog.New(io.Discard))
 
 	token := "my-secret-token"
 	if err := cm.SaveAuthToken(token); err != nil {
@@ -65,8 +70,7 @@ func TestConfigManagerMasterKeyCreated(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
-	prefix := "test:"
-	cm := newTestConfigManager(zerolog.New(io.Discard), &prefix)
+	cm := NewConfigManager(zerolog.New(io.Discard))
 
 	if err := cm.SaveAuthToken("token"); err != nil {
 		t.Fatalf("SaveAuthToken failed: %v", err)
@@ -86,8 +90,7 @@ func TestConfigManagerVaultSecretsRoundTrip(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
-	prefix := "test:"
-	cm := newTestConfigManager(zerolog.New(io.Discard), &prefix)
+	cm := NewConfigManager(zerolog.New(io.Discard))
 
 	vaultID := "test-vault"
 	key := "my-encryption-key"

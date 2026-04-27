@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"slices"
 	"sync"
 
@@ -23,13 +24,11 @@ type SecretStore struct {
 // NewSecretStore creates a new SecretStore, loading or creating the master key
 // needed for the encrypted-file fallback.
 func NewSecretStore(logger zerolog.Logger) (*SecretStore, error) {
-	return newSecretStore(logger, nil)
-}
-
-// newTestSecretStore creates a SecretStore that prefixes every key with the
-// given string. Intended for tests to avoid colliding with production secrets.
-func newTestSecretStore(logger zerolog.Logger, prefix string) (*SecretStore, error) {
-	return newSecretStore(logger, &prefix)
+	var prefix *string
+	if p := os.Getenv("_OBSIDIAN_HEADLESS_TEST_SECRET_PREFIX"); p != "" {
+		prefix = &p
+	}
+	return newSecretStore(logger, prefix)
 }
 
 func newSecretStore(logger zerolog.Logger, prefix *string) (*SecretStore, error) {

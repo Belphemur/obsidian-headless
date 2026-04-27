@@ -30,14 +30,11 @@ type ConfigManager struct {
 
 // NewConfigManager creates a new ConfigManager with the given logger.
 func NewConfigManager(logger zerolog.Logger) *ConfigManager {
-	return newTestConfigManager(logger, nil)
-}
-
-// newTestConfigManager creates a ConfigManager that prefixes every secret key
-// with the given string. Intended for tests to avoid colliding with production
-// secrets.
-func newTestConfigManager(logger zerolog.Logger, prefix *string) *ConfigManager {
-	return &ConfigManager{logger: logger, keyPrefix: prefix}
+	cm := &ConfigManager{logger: logger}
+	if prefix := os.Getenv("_OBSIDIAN_HEADLESS_TEST_SECRET_PREFIX"); prefix != "" {
+		cm.keyPrefix = &prefix
+	}
+	return cm
 }
 
 func (cm *ConfigManager) secretStore() (*SecretStore, error) {
