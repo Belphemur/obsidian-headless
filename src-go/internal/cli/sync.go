@@ -183,7 +183,7 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 			if err := os.MkdirAll(absPath, 0o755); err != nil {
 				return fmt.Errorf("failed to create vault path %s: %w", absPath, err)
 			}
-			cfg := model.SyncConfig{VaultID: vault.ID, VaultName: vault.Name, VaultPath: absPath, Host: vault.Host, EncryptionVersion: vault.EncryptionVersion, EncryptionSalt: vault.Salt, ConflictStrategy: "merge", DeviceName: deviceName, ConfigDir: configDir, StatePath: statePath, PeriodicScan: periodicScan}
+			cfg := model.SyncConfig{VaultID: vault.ID, VaultName: vault.Name, VaultPath: absPath, Host: vault.Host, EncryptionVersion: vault.EncryptionVersion, ConflictStrategy: "merge", DeviceName: deviceName, ConfigDir: configDir, StatePath: statePath, PeriodicScan: periodicScan}
 			if cfg.DeviceName == "" {
 				cfg.DeviceName = configpkg.DefaultDeviceName()
 			}
@@ -202,14 +202,9 @@ func newSyncSetupCommand(app *App) *cobra.Command {
 			if err := configpkg.WriteSyncConfig(cfg); err != nil {
 				return err
 			}
-			if password != "" {
-				store, err := configpkg.NewSecretStore(app.logger)
-				if err != nil {
+			if password != "" || vault.Salt != "" {
+				if err := app.configManager.SaveVaultSecrets(cfg.VaultID, password, vault.Salt); err != nil {
 					return err
-				}
-				defer store.Close()
-				if setErr := store.Set(fmt.Sprintf("vault:%s:encryption_key", cfg.VaultID), password); setErr != nil {
-					return setErr
 				}
 			}
 			statePathValue, err := configpkg.StatePath(cfg.VaultID, cfg.StatePath)
@@ -366,6 +361,7 @@ func newSyncUnlinkCommand(app *App) *cobra.Command {
 			if cfg == nil {
 				return fmt.Errorf("no sync config for %s", localPath)
 			}
+			_ = app.configManager.ClearVaultSecrets(cfg.VaultID)
 			return configpkg.RemoveSyncConfig(cfg.VaultID)
 		},
 	}
@@ -392,19 +388,18 @@ func newSyncRunCommand(app *App) *cobra.Command {
 				return fmt.Errorf("no sync config for %s", localPath)
 			}
 			if cfg.EncryptionVersion != 0 {
-				store, err := configpkg.NewSecretStore(app.logger)
-				if err != nil {
-					return err
-				}
-				defer store.Close()
-				encKey, err := store.Get(fmt.Sprintf("vault:%s:encryption_key", cfg.VaultID))
+				encKey, encSalt, err := app.configManager.LoadVaultSecrets(cfg.VaultID)
 				if err != nil {
 					return err
 				}
 				if encKey == "" {
 					return fmt.Errorf("missing encryption key for encrypted vault %q; re-run `sync-setup --password` or restore the secrets store", cfg.VaultID)
 				}
+				if encSalt == "" {
+					return fmt.Errorf("missing encryption salt for encrypted vault %q; re-run `sync-setup --password` or restore the secrets store", cfg.VaultID)
+				}
 				cfg.EncryptionKey = encKey
+				cfg.EncryptionSalt = encSalt
 			}
 			logPath, err := configpkg.LogPath(cfg.VaultID)
 			if err != nil {
