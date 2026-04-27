@@ -37,7 +37,6 @@ type Engine struct {
 	conn      *websocket.Conn
 	remote    map[string]model.FileRecord
 	version   int64
-	initial   bool
 	stopClose func() bool
 
 	mu sync.Mutex
