@@ -1,4 +1,4 @@
-# Agent Configuration for src-go
+# Agent Configuration for src
 
 ## Overview
 
@@ -7,7 +7,7 @@ Go implementation of the Obsidian Headless Client. Provides CLI for syncing and 
 ## Project Structure
 
 ```
-src-go/
+src/
 ├── cmd/ob-go/main.go              # Entry point
 ├── internal/
 │   ├── api/client.go             # HTTP client for Obsidian REST API
@@ -134,7 +134,7 @@ GOTOOLCHAIN=go1.26.0 go run ./cmd/ob-go --help
 
 ## Memory Management
 
-When making design decisions, architectural changes, or significant implementation choices, save a memory using the `serena_write_memory` tool. Use descriptive topic paths (e.g., `src-go/logging/log-rotation`).
+When making design decisions, architectural changes, or significant implementation choices, save a memory using the `serena_write_memory` tool. Use descriptive topic paths (e.g., `src/logging/log-rotation`).
 
 Before proposing or implementing new design changes, check existing memories with `serena_list_memories` and `serena_read_memory` to ensure consistency with prior decisions.
 
@@ -159,7 +159,7 @@ func TestMain(m *testing.M) {
 ```
 
 This is already in place for:
-- `src-go/internal/config` package tests
+- `src/internal/config` package tests
 - `src-go` integration tests
 
 ## Code Quality
