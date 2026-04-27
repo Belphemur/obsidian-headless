@@ -17,11 +17,22 @@ type SecretStore struct {
 	fallback  *storage.CredentialStore
 	logger    zerolog.Logger
 	keyring   keyring.Keyring
+	keyPrefix *string
 }
 
 // NewSecretStore creates a new SecretStore, loading or creating the master key
 // needed for the encrypted-file fallback.
 func NewSecretStore(logger zerolog.Logger) (*SecretStore, error) {
+	return newSecretStore(logger, nil)
+}
+
+// newTestSecretStore creates a SecretStore that prefixes every key with the
+// given string. Intended for tests to avoid colliding with production secrets.
+func newTestSecretStore(logger zerolog.Logger, prefix string) (*SecretStore, error) {
+	return newSecretStore(logger, &prefix)
+}
+
+func newSecretStore(logger zerolog.Logger, prefix *string) (*SecretStore, error) {
 	masterKey, err := LoadOrCreateMasterKey()
 	if err != nil {
 		return nil, err
@@ -46,7 +57,14 @@ func NewSecretStore(logger zerolog.Logger) (*SecretStore, error) {
 		ring = nil
 	}
 
-	return &SecretStore{masterKey: masterKey, logger: logger, keyring: ring}, nil
+	return &SecretStore{masterKey: masterKey, logger: logger, keyring: ring, keyPrefix: prefix}, nil
+}
+
+func (s *SecretStore) prefixedKey(key string) string {
+	if s.keyPrefix != nil {
+		return *s.keyPrefix + key
+	}
+	return key
 }
 
 // Close closes the fallback database connection if it was opened.
@@ -65,6 +83,7 @@ func (s *SecretStore) Get(key string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	key = s.prefixedKey(key)
 	if s.keyring != nil {
 		item, err := s.keyring.Get(key)
 		if err == nil {
@@ -87,6 +106,7 @@ func (s *SecretStore) Set(key, value string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	key = s.prefixedKey(key)
 	if s.keyring != nil {
 		err := s.keyring.Set(keyring.Item{
 			Key:  key,
@@ -113,6 +133,7 @@ func (s *SecretStore) Delete(key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	key = s.prefixedKey(key)
 	if s.keyring != nil {
 		if err := s.keyring.Remove(key); err != nil {
 			s.logger.Debug().Str("key", key).Err(err).Msg("keyring delete failed")

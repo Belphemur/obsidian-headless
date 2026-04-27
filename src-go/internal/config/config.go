@@ -24,16 +24,24 @@ var (
 
 // ConfigManager provides credential and auth-token operations with a configured logger.
 type ConfigManager struct {
-	logger zerolog.Logger
+	logger    zerolog.Logger
+	keyPrefix *string
 }
 
 // NewConfigManager creates a new ConfigManager with the given logger.
 func NewConfigManager(logger zerolog.Logger) *ConfigManager {
-	return &ConfigManager{logger: logger}
+	return newTestConfigManager(logger, nil)
+}
+
+// newTestConfigManager creates a ConfigManager that prefixes every secret key
+// with the given string. Intended for tests to avoid colliding with production
+// secrets.
+func newTestConfigManager(logger zerolog.Logger, prefix *string) *ConfigManager {
+	return &ConfigManager{logger: logger, keyPrefix: prefix}
 }
 
 func (cm *ConfigManager) secretStore() (*SecretStore, error) {
-	return NewSecretStore(cm.logger)
+	return newSecretStore(cm.logger, cm.keyPrefix)
 }
 
 // LoadAuthToken retrieves the auth token from environment or secret store.
