@@ -78,3 +78,45 @@ func TestConfigManagerMasterKeyCreated(t *testing.T) {
 		t.Error("master key was not created")
 	}
 }
+
+func TestConfigManagerVaultSecretsRoundTrip(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+
+	cm := NewConfigManager(zerolog.New(io.Discard))
+
+	vaultID := "test-vault"
+	key := "my-encryption-key"
+	salt := "my-encryption-salt"
+
+	if err := cm.SaveVaultSecrets(vaultID, key, salt); err != nil {
+		t.Fatalf("SaveVaultSecrets failed: %v", err)
+	}
+
+	loadedKey, loadedSalt, err := cm.LoadVaultSecrets(vaultID)
+	if err != nil {
+		t.Fatalf("LoadVaultSecrets failed: %v", err)
+	}
+	if loadedKey != key {
+		t.Errorf("expected key %q, got %q", key, loadedKey)
+	}
+	if loadedSalt != salt {
+		t.Errorf("expected salt %q, got %q", salt, loadedSalt)
+	}
+
+	if err := cm.ClearVaultSecrets(vaultID); err != nil {
+		t.Fatalf("ClearVaultSecrets failed: %v", err)
+	}
+
+	clearedKey, clearedSalt, err := cm.LoadVaultSecrets(vaultID)
+	if err != nil {
+		t.Fatalf("LoadVaultSecrets after clear failed: %v", err)
+	}
+	if clearedKey != "" {
+		t.Errorf("expected empty key after clear, got %q", clearedKey)
+	}
+	if clearedSalt != "" {
+		t.Errorf("expected empty salt after clear, got %q", clearedSalt)
+	}
+}
