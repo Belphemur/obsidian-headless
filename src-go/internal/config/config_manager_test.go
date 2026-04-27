@@ -14,7 +14,8 @@ func TestConfigManagerAuthTokenRoundTrip(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
-	cm := NewConfigManager(zerolog.New(io.Discard))
+	prefix := "test:"
+	cm := newTestConfigManager(zerolog.New(io.Discard), &prefix)
 
 	token := "my-secret-token"
 	if err := cm.SaveAuthToken(token); err != nil {
@@ -64,7 +65,8 @@ func TestConfigManagerMasterKeyCreated(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
-	cm := NewConfigManager(zerolog.New(io.Discard))
+	prefix := "test:"
+	cm := newTestConfigManager(zerolog.New(io.Discard), &prefix)
 
 	if err := cm.SaveAuthToken("token"); err != nil {
 		t.Fatalf("SaveAuthToken failed: %v", err)
@@ -84,7 +86,8 @@ func TestConfigManagerVaultSecretsRoundTrip(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
-	cm := NewConfigManager(zerolog.New(io.Discard))
+	prefix := "test:"
+	cm := newTestConfigManager(zerolog.New(io.Discard), &prefix)
 
 	vaultID := "test-vault"
 	key := "my-encryption-key"

@@ -13,9 +13,9 @@ func TestSecretStoreRoundTrip(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
-	store, err := NewSecretStore(zerolog.New(io.Discard))
+	store, err := newTestSecretStore(zerolog.New(io.Discard), "test:")
 	if err != nil {
-		t.Fatalf("NewSecretStore failed: %v", err)
+		t.Fatalf("newTestSecretStore failed: %v", err)
 	}
 	defer store.Close()
 
@@ -52,9 +52,9 @@ func TestSecretStoreFallbackWhenKeyringUnavailable(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 
-	store, err := NewSecretStore(zerolog.New(io.Discard))
+	store, err := newTestSecretStore(zerolog.New(io.Discard), "test:")
 	if err != nil {
-		t.Fatalf("NewSecretStore failed: %v", err)
+		t.Fatalf("newTestSecretStore failed: %v", err)
 	}
 	defer store.Close()
 
