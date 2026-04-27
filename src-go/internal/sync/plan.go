@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/util"
 )
 
 type syncActionKind int
@@ -161,6 +162,9 @@ func chooseRemote(hasCurrentL bool, currentL model.FileRecord, hasCurrentR bool,
 
 func isValidPath(path string) bool {
 	if path == "" {
+		return false
+	}
+	if !util.IsLegalPath(path) {
 		return false
 	}
 	if len(path) > 3 && len(path) < 4096 {

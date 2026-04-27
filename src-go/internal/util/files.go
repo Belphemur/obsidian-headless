@@ -41,16 +41,41 @@ func HashReader(reader io.Reader) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func ScanVault(root, configDir string, ignored []string) (map[string]model.FileRecord, error) {
+// IllegalPathChars are characters that cannot appear in filenames on Windows
+// and are treated as invalid by the Obsidian app.
+const IllegalPathChars = `:*?"<>|\`
+
+// IsLegalPath reports whether a relative vault path contains only legal
+// characters. Each path component is checked against characters that are
+// invalid on Windows or reserved in Obsidian.
+func IsLegalPath(relPath string) bool {
+	if relPath == "" {
+		return false
+	}
+	for component := range strings.SplitSeq(relPath, "/") {
+		if component == "" || component == "." || component == ".." {
+			return false
+		}
+		for _, r := range component {
+			if r < 32 || strings.ContainsRune(IllegalPathChars, r) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func ScanVault(root, configDir string, ignored []string) (map[string]model.FileRecord, []string, error) {
 	root, err := filepath.Abs(root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ignoredSet := map[string]struct{}{}
 	for _, folder := range ignored {
 		ignoredSet[filepath.Clean(strings.Trim(folder, "/"))] = struct{}{}
 	}
 	files := map[string]model.FileRecord{}
+	var skipped []string
 	err = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -76,6 +101,14 @@ func ScanVault(root, configDir string, ignored []string) (map[string]model.FileR
 				}
 				return nil
 			}
+		}
+		if !IsLegalPath(rel) {
+			if d.IsDir() {
+				skipped = append(skipped, rel)
+				return filepath.SkipDir
+			}
+			skipped = append(skipped, rel)
+			return nil
 		}
 		// Skip hidden files (match TypeScript: paths starting with ".")
 		// Only skip files, not directories — .obsidian must be walked.
@@ -122,9 +155,9 @@ func ScanVault(root, configDir string, ignored []string) (map[string]model.FileR
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return files, nil
+	return files, skipped, nil
 }
 
 func SortedPaths(records map[string]model.FileRecord) []string {

@@ -215,7 +215,14 @@ func (e *Engine) loadState(store *storage.StateStore) (previousLocal, previousRe
 
 // scanLocal scans the vault for current local files.
 func (e *Engine) scanLocal() (map[string]model.FileRecord, error) {
-	return util.ScanVault(e.Config.VaultPath, e.configDir(), e.ignoreList())
+	files, skipped, err := util.ScanVault(e.Config.VaultPath, e.configDir(), e.ignoreList())
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range skipped {
+		e.Logger.Warn().Str("path", path).Msg("skipping local file with illegal filename characters")
+	}
+	return files, nil
 }
 
 // executePlan executes a list of sync actions.
