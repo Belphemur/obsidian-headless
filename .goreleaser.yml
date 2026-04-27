@@ -1,0 +1,130 @@
+version: 2
+project_name: obsidian-headless
+
+# Configures the release process on GitHub
+# https://goreleaser.com/customization/release/
+release:
+  github:
+    owner: Belphemur
+    name: obsidian-headless
+  include_meta: true
+
+# Configures the changelog generation
+# https://goreleaser.com/customization/changelog/
+changelog:
+  sort: asc
+  use: github
+  format: "{{.SHA}}: {{.Message}} (@{{.AuthorUsername}})"
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: "Bug fixes"
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: "Performance"
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+
+# Hooks to run before the build process starts
+# https://goreleaser.com/customization/hooks/
+before:
+  hooks:
+    - sh -c "cd src-go && go mod tidy"
+
+# Configures the Go build process
+# https://goreleaser.com/customization/build/
+builds:
+  - id: obsidian-headless
+    dir: src-go
+    main: ./cmd/ob-go
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/Belphemur/obsidian-headless/src-go/internal/buildinfo.Version={{.Version}}
+      - -X github.com/Belphemur/obsidian-headless/src-go/internal/buildinfo.Commit={{.Commit}}
+      - -X github.com/Belphemur/obsidian-headless/src-go/internal/buildinfo.Date={{ .CommitDate }}
+    env:
+      - CGO_ENABLED=0
+
+# Configures the binary archive generation
+# https://goreleaser.com/customization/archive/
+archives:
+  - name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+
+# Configures the checksum file generation
+# https://goreleaser.com/customization/checksum/
+checksum:
+  name_template: "checksums.txt"
+
+# Creates a source code archive (tar.gz and zip)
+# https://goreleaser.com/customization/source/
+source:
+  enabled: true
+
+# Change the digests filename for attestation
+# https://goreleaser.com/customization/docker_digest/
+docker_digest:
+  name_template: "digests.txt"
+
+# Creates SBOMs (Software Bill of Materials)
+# https://goreleaser.com/customization/sbom/
+sboms:
+  - id: archive
+    artifacts: archive
+  - id: source
+    artifacts: source
+
+# Creates Docker images and pushes them to registries using Docker v2 API
+# https://goreleaser.com/customization/docker/
+dockers_v2:
+  - id: obsidian-headless-image
+    ids:
+      - obsidian-headless
+    dockerfile: build/Dockerfile
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    images:
+      - "ghcr.io/belphemur/obsidian-headless"
+    tags:
+      - "{{ .Version }}"
+      - latest
+    extra_files:
+      - build/rootfs
+      - build/get-token.sh
+      - build/README.md
+    annotations:
+      "org.opencontainers.image.description": "Obsidian headless client for syncing and publishing vaults without the desktop app."
+      "org.opencontainers.image.created": "{{.Date}}"
+      "org.opencontainers.image.name": "{{.ProjectName}}"
+      "org.opencontainers.image.revision": "{{.FullCommit}}"
+      "org.opencontainers.image.version": "{{.Version}}"
+      "org.opencontainers.image.source": "{{.GitURL}}"
+    labels:
+      "org.opencontainers.image.created": "{{.Date}}"
+      "org.opencontainers.image.name": "{{.ProjectName}}"
+      "org.opencontainers.image.revision": "{{.FullCommit}}"
+      "org.opencontainers.image.version": "{{.Version}}"
+      "org.opencontainers.image.source": "{{.GitURL}}"
+      "org.opencontainers.image.description": "Obsidian headless client for syncing and publishing vaults without the desktop app."
