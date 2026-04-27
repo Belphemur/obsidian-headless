@@ -5,6 +5,7 @@ go 1.26
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/byteness/keyring v1.9.1
+	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/jedisct1/go-aes-siv v1.0.0
@@ -16,6 +17,7 @@ require (
 	golang.org/x/crypto v0.50.0
 	golang.org/x/term v0.42.0
 	golang.org/x/text v0.36.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.50.0
 )
@@ -26,7 +28,6 @@ require (
 	github.com/byteness/go-keychain v0.0.0-20260108220220-c96c38f7f906 // indirect
 	github.com/byteness/go-libsecret v0.0.0-20260108215642-107379d3dee0 // indirect
 	github.com/byteness/percent v0.2.2 // indirect
-	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

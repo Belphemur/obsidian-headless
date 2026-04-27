@@ -2,10 +2,9 @@ package logging
 
 import (
 	"io"
-	"os"
-	"path/filepath"
 
 	"github.com/rs/zerolog"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 func NewConsoleLogger(output io.Writer) zerolog.Logger {
@@ -14,12 +13,13 @@ func NewConsoleLogger(output io.Writer) zerolog.Logger {
 }
 
 func NewFileLogger(stdout io.Writer, path string) (zerolog.Logger, func(), error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return zerolog.Logger{}, nil, err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return zerolog.Logger{}, nil, err
+	file := &lumberjack.Logger{
+		Filename:   path,
+		MaxSize:    10, // megabytes
+		MaxAge:     3,  // days
+		MaxBackups: 0,  // unlimited, age limit governs cleanup
+		LocalTime:  true,
+		Compress:   true,
 	}
 	console := zerolog.ConsoleWriter{Out: stdout}
 	logger := zerolog.New(io.MultiWriter(console, file)).With().Timestamp().Logger()
