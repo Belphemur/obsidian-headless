@@ -9,7 +9,7 @@ import (
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 )
 
-const userAgent = "obsidian-headless"
+const userAgent = "node"
 
 // Client is an HTTP client for the Obsidian REST API.
 type Client struct {
