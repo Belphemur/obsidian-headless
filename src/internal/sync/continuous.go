@@ -18,6 +18,7 @@ import (
 const (
 	continuousDebounce     = 500 * time.Millisecond
 	reconnectBackoff       = 5 * time.Second
+	maxReconnectBackoff    = 60 * time.Second
 	heartbeatInterval      = 20 * time.Second
 	heartbeatSendThreshold = 10 * time.Second
 	heartbeatTimeout       = 120 * time.Second
@@ -215,7 +216,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 					cs.mu.Unlock()
 
 					if conn == nil {
-						return
+						continue
 					}
 
 					elapsed := time.Since(lastMsg)
@@ -223,14 +224,25 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 					if elapsed >= heartbeatTimeout {
 						e.Logger.Warn().Dur("elapsed", elapsed).Msg("continuous: heartbeat timeout, closing connection")
 						_ = conn.Close()
-						return
+						cs.mu.Lock()
+						if cs.conn == conn {
+							cs.conn = nil
+						}
+						cs.mu.Unlock()
+						continue
 					}
 					if elapsed >= heartbeatSendThreshold {
 						if err := conn.WriteJSON(map[string]any{"op": "ping"}); err != nil {
-							e.Logger.Warn().Err(err).Msg("continuous: failed to send ping")
-						} else {
-							e.Logger.Debug().Dur("elapsed", elapsed).Msg("continuous: sent ping")
+							e.Logger.Warn().Err(err).Msg("continuous: failed to send ping, closing connection")
+							_ = conn.Close()
+							cs.mu.Lock()
+							if cs.conn == conn {
+								cs.conn = nil
+							}
+							cs.mu.Unlock()
+							continue
 						}
+						e.Logger.Debug().Dur("elapsed", elapsed).Msg("continuous: sent ping")
 					}
 				}
 			}
@@ -400,14 +412,20 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			clear(cs.remote)
 			cs.mu.Unlock()
 
+			backoff := reconnectBackoff
+
 		reconnectLoop:
 			for {
 				select {
 				case <-ctx.Done():
 					return nil
-				case <-time.After(reconnectBackoff):
+				case <-time.After(backoff):
 					if err := connect(); err != nil {
 						e.Logger.Error().Err(err).Msg("continuous: reconnection failed, retrying...")
+					backoff *= 2
+					if backoff > maxReconnectBackoff {
+						backoff = maxReconnectBackoff
+					}
 						continue reconnectLoop
 					}
 					startReadPump()

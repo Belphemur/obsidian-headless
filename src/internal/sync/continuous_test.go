@@ -107,12 +107,14 @@ func TestContinuousWatcherSync(t *testing.T) {
 
 	// Verify file was uploaded to mock server
 	found := false
+	mock.mu.Lock()
 	for _, content := range mock.contentByUID {
 		if string(content) == "new content" {
 			found = true
 			break
 		}
 	}
+	mock.mu.Unlock()
 	if !found {
 		t.Fatal("file was not uploaded by continuous sync")
 	}
@@ -175,12 +177,14 @@ func TestContinuousPushSync(t *testing.T) {
 
 	// Verify local file was uploaded
 	found := false
+	mock.mu.Lock()
 	for _, content := range mock.contentByUID {
 		if string(content) == "local content" {
 			found = true
 			break
 		}
 	}
+	mock.mu.Unlock()
 	if !found {
 		t.Fatal("local file was not uploaded")
 	}
@@ -238,12 +242,14 @@ func TestContinuousReconnection(t *testing.T) {
 	time.Sleep(4 * time.Second)
 
 	found := false
+	mock.mu.Lock()
 	for _, content := range mock.contentByUID {
 		if string(content) == "after reconnect" {
 			found = true
 			break
 		}
 	}
+	mock.mu.Unlock()
 	if !found {
 		t.Fatal("file was not uploaded after reconnection")
 	}
@@ -421,8 +427,86 @@ func TestContinuousInitialSyncWithStaleState(t *testing.T) {
 	}
 
 	// Verify the mock server still has the remote file
-	if len(mock.recordsByPath) != 1 {
-		t.Fatalf("remote file was incorrectly deleted from server; expected 1 record, got %d", len(mock.recordsByPath))
+	mock.mu.Lock()
+	recordCount := len(mock.recordsByPath)
+	mock.mu.Unlock()
+	if recordCount != 1 {
+		t.Fatalf("remote file was incorrectly deleted from server; expected 1 record, got %d", recordCount)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil && err != context.Canceled {
+		t.Fatalf("RunContinuous error: %v", err)
+	}
+}
+
+func TestContinuousHeartbeatAfterReconnect(t *testing.T) {
+	mock := newMockSyncServer(t)
+
+	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
+	defer server.Close()
+
+	u, _ := url.Parse(server.URL)
+	wsURL := "ws://" + u.Host
+
+	vault := t.TempDir()
+	statePath := filepath.Join(t.TempDir(), "state.db")
+
+	e := &Engine{
+		Config: model.SyncConfig{
+			VaultID:   "test-heartbeat-reconnect-vault",
+			VaultPath: vault,
+			Host:      wsURL,
+			StatePath: statePath,
+			ConfigDir: ".obsidian",
+		},
+		Logger: testLogger(),
+	}
+
+	// The server will close the WebSocket after responding to the first ping.
+	// This forces a reconnect so we can verify the heartbeat restarts.
+	mock.closeAfterPing = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- e.RunContinuous(ctx)
+	}()
+
+	// Wait for the first ping (server will close connection after pong)
+	var initialPings int
+	foundInitial := false
+	for range 60 {
+		time.Sleep(500 * time.Millisecond)
+		mock.mu.Lock()
+		initialPings = mock.pingCount
+		mock.mu.Unlock()
+		if initialPings > 0 {
+			foundInitial = true
+			break
+		}
+	}
+	if !foundInitial {
+		t.Fatal("expected at least one ping on initial connection")
+	}
+
+	// After the server closed the connection, the client should reconnect
+	// and the heartbeat should resume, sending another ping.
+	foundAfterReconnect := false
+	for range 60 {
+		time.Sleep(500 * time.Millisecond)
+		mock.mu.Lock()
+		finalPings := mock.pingCount
+		mock.mu.Unlock()
+		if finalPings > initialPings {
+			foundAfterReconnect = true
+			break
+		}
+	}
+	if !foundAfterReconnect {
+		t.Fatalf("expected ping after reconnect")
 	}
 
 	cancel()
