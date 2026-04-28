@@ -21,8 +21,10 @@ src/
 │   ├── logging/logger.go        # File logger using zerolog
 │   ├── model/types.go           # Data types (UserInfo, Vault, SyncConfig, etc.)
 │   ├── storage/
-│   │   ├── state.go           # SQLite state store (local/server files)
-│   │   └── crypto.go          # AES-GCM encryption for secrets
+│   │   ├── state.go           # SQLite state store (typed columns, incremental save)
+│   │   ├── migrate.go         # Custom migration driver for modernc.org/sqlite
+│   │   ├── crypto.go          # AES-GCM encryption for secrets
+│   │   └── migrations/sqlite/ # Embedded schema migration files
 │   ├── sync/
 │   │   ├── engine.go         # WebSocket sync engine
 │   │   └── watch/           # File system watcher
@@ -66,6 +68,7 @@ src/
 - **fsnotify** - File system watching
 - **rs/zerolog** - Logging
 - **modernc.org/sqlite** - Pure Go SQLite
+- **golang-migrate/migrate/v4** - Schema migrations
 - **golang.org/x/crypto** - Scrypt key derivation
 - **gopkg.in/yaml.v3** - YAML parsing (frontmatter)
 - **bmatcuk/doublestar/v4** - Glob patterns
@@ -84,11 +87,46 @@ src/
 
 ### state.db (per vault)
 
+Managed by `golang-migrate/migrate/v4` with embedded SQL files in
+`internal/storage/migrations/sqlite/`. Migrations run automatically
+on `storage.Open()`.
+
 ```sql
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
-CREATE TABLE local_files (path TEXT PRIMARY KEY, data TEXT NOT NULL);
-CREATE TABLE server_files (path TEXT PRIMARY KEY, data TEXT NOT NULL);
+
+CREATE TABLE local_files (
+    path    TEXT PRIMARY KEY,
+    size    INTEGER NOT NULL DEFAULT 0,
+    hash    TEXT    NOT NULL DEFAULT '',
+    ctime   INTEGER NOT NULL DEFAULT 0,
+    mtime   INTEGER NOT NULL DEFAULT 0,
+    folder  INTEGER NOT NULL DEFAULT 0,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    raw     BLOB    NOT NULL DEFAULT (jsonb('{}'))
+);
+
+CREATE TABLE server_files (
+    path    TEXT PRIMARY KEY,
+    size    INTEGER NOT NULL DEFAULT 0,
+    hash    TEXT    NOT NULL DEFAULT '',
+    ctime   INTEGER NOT NULL DEFAULT 0,
+    mtime   INTEGER NOT NULL DEFAULT 0,
+    folder  INTEGER NOT NULL DEFAULT 0,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    uid     INTEGER NOT NULL DEFAULT 0,
+    device  TEXT    NOT NULL DEFAULT '',
+    user    TEXT    NOT NULL DEFAULT '',
+    raw     BLOB    NOT NULL DEFAULT (jsonb('{}'))
+);
+
+CREATE INDEX idx_local_files_hash ON local_files(hash);
+CREATE INDEX idx_server_files_hash ON server_files(hash);
+CREATE INDEX idx_server_files_uid ON server_files(uid);
 ```
+
+The `raw` column stores the full `FileRecord` JSON as SQLite JSONB binary
+(via `jsonb()`), preserved for forward compatibility. Typed columns are
+used for all sync operations; `raw` is never read by Go code.
 
 ## API Endpoints
 

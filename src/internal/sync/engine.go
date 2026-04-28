@@ -107,6 +107,9 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		return err
 	}
 
+	dbLocal := previousLocal
+	dbRemote := previousRemote
+
 	initial, _ := store.Initial()
 	if initial {
 		// During initial sync, ignore previous local and remote state
@@ -177,7 +180,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		}
 	}
 
-	if err := e.saveState(store, currentLocal, updatedRemote, session.version); err != nil {
+	if err := e.saveState(store, currentLocal, updatedRemote, dbLocal, dbRemote, session.version); err != nil {
 		return err
 	}
 
@@ -600,15 +603,51 @@ func (e *Engine) mergeJSONFile(path string, currentLocal, previousRemote map[str
 }
 
 // saveState saves current local and remote state to the state DB.
-func (e *Engine) saveState(store *storage.StateStore, currentLocal map[string]model.FileRecord, currentRemote map[string]model.FileRecord, version int64) error {
+// Uses incremental upsert/delete to avoid rewriting unchanged rows.
+func (e *Engine) saveState(store *storage.StateStore, currentLocal, currentRemote map[string]model.FileRecord, previousLocal, previousRemote map[string]model.FileRecord, version int64) error {
 	if err := store.SetVersion(version); err != nil {
 		return err
 	}
-	if err := store.ReplaceLocalFiles(currentLocal); err != nil {
+
+	var localUpserts, remoteUpserts []model.FileRecord
+	var localDeletes, remoteDeletes []string
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for path, rec := range currentLocal {
+			prev, had := previousLocal[path]
+			if !had || rec.Hash != prev.Hash || rec.MTime != prev.MTime || rec.Size != prev.Size || rec.Deleted != prev.Deleted {
+				localUpserts = append(localUpserts, rec)
+			}
+		}
+		for path := range previousLocal {
+			if _, has := currentLocal[path]; !has {
+				localDeletes = append(localDeletes, path)
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for path, rec := range currentRemote {
+			prev, had := previousRemote[path]
+			if !had || rec.Hash != prev.Hash || rec.MTime != prev.MTime || rec.Size != prev.Size || rec.Deleted != prev.Deleted {
+				remoteUpserts = append(remoteUpserts, rec)
+			}
+		}
+		for path := range previousRemote {
+			if _, has := currentRemote[path]; !has {
+				remoteDeletes = append(remoteDeletes, path)
+			}
+		}
+	}()
+	wg.Wait()
+
+	if err := store.SaveLocalDiff(localUpserts, localDeletes); err != nil {
 		return fmt.Errorf("failed to save local state: %w", err)
 	}
-
-	if err := store.ReplaceServerFiles(currentRemote); err != nil {
+	if err := store.SaveServerDiff(remoteUpserts, remoteDeletes); err != nil {
 		return fmt.Errorf("failed to save remote state: %w", err)
 	}
 

@@ -100,7 +100,7 @@ func TestSaveState(t *testing.T) {
 	}
 
 	e := &Engine{Logger: testLogger()}
-	if err := e.saveState(store, local, remote, 42); err != nil {
+	if err := e.saveState(store, local, remote, nil, nil, 42); err != nil {
 		t.Fatal(err)
 	}
 
