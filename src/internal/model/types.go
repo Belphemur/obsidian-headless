@@ -88,6 +88,19 @@ type FileRecord struct {
 	User         string `json:"user,omitempty"`
 }
 
+// Equal reports whether two FileRecords have identical persisted fields.
+func (r FileRecord) Equal(other FileRecord) bool {
+	return r.Hash == other.Hash &&
+		r.MTime == other.MTime &&
+		r.Size == other.Size &&
+		r.Deleted == other.Deleted &&
+		r.Folder == other.Folder &&
+		r.CTime == other.CTime &&
+		r.UID == other.UID &&
+		r.Device == other.Device &&
+		r.User == other.User
+}
+
 type PublishCacheEntry struct {
 	Hash    string `json:"hash"`
 	MTime   int64  `json:"mtime"`

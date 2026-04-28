@@ -107,6 +107,9 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		return err
 	}
 
+	dbLocal := previousLocal
+	dbRemote := previousRemote
+
 	initial, _ := store.Initial()
 	if initial {
 		// During initial sync, ignore previous local and remote state
@@ -177,7 +180,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		}
 	}
 
-	if err := e.saveState(store, currentLocal, updatedRemote, session.version); err != nil {
+	if err := e.saveState(store, currentLocal, updatedRemote, dbLocal, dbRemote, session.version); err != nil {
 		return err
 	}
 
@@ -599,18 +602,42 @@ func (e *Engine) mergeJSONFile(path string, currentLocal, previousRemote map[str
 	return nil
 }
 
-// saveState saves current local and remote state to the state DB.
-func (e *Engine) saveState(store *storage.StateStore, currentLocal map[string]model.FileRecord, currentRemote map[string]model.FileRecord, version int64) error {
-	if err := store.SetVersion(version); err != nil {
-		return err
-	}
-	if err := store.ReplaceLocalFiles(currentLocal); err != nil {
-		return fmt.Errorf("failed to save local state: %w", err)
-	}
+// saveState saves current local and remote state to the state DB in a single
+// atomic transaction. Computes local and remote diffs in parallel, then
+// applies only changed records.
+func (e *Engine) saveState(store *storage.StateStore, currentLocal, currentRemote map[string]model.FileRecord, previousLocal, previousRemote map[string]model.FileRecord, version int64) error {
+	var localUpserts, remoteUpserts []model.FileRecord
+	var localDeletes, remoteDeletes []string
+	var wg sync.WaitGroup
 
-	if err := store.ReplaceServerFiles(currentRemote); err != nil {
-		return fmt.Errorf("failed to save remote state: %w", err)
-	}
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		localUpserts, localDeletes = diffRecords(currentLocal, previousLocal)
+	}()
+	go func() {
+		defer wg.Done()
+		remoteUpserts, remoteDeletes = diffRecords(currentRemote, previousRemote)
+	}()
+	wg.Wait()
 
-	return store.SetInitial(false)
+	return store.SaveStateAtomic(version, false, localUpserts, localDeletes, remoteUpserts, remoteDeletes)
+}
+
+// diffRecords compares current against previous and returns records to upsert
+// and paths to delete.
+func diffRecords(current, previous map[string]model.FileRecord) (upserts []model.FileRecord, deletes []string) {
+	upserts = make([]model.FileRecord, 0, len(current))
+	for path, rec := range current {
+		prev, had := previous[path]
+		if !had || !rec.Equal(prev) {
+			upserts = append(upserts, rec)
+		}
+	}
+	for path := range previous {
+		if _, has := current[path]; !has {
+			deletes = append(deletes, path)
+		}
+	}
+	return upserts, deletes
 }

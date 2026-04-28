@@ -294,6 +294,9 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			return
 		}
 
+		dbLocal := previousLocal
+		dbRemote := previousRemote
+
 		initial, _ := store.Initial()
 		if initial {
 			// During initial sync, ignore previous local and remote state
@@ -378,7 +381,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		}
 		cs.mu.Unlock()
 
-		if err := e.saveState(store, currentLocal, remoteForSave, versionForSave); err != nil {
+		if err := e.saveState(store, currentLocal, remoteForSave, dbLocal, dbRemote, versionForSave); err != nil {
 			e.Logger.Error().Err(err).Msg("continuous: failed to save state")
 			return
 		}
