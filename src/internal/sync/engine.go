@@ -613,34 +613,30 @@ func (e *Engine) saveState(store *storage.StateStore, currentLocal, currentRemot
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for path, rec := range currentLocal {
-			prev, had := previousLocal[path]
-			if !had || rec.Hash != prev.Hash || rec.MTime != prev.MTime || rec.Size != prev.Size || rec.Deleted != prev.Deleted || rec.Folder != prev.Folder || rec.CTime != prev.CTime {
-				localUpserts = append(localUpserts, rec)
-			}
-		}
-		for path := range previousLocal {
-			if _, has := currentLocal[path]; !has {
-				localDeletes = append(localDeletes, path)
-			}
-		}
+		localUpserts, localDeletes = diffRecords(currentLocal, previousLocal)
 	}()
 	go func() {
 		defer wg.Done()
-		for path, rec := range currentRemote {
-			prev, had := previousRemote[path]
-			// Compare all persisted fields to avoid stale typed columns.
-			if !had || rec.Hash != prev.Hash || rec.MTime != prev.MTime || rec.Size != prev.Size || rec.Deleted != prev.Deleted || rec.Folder != prev.Folder || rec.CTime != prev.CTime || rec.UID != prev.UID || rec.Device != prev.Device || rec.User != prev.User {
-				remoteUpserts = append(remoteUpserts, rec)
-			}
-		}
-		for path := range previousRemote {
-			if _, has := currentRemote[path]; !has {
-				remoteDeletes = append(remoteDeletes, path)
-			}
-		}
+		remoteUpserts, remoteDeletes = diffRecords(currentRemote, previousRemote)
 	}()
 	wg.Wait()
 
 	return store.SaveStateAtomic(version, false, localUpserts, localDeletes, remoteUpserts, remoteDeletes)
+}
+
+// diffRecords compares current against previous and returns records to upsert
+// and paths to delete.
+func diffRecords(current, previous map[string]model.FileRecord) (upserts []model.FileRecord, deletes []string) {
+	for path, rec := range current {
+		prev, had := previous[path]
+		if !had || !rec.Equal(prev) {
+			upserts = append(upserts, rec)
+		}
+	}
+	for path := range previous {
+		if _, has := current[path]; !has {
+			deletes = append(deletes, path)
+		}
+	}
+	return upserts, deletes
 }

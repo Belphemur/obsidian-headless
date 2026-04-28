@@ -152,58 +152,6 @@ func (s *StateStore) DeleteServerFile(path string) error {
 	return s.deleteRecord("server_files", path)
 }
 
-func (s *StateStore) SaveLocalDiff(upserts []model.FileRecord, deletes []string) (err error) {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-
-	for _, rec := range upserts {
-		if err = s.upsertInTx(tx, "local_files", rec); err != nil {
-			return err
-		}
-	}
-	for _, path := range deletes {
-		if err = s.deleteInTx(tx, "local_files", path); err != nil {
-			return err
-		}
-	}
-
-	err = tx.Commit()
-	return err
-}
-
-func (s *StateStore) SaveServerDiff(upserts []model.FileRecord, deletes []string) (err error) {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-
-	for _, rec := range upserts {
-		if err = s.upsertInTx(tx, "server_files", rec); err != nil {
-			return err
-		}
-	}
-	for _, path := range deletes {
-		if err = s.deleteInTx(tx, "server_files", path); err != nil {
-			return err
-		}
-	}
-
-	err = tx.Commit()
-	return err
-}
-
 func (s *StateStore) SaveStateAtomic(version int64, initial bool,
 	localUpserts []model.FileRecord, localDeletes []string,
 	remoteUpserts []model.FileRecord, remoteDeletes []string) (err error) {
@@ -220,27 +168,11 @@ func (s *StateStore) SaveStateAtomic(version int64, initial bool,
 	if err = s.setMetaInTx(tx, "version", fmt.Sprintf("%d", version)); err != nil {
 		return err
 	}
-
-	for _, rec := range localUpserts {
-		if err = s.upsertInTx(tx, "local_files", rec); err != nil {
-			return err
-		}
+	if err = s.applyDiffInTx(tx, "local_files", localUpserts, localDeletes); err != nil {
+		return err
 	}
-	for _, path := range localDeletes {
-		if err = s.deleteInTx(tx, "local_files", path); err != nil {
-			return err
-		}
-	}
-
-	for _, rec := range remoteUpserts {
-		if err = s.upsertInTx(tx, "server_files", rec); err != nil {
-			return err
-		}
-	}
-	for _, path := range remoteDeletes {
-		if err = s.deleteInTx(tx, "server_files", path); err != nil {
-			return err
-		}
+	if err = s.applyDiffInTx(tx, "server_files", remoteUpserts, remoteDeletes); err != nil {
+		return err
 	}
 
 	initVal := "false"
@@ -253,6 +185,20 @@ func (s *StateStore) SaveStateAtomic(version int64, initial bool,
 
 	err = tx.Commit()
 	return err
+}
+
+func (s *StateStore) applyDiffInTx(tx *sql.Tx, table string, upserts []model.FileRecord, deletes []string) error {
+	for _, rec := range upserts {
+		if err := s.upsertInTx(tx, table, rec); err != nil {
+			return err
+		}
+	}
+	for _, path := range deletes {
+		if err := s.deleteInTx(tx, table, path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *StateStore) metaValue(key string) (string, error) {
@@ -349,60 +295,14 @@ func (s *StateStore) replaceTable(table string, records map[string]model.FileRec
 		}
 	}()
 
-	isServer := validatedTable == "server_files"
-
-	var upsertSQL string
-	if isServer {
-		upsertSQL = `INSERT INTO server_files (path, size, hash, ctime, mtime, folder, deleted, uid, device, user, raw)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, jsonb(?))
-			ON CONFLICT(path) DO UPDATE SET
-				size = excluded.size,
-				hash = excluded.hash,
-				ctime = excluded.ctime,
-				mtime = excluded.mtime,
-				folder = excluded.folder,
-				deleted = excluded.deleted,
-				uid = excluded.uid,
-				device = excluded.device,
-				user = excluded.user,
-				raw = excluded.raw`
-	} else {
-		upsertSQL = `INSERT INTO local_files (path, size, hash, ctime, mtime, folder, deleted, raw)
-			VALUES (?, ?, ?, ?, ?, ?, ?, jsonb(?))
-			ON CONFLICT(path) DO UPDATE SET
-				size = excluded.size,
-				hash = excluded.hash,
-				ctime = excluded.ctime,
-				mtime = excluded.mtime,
-				folder = excluded.folder,
-				deleted = excluded.deleted,
-				raw = excluded.raw`
-	}
-	stmt, err := tx.Prepare(upsertSQL)
-	if err != nil {
-		retErr = err
-		return
-	}
-	defer stmt.Close()
-
-	for path, record := range records {
-		payload, err := json.Marshal(record)
-		if err != nil {
-			retErr = err
-			return
-		}
-		jsonStr := string(payload)
-		if isServer {
-			_, err = stmt.Exec(path, record.Size, record.Hash, record.CTime, record.MTime, record.Folder, record.Deleted, record.UID, record.Device, record.User, jsonStr)
-		} else {
-			_, err = stmt.Exec(path, record.Size, record.Hash, record.CTime, record.MTime, record.Folder, record.Deleted, jsonStr)
-		}
-		if err != nil {
+	for _, record := range records {
+		if err := s.upsertInTx(tx, validatedTable, record); err != nil {
 			retErr = err
 			return
 		}
 	}
 
+	// Delete orphans — entries in the DB that are no longer in the new set.
 	rows, err := tx.Query(`SELECT path FROM ` + validatedTable)
 	if err != nil {
 		retErr = err
@@ -429,7 +329,7 @@ func (s *StateStore) replaceTable(table string, records map[string]model.FileRec
 		return
 	}
 	for _, p := range toDelete {
-		if _, err = tx.Exec(`DELETE FROM `+validatedTable+` WHERE path = ?`, p); err != nil {
+		if err = s.deleteInTx(tx, validatedTable, p); err != nil {
 			retErr = err
 			return
 		}
@@ -507,12 +407,20 @@ func (s *StateStore) deleteInTx(tx *sql.Tx, table, path string) error {
 	return err
 }
 
-func (s *StateStore) deleteRecord(table, path string) error {
-	validatedTable, err := validateTableName(table)
+func (s *StateStore) deleteRecord(table, path string) (err error) {
+	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`DELETE FROM `+validatedTable+` WHERE path = ?`, path)
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if err = s.deleteInTx(tx, table, path); err != nil {
+		return err
+	}
+	err = tx.Commit()
 	return err
 }
 
