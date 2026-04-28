@@ -397,7 +397,7 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 		mu       sync.Mutex
 		done     int
 		failed   int
-		errMsg   string
+		errMsgs  []string
 	}{}
 
 	for i := 0; i < concurrency; i++ {
@@ -411,9 +411,7 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 				e.Logger.Warn().Int("workerID", workerID).Err(err).Msg("worker dial failed")
 				varmu.mu.Lock()
 				varmu.failed++
-				if varmu.errMsg == "" {
-					varmu.errMsg = fmt.Sprintf("worker %d dial: %v", workerID, err)
-				}
+				varmu.errMsgs = append(varmu.errMsgs, fmt.Sprintf("worker %d dial: %v", workerID, err))
 				varmu.mu.Unlock()
 				return
 			}
@@ -429,9 +427,7 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 					e.Logger.Error().Int("workerID", workerID).Str("path", job.path).Err(err).Msg("worker pull failed")
 					varmu.mu.Lock()
 					varmu.failed++
-					if varmu.errMsg == "" {
-						varmu.errMsg = fmt.Sprintf("worker %d pull %q: %v", workerID, job.path, err)
-					}
+					varmu.errMsgs = append(varmu.errMsgs, fmt.Sprintf("worker %d pull %q: %v", workerID, job.path, err))
 					varmu.mu.Unlock()
 					return
 				}
@@ -440,9 +436,7 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 					e.Logger.Error().Int("workerID", workerID).Str("path", job.path).Err(err).Msg("worker write failed")
 					varmu.mu.Lock()
 					varmu.failed++
-					if varmu.errMsg == "" {
-						varmu.errMsg = fmt.Sprintf("worker %d write %q: %v", workerID, job.path, err)
-					}
+					varmu.errMsgs = append(varmu.errMsgs, fmt.Sprintf("worker %d write %q: %v", workerID, job.path, err))
 					varmu.mu.Unlock()
 					return
 				}
@@ -471,13 +465,16 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 	varmu.mu.Lock()
 	done := varmu.done
 	failed := varmu.failed
-	errMsg := varmu.errMsg
+	errMsgs := varmu.errMsgs
 	varmu.mu.Unlock()
 
 	e.Logger.Info().Int("completed", done).Int("failed", failed).Msg("parallel download complete")
 
-	if errMsg != "" {
-		return fmt.Errorf("%s", errMsg)
+	if len(errMsgs) > 0 && done == 0 {
+		return fmt.Errorf("all download workers failed: %s", errMsgs[0])
+	}
+	if len(errMsgs) > 0 {
+		e.Logger.Warn().Int("completed", done).Int("failed", failed).Msg("partial download failure, continuing")
 	}
 	select {
 	case <-ctxCancelled:
