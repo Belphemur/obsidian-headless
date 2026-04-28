@@ -117,6 +117,71 @@ func (e *Engine) handshake(ctx context.Context, conn *websocket.Conn, version in
 	return version, remote, nil
 }
 
+func (e *Engine) dialWorker(ctx context.Context) (*websocket.Conn, error) {
+	conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
+	if err != nil {
+		return nil, fmt.Errorf("worker dial: %w", err)
+	}
+
+	keyHash := ""
+	if e.rawKey != nil {
+		derivedKeyHash, err := encryption.ComputeKeyHash(e.rawKey, e.Config.EncryptionSalt, encryption.EncryptionVersion(e.Config.EncryptionVersion))
+		if err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("worker key hash: %w", err)
+		}
+		keyHash = derivedKeyHash
+	}
+
+	e.mu.Lock()
+	version := e.version
+	vaultID := e.Config.VaultID
+	token := e.Token
+	encVersion := e.Config.EncryptionVersion
+	deviceName := e.deviceName()
+	e.mu.Unlock()
+
+	initMessage := map[string]any{
+		"op":                 "init",
+		"token":              token,
+		"id":                 vaultID,
+		"keyhash":            keyHash,
+		"version":            version,
+		"initial":            false,
+		"device":             deviceName,
+		"encryption_version": encVersion,
+	}
+
+	if err := writeJSONLogged(conn, initMessage, e.Logger); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("worker init write: %w", err)
+	}
+
+	var initResponse map[string]any
+	if err := readJSONLogged(conn, &initResponse, e.Logger); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("worker init read: %w", err)
+	}
+
+	if res, _ := initResponse["res"].(string); res == "err" || stringValue(initResponse["status"]) == "err" {
+		_ = conn.Close()
+		return nil, fmt.Errorf("worker init failed: %s", stringValue(initResponse["msg"]))
+	}
+
+	for {
+		var msg map[string]any
+		if err := readJSONLogged(conn, &msg, e.Logger); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("worker ready: %w", err)
+		}
+		if op, _ := msg["op"].(string); op == "ready" {
+			break
+		}
+	}
+
+	return conn, nil
+}
+
 func decodeJSONMessage(data []byte) (map[string]any, error) {
 	var msg map[string]any
 	err := json.Unmarshal(data, &msg)

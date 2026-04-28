@@ -14,6 +14,7 @@ Publish services.
 | [REST API](./rest-api.md) | HTTP API endpoints for authentication, vault and publish management |
 | [CLI Commands](./cli-commands.md) | Complete CLI command reference |
 | [Mock Server](./mock-server.md) | How to run and use the mock server for testing |
+| [Parallel Downloads](./parallel-downloads.md) | Connection pool design for concurrent file downloads |
 
 ## Quick Start
 

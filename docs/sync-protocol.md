@@ -247,6 +247,18 @@ If `deleted` is `true`, no binary data follows.
 Otherwise, the server sends `pieces` binary frames containing the encrypted file
 content. The client concatenates the chunks and decrypts the result.
 
+### Parallel Downloads
+
+The pull protocol has no request ID field — each `pull` request expects an
+immediate response. This means concurrent pulls on a single WebSocket connection
+are not possible (responses would interleave).
+
+To parallelize downloads, the Go client opens multiple WebSocket connections,
+one per worker goroutine. Each connection completes its own init handshake
+independently. Workers then pull files sequentially on their own connection.
+
+See [Parallel Downloads](./parallel-downloads.md) for the full design.
+
 ## Other Operations
 
 ### List Deleted Files
