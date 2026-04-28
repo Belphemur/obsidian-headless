@@ -316,9 +316,9 @@ func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLoca
 		}
 	}
 
-	// Separate folder downloads (must happen before parallel file downloads)
-	// and collect file downloads for the worker pool.
-	var fileDownloads []syncAction
+	// fileDownloads are already filtered for folders and missing records in executePlan.
+	// Build downloadJob objects here to avoid a second remote lookup in executeDownloadsParallel.
+	var downloadJobs []downloadJob
 	for _, action := range downloads {
 		record, exists := session.remote[action.Path]
 		if !exists {
@@ -340,14 +340,14 @@ func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLoca
 			e.Logger.Debug().Str("path", action.Path).Msg("ensured remote directory exists locally")
 			continue
 		}
-		fileDownloads = append(fileDownloads, action)
+		downloadJobs = append(downloadJobs, downloadJob{path: action.Path, record: record})
 	}
 
-	if len(fileDownloads) == 0 {
+	if len(downloadJobs) == 0 {
 		return nil
 	}
 
-	return e.executeDownloadsParallel(ctx, fileDownloads, session)
+	return e.executeDownloadsParallel(ctx, downloadJobs, session)
 }
 
 type downloadJob struct {
@@ -355,21 +355,22 @@ type downloadJob struct {
 	record model.FileRecord
 }
 
-// executeDownloadsParallel processes download actions using a pool of worker
+// executeDownloadsParallel processes download jobs using a pool of worker
 // goroutines, each with its own WebSocket connection. The number of workers
-// is min(len(actions), configured download concurrency), so small syncs
+// is min(len(jobs), configured download concurrency), so small syncs
 // don't create idle connections.
-func (e *Engine) executeDownloadsParallel(ctx context.Context, actions []syncAction, session *remoteSession) error {
+func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJob, session *remoteSession) error {
 	concurrency := e.Config.DownloadConcurrency
 	if concurrency <= 0 {
 		concurrency = defaultDownloadConcurrency
 	}
-	if concurrency > len(actions) {
-		concurrency = len(actions)
+	if concurrency > len(jobs) {
+		concurrency = len(jobs)
 	}
 
-	jobs := make(chan downloadJob, len(actions))
+	jobsCh := make(chan downloadJob, len(jobs))
 	errs := make(chan error, 1)
+	ctxCancelled := make(chan struct{}, 1)
 	var wg sync.WaitGroup
 
 	for i := 0; i < concurrency; i++ {
@@ -379,31 +380,27 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, actions []syncAct
 
 			conn, err := e.dialWorker(ctx)
 			if err != nil {
-				e.Logger.Warn().Err(err).Msg("worker dial failed, draining jobs")
-				for range jobs {
+				e.Logger.Warn().Err(err).Msg("worker dial failed")
+				select {
+				case errs <- fmt.Errorf("worker dial: %w", err):
+				default:
 				}
 				return
 			}
+			// Close the connection when the context is cancelled so the
+			// read/write goroutines unblock immediately.
+			stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+			defer stop()
 			defer conn.Close()
 
 			workerSession := newRemoteSession(conn, session.remote, session.version, ctx, e.enc, e.Logger, e.rawKey)
 
-			for job := range jobs {
-				select {
-				case <-ctx.Done():
-					for range jobs {
-					}
-					return
-				default:
-				}
-
+			for job := range jobsCh {
 				content, err := workerSession.pull(job.record.UID)
 				if err != nil {
 					select {
 					case errs <- fmt.Errorf("pull %q: %w", job.path, err):
 					default:
-					}
-					for range jobs {
 					}
 					return
 				}
@@ -413,8 +410,6 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, actions []syncAct
 					case errs <- fmt.Errorf("write %q: %w", job.path, err):
 					default:
 					}
-					for range jobs {
-					}
 					return
 				}
 
@@ -423,29 +418,24 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, actions []syncAct
 		}()
 	}
 
-	for _, action := range actions {
-		record, exists := session.remote[action.Path]
-		if !exists {
-			e.Logger.Warn().Str("path", action.Path).Msg("download: remote record not found, skipping")
-			continue
-		}
-		record.Path = action.Path
-
+	for _, job := range jobs {
 		select {
-		case jobs <- downloadJob{path: action.Path, record: record}:
+		case jobsCh <- job:
 		case <-ctx.Done():
-			close(jobs)
+			close(jobsCh)
 			wg.Wait()
 			return ctx.Err()
 		}
 	}
-	close(jobs)
+	close(jobsCh)
 
 	wg.Wait()
 
 	select {
 	case err := <-errs:
 		return err
+	case <-ctxCancelled:
+		return ctx.Err()
 	default:
 		return nil
 	}

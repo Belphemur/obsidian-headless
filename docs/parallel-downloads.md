@@ -94,14 +94,12 @@ read-only during the parallel download phase.
 
 | Scenario | Behavior |
 |----------|----------|
-| Worker dial fails | Worker logs warning, drains remaining jobs, exits. Other workers continue. |
-| Pull fails (network error) | Error sent to buffered error channel (size 1). Failing worker drains remaining jobs inline. Other workers also drain and exit. First error wins. |
+| Worker dial fails | Error sent to buffered error channel (size 1). Worker exits immediately without draining jobs. Other workers continue processing remaining jobs. |
+| Pull fails (network error) | Error sent to buffered error channel (size 1). Worker exits immediately without draining jobs. Other workers continue. First error wins. |
 | Write to disk fails | Same as pull failure. |
-| Context cancelled | All workers drain and exit. `ctx.Err()` returned. |
+| Context cancelled | `context.AfterFunc` closes each worker's WebSocket connection, unblocking any in-progress reads/writes. Workers exit. `ctx.Err()` returned. |
 
-The drain mechanism: when a worker encounters a fatal error, it calls
-`for range jobs {}` to consume all remaining buffered jobs before exiting.
-This prevents the main goroutine from blocking on sending to a full channel.
+When a worker exits early (dial or pull/write error), it does **not** drain the jobs channel — the remaining jobs stay in the channel and are processed by workers that haven't exited yet. The `context.AfterFunc` on each connection ensures workers don't hang if the context is cancelled while waiting on a network read.
 
 ## Configuration
 
