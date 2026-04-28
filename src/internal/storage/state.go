@@ -41,7 +41,7 @@ func (s *StateStore) init() error {
 		`PRAGMA journal_mode = WAL;`,
 		`PRAGMA busy_timeout = 5000;`,
 		`PRAGMA synchronous = NORMAL;`,
-		`PRAGMA cache_size = -64000;`,   // 64MB page cache (negative = kibibytes)
+		`PRAGMA cache_size = -64000;`, // 64MB page cache (negative = kibibytes)
 		`PRAGMA temp_store = MEMORY;`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);`,
 		`CREATE TABLE IF NOT EXISTS local_files (path TEXT PRIMARY KEY, data TEXT NOT NULL);`,

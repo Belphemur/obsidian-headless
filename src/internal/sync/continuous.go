@@ -422,10 +422,10 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 				case <-time.After(backoff):
 					if err := connect(); err != nil {
 						e.Logger.Error().Err(err).Msg("continuous: reconnection failed, retrying...")
-					backoff *= 2
-					if backoff > maxReconnectBackoff {
-						backoff = maxReconnectBackoff
-					}
+						backoff *= 2
+						if backoff > maxReconnectBackoff {
+							backoff = maxReconnectBackoff
+						}
 						continue reconnectLoop
 					}
 					startReadPump()

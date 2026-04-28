@@ -121,8 +121,8 @@ func (e *Engine) handshake(ctx context.Context, conn *websocket.Conn, version in
 
 func (e *Engine) dialWorker(ctx context.Context) (*websocket.Conn, error) {
 	const (
-		baseDelay = 200 * time.Millisecond
-		maxDelay  = 8 * time.Second
+		baseDelay  = 200 * time.Millisecond
+		maxDelay   = 8 * time.Second
 		maxRetries = 4
 	)
 
