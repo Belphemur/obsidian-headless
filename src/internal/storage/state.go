@@ -20,7 +20,14 @@ func Open(path string) (*StateStore, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", path)
+	// PRAGMAs set via DSN so every pooled connection inherits them.
+	dsn := path +
+		"?_pragma=journal_mode(WAL)" +
+		"&_pragma=busy_timeout(5000)" +
+		"&_pragma=synchronous(NORMAL)" +
+		"&_pragma=cache_size(-64000)" +
+		"&_pragma=temp_store(MEMORY)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -38,11 +45,6 @@ func (s *StateStore) Close() error {
 
 func (s *StateStore) init() error {
 	statements := []string{
-		`PRAGMA journal_mode = WAL;`,
-		`PRAGMA busy_timeout = 5000;`,
-		`PRAGMA synchronous = NORMAL;`,
-		`PRAGMA cache_size = -64000;`, // 64MB page cache (negative = kibibytes)
-		`PRAGMA temp_store = MEMORY;`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);`,
 		`CREATE TABLE IF NOT EXISTS local_files (path TEXT PRIMARY KEY, data TEXT NOT NULL);`,
 		`CREATE TABLE IF NOT EXISTS server_files (path TEXT PRIMARY KEY, data TEXT NOT NULL);`,

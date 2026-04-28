@@ -123,15 +123,18 @@ func (e *Engine) dialWorker(ctx context.Context) (*websocket.Conn, error) {
 	const (
 		baseDelay  = 200 * time.Millisecond
 		maxDelay   = 8 * time.Second
-		maxRetries = 4
+		maxRetries = 7 // allows ~6 retries; 200ms*2^6=12.8s capped to 8s
 	)
+
+	// Seed a private rand so retries across workers/processes don't collide.
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	var conn *websocket.Conn
 	var err error
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
-			jitter := time.Duration(rand.Int63n(int64(baseDelay)))
+			jitter := time.Duration(rng.Int63n(int64(baseDelay)))
 			delay := baseDelay*time.Duration(1<<uint(attempt-1)) + jitter
 			if delay > maxDelay {
 				delay = maxDelay

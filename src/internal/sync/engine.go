@@ -390,14 +390,13 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 	}
 
 	jobsCh := make(chan downloadJob, len(jobs))
-	ctxCancelled := make(chan struct{}, 1)
 	var wg sync.WaitGroup
 
 	varmu := struct {
-		mu       sync.Mutex
-		done     int
-		failed   int
-		errMsgs  []string
+		mu      sync.Mutex
+		done    int
+		failed  int
+		errMsgs []string
 	}{}
 
 	for i := 0; i < concurrency; i++ {
@@ -441,10 +440,14 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 					return
 				}
 
-				varmu.mu.Lock()
-				varmu.done++
-				e.Logger.Debug().Int("workerID", workerID).Str("path", job.path).Int("done", varmu.done).Msg("worker downloaded file")
-				varmu.mu.Unlock()
+				done := func() int {
+					varmu.mu.Lock()
+					varmu.done++
+					n := varmu.done
+					varmu.mu.Unlock()
+					return n
+				}()
+				e.Logger.Info().Int("workerID", workerID).Str("path", job.path).Int("done", done).Msg("downloaded file")
 			}
 		}()
 	}
@@ -468,20 +471,23 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 	errMsgs := varmu.errMsgs
 	varmu.mu.Unlock()
 
-	e.Logger.Info().Int("completed", done).Int("failed", failed).Msg("parallel download complete")
+	e.Logger.Info().
+		Int("completed_jobs", done).
+		Int("worker_failures", failed).
+		Int("total_jobs", len(jobs)).
+		Msg("parallel download complete")
 
 	if len(errMsgs) > 0 && done == 0 {
 		return fmt.Errorf("all download workers failed: %s", errMsgs[0])
 	}
 	if len(errMsgs) > 0 {
-		e.Logger.Warn().Int("completed", done).Int("failed", failed).Msg("partial download failure, continuing")
+		e.Logger.Warn().
+			Int("completed_jobs", done).
+			Int("worker_failures", failed).
+			Int("total_jobs", len(jobs)).
+			Msg("partial download failure, continuing")
 	}
-	select {
-	case <-ctxCancelled:
-		return ctx.Err()
-	default:
-		return nil
-	}
+	return nil
 }
 
 // mergeTextFile performs a three-way merge for a Markdown file.
