@@ -49,11 +49,18 @@ func (d *sqliteDriver) Run(reader io.Reader) error {
 	if err != nil {
 		return err
 	}
-	_, err = d.db.Exec(string(script))
-	return err
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(string(script)); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
-func (d *sqliteDriver) SetVersion(version int, dirty bool) error {
+func (d *sqliteDriver) SetVersion(version int, dirty bool) (err error) {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return err
@@ -64,13 +71,14 @@ func (d *sqliteDriver) SetVersion(version int, dirty bool) error {
 		}
 	}()
 
-	if _, err := tx.Exec(`DELETE FROM schema_migrations`); err != nil {
+	if _, err = tx.Exec(`DELETE FROM schema_migrations`); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (?, ?)`, version, dirty); err != nil {
+	if _, err = tx.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (?, ?)`, version, dirty); err != nil {
 		return err
 	}
-	return tx.Commit()
+	err = tx.Commit()
+	return err
 }
 
 func (d *sqliteDriver) Version() (version int, dirty bool, err error) {

@@ -602,13 +602,10 @@ func (e *Engine) mergeJSONFile(path string, currentLocal, previousRemote map[str
 	return nil
 }
 
-// saveState saves current local and remote state to the state DB.
-// Uses incremental upsert/delete to avoid rewriting unchanged rows.
+// saveState saves current local and remote state to the state DB in a single
+// atomic transaction. Computes local and remote diffs in parallel, then
+// applies only changed records.
 func (e *Engine) saveState(store *storage.StateStore, currentLocal, currentRemote map[string]model.FileRecord, previousLocal, previousRemote map[string]model.FileRecord, version int64) error {
-	if err := store.SetVersion(version); err != nil {
-		return err
-	}
-
 	var localUpserts, remoteUpserts []model.FileRecord
 	var localDeletes, remoteDeletes []string
 	var wg sync.WaitGroup
@@ -618,7 +615,7 @@ func (e *Engine) saveState(store *storage.StateStore, currentLocal, currentRemot
 		defer wg.Done()
 		for path, rec := range currentLocal {
 			prev, had := previousLocal[path]
-			if !had || rec.Hash != prev.Hash || rec.MTime != prev.MTime || rec.Size != prev.Size || rec.Deleted != prev.Deleted {
+			if !had || rec.Hash != prev.Hash || rec.MTime != prev.MTime || rec.Size != prev.Size || rec.Deleted != prev.Deleted || rec.Folder != prev.Folder || rec.CTime != prev.CTime {
 				localUpserts = append(localUpserts, rec)
 			}
 		}
@@ -632,7 +629,8 @@ func (e *Engine) saveState(store *storage.StateStore, currentLocal, currentRemot
 		defer wg.Done()
 		for path, rec := range currentRemote {
 			prev, had := previousRemote[path]
-			if !had || rec.Hash != prev.Hash || rec.MTime != prev.MTime || rec.Size != prev.Size || rec.Deleted != prev.Deleted {
+			// Compare all persisted fields to avoid stale typed columns.
+			if !had || rec.Hash != prev.Hash || rec.MTime != prev.MTime || rec.Size != prev.Size || rec.Deleted != prev.Deleted || rec.Folder != prev.Folder || rec.CTime != prev.CTime || rec.UID != prev.UID || rec.Device != prev.Device || rec.User != prev.User {
 				remoteUpserts = append(remoteUpserts, rec)
 			}
 		}
@@ -644,12 +642,5 @@ func (e *Engine) saveState(store *storage.StateStore, currentLocal, currentRemot
 	}()
 	wg.Wait()
 
-	if err := store.SaveLocalDiff(localUpserts, localDeletes); err != nil {
-		return fmt.Errorf("failed to save local state: %w", err)
-	}
-	if err := store.SaveServerDiff(remoteUpserts, remoteDeletes); err != nil {
-		return fmt.Errorf("failed to save remote state: %w", err)
-	}
-
-	return store.SetInitial(false)
+	return store.SaveStateAtomic(version, false, localUpserts, localDeletes, remoteUpserts, remoteDeletes)
 }

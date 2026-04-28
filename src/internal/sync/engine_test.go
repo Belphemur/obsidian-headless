@@ -137,6 +137,92 @@ func TestSaveState(t *testing.T) {
 	}
 }
 
+func TestSaveStateIncremental(t *testing.T) {
+	tmp := t.TempDir()
+	statePath := filepath.Join(tmp, "state.db")
+	store, err := storage.Open(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	// Seed previous state with two files
+	prevLocal := map[string]model.FileRecord{
+		"a.md": {Path: "a.md", Hash: "aaa", Size: 3, MTime: 1000},
+		"b.md": {Path: "b.md", Hash: "bbb", Size: 3, MTime: 2000},
+	}
+	prevRemote := map[string]model.FileRecord{
+		"a.md": {Path: "a.md", Hash: "aaa", Size: 3, MTime: 1000},
+		"c.md": {Path: "c.md", Hash: "ccc", Size: 3, MTime: 3000, UID: 1},
+	}
+	if err := store.ReplaceLocalFiles(prevLocal); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceServerFiles(prevRemote); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetInitial(false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now simulate an incremental save: a.md changed, b.md deleted, c.md unchanged, d.md added
+	currentLocal := map[string]model.FileRecord{
+		"a.md": {Path: "a.md", Hash: "aaa_new", Size: 6, MTime: 1100}, // hash changed
+		"d.md": {Path: "d.md", Hash: "ddd", Size: 3, MTime: 4000},     // new file
+	}
+	currentRemote := map[string]model.FileRecord{
+		"a.md": {Path: "a.md", Hash: "aaa", Size: 3, MTime: 1000, UID: 99}, // uid changed
+		"c.md": {Path: "c.md", Hash: "ccc", Size: 3, MTime: 3000, UID: 1},  // unchanged
+	}
+
+	e := &Engine{Logger: testLogger()}
+	if err := e.saveState(store, currentLocal, currentRemote, prevLocal, prevRemote, 43); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify version
+	v, err := store.Version()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != 43 {
+		t.Fatalf("expected version 43, got %d", v)
+	}
+
+	// Verify local state: a.md should have new hash, b.md should be gone, d.md should exist
+	loadedLocal, err := store.LoadLocalFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loadedLocal) != 2 {
+		t.Fatalf("expected 2 local files, got %d: %+v", len(loadedLocal), loadedLocal)
+	}
+	if r, ok := loadedLocal["a.md"]; !ok || r.Hash != "aaa_new" || r.Size != 6 {
+		t.Fatalf("a.md not updated correctly: %+v", loadedLocal["a.md"])
+	}
+	if _, ok := loadedLocal["b.md"]; ok {
+		t.Fatal("b.md should have been deleted")
+	}
+	if r, ok := loadedLocal["d.md"]; !ok || r.Hash != "ddd" {
+		t.Fatalf("d.md not created: %+v", loadedLocal["d.md"])
+	}
+
+	// Verify remote state: a.md should have new uid, c.md should still exist
+	loadedRemote, err := store.LoadServerFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loadedRemote) != 2 {
+		t.Fatalf("expected 2 remote files, got %d: %+v", len(loadedRemote), loadedRemote)
+	}
+	if r, ok := loadedRemote["a.md"]; !ok || r.UID != 99 {
+		t.Fatalf("a.md uid not updated: %+v", loadedRemote["a.md"])
+	}
+	if r, ok := loadedRemote["c.md"]; !ok || r.UID != 1 {
+		t.Fatalf("c.md should be unchanged: %+v", loadedRemote["c.md"])
+	}
+}
+
 type mockSyncServer struct {
 	t              *testing.T
 	mu             sync.Mutex

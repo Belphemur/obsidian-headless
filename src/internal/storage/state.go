@@ -152,7 +152,7 @@ func (s *StateStore) DeleteServerFile(path string) error {
 	return s.deleteRecord("server_files", path)
 }
 
-func (s *StateStore) SaveLocalDiff(upserts []model.FileRecord, deletes []string) error {
+func (s *StateStore) SaveLocalDiff(upserts []model.FileRecord, deletes []string) (err error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -174,10 +174,11 @@ func (s *StateStore) SaveLocalDiff(upserts []model.FileRecord, deletes []string)
 		}
 	}
 
-	return tx.Commit()
+	err = tx.Commit()
+	return err
 }
 
-func (s *StateStore) SaveServerDiff(upserts []model.FileRecord, deletes []string) error {
+func (s *StateStore) SaveServerDiff(upserts []model.FileRecord, deletes []string) (err error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -199,7 +200,59 @@ func (s *StateStore) SaveServerDiff(upserts []model.FileRecord, deletes []string
 		}
 	}
 
-	return tx.Commit()
+	err = tx.Commit()
+	return err
+}
+
+func (s *StateStore) SaveStateAtomic(version int64, initial bool,
+	localUpserts []model.FileRecord, localDeletes []string,
+	remoteUpserts []model.FileRecord, remoteDeletes []string) (err error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if err = s.setMetaInTx(tx, "version", fmt.Sprintf("%d", version)); err != nil {
+		return err
+	}
+
+	for _, rec := range localUpserts {
+		if err = s.upsertInTx(tx, "local_files", rec); err != nil {
+			return err
+		}
+	}
+	for _, path := range localDeletes {
+		if err = s.deleteInTx(tx, "local_files", path); err != nil {
+			return err
+		}
+	}
+
+	for _, rec := range remoteUpserts {
+		if err = s.upsertInTx(tx, "server_files", rec); err != nil {
+			return err
+		}
+	}
+	for _, path := range remoteDeletes {
+		if err = s.deleteInTx(tx, "server_files", path); err != nil {
+			return err
+		}
+	}
+
+	initVal := "false"
+	if initial {
+		initVal = "true"
+	}
+	if err = s.setMetaInTx(tx, "initial", initVal); err != nil {
+		return err
+	}
+
+	err = tx.Commit()
+	return err
 }
 
 func (s *StateStore) metaValue(key string) (string, error) {
@@ -228,6 +281,11 @@ func (s *StateStore) metaInt(key string) (int64, error) {
 
 func (s *StateStore) setMeta(key, value string) error {
 	_, err := s.db.Exec(`INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)`, key, value)
+	return err
+}
+
+func (s *StateStore) setMetaInTx(tx *sql.Tx, key, value string) error {
+	_, err := tx.Exec(`INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)`, key, value)
 	return err
 }
 
@@ -381,45 +439,20 @@ func (s *StateStore) replaceTable(table string, records map[string]model.FileRec
 	return
 }
 
-func (s *StateStore) upsertRecord(table string, record model.FileRecord) error {
-	validatedTable, err := validateTableName(table)
+func (s *StateStore) upsertRecord(table string, record model.FileRecord) (err error) {
+	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
-	payload, err := json.Marshal(record)
-	if err != nil {
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if err = s.upsertInTx(tx, table, record); err != nil {
 		return err
 	}
-	jsonStr := string(payload)
-
-	if validatedTable == "server_files" {
-		_, err = s.db.Exec(`INSERT INTO server_files (path, size, hash, ctime, mtime, folder, deleted, uid, device, user, raw)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, jsonb(?))
-			ON CONFLICT(path) DO UPDATE SET
-				size = excluded.size,
-				hash = excluded.hash,
-				ctime = excluded.ctime,
-				mtime = excluded.mtime,
-				folder = excluded.folder,
-				deleted = excluded.deleted,
-				uid = excluded.uid,
-				device = excluded.device,
-				user = excluded.user,
-				raw = excluded.raw`,
-			record.Path, record.Size, record.Hash, record.CTime, record.MTime, record.Folder, record.Deleted, record.UID, record.Device, record.User, jsonStr)
-	} else {
-		_, err = s.db.Exec(`INSERT INTO local_files (path, size, hash, ctime, mtime, folder, deleted, raw)
-			VALUES (?, ?, ?, ?, ?, ?, ?, jsonb(?))
-			ON CONFLICT(path) DO UPDATE SET
-				size = excluded.size,
-				hash = excluded.hash,
-				ctime = excluded.ctime,
-				mtime = excluded.mtime,
-				folder = excluded.folder,
-				deleted = excluded.deleted,
-				raw = excluded.raw`,
-			record.Path, record.Size, record.Hash, record.CTime, record.MTime, record.Folder, record.Deleted, jsonStr)
-	}
+	err = tx.Commit()
 	return err
 }
 
