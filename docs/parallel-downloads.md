@@ -94,22 +94,56 @@ read-only during the parallel download phase.
 
 | Scenario | Behavior |
 |----------|----------|
-| Worker dial fails | Error sent to buffered error channel (size 1). Worker exits immediately without draining jobs. Other workers continue processing remaining jobs. |
-| Pull fails (network error) | Error sent to buffered error channel (size 1). Worker exits immediately without draining jobs. Other workers continue. First error wins. |
-| Write to disk fails | Same as pull failure. |
+| Worker dial fails | Retries up to 6 times with exponential backoff (200ms base, 8s max) + jitter. After max retries, worker exits with logged error. |
+| Pull fails (network error) | Worker logs error with worker ID and path, then exits. Remaining workers continue processing queued downloads. The sync only returns an error if no downloads complete successfully (`done == 0`). |
+| Write to disk fails | Same as pull failure: the worker logs the error and exits, other workers continue, and the sync only fails if `done == 0`. |
 | Context cancelled | `context.AfterFunc` closes each worker's WebSocket connection, unblocking any in-progress reads/writes. Workers exit. `ctx.Err()` returned. |
 
 When a worker exits early (dial or pull/write error), it does **not** drain the jobs channel — the remaining jobs stay in the channel and are processed by workers that haven't exited yet. The `context.AfterFunc` on each connection ensures workers don't hang if the context is cancelled while waiting on a network read.
+
+After all workers finish, a summary log is emitted with `completed_jobs=N`, `worker_failures=N`, and `total_jobs=N` counts.
+
+## Partial Failure Tolerance
+
+If some workers succeed and others fail, the sync **continues** rather than failing entirely:
+
+| Scenario | Behavior |
+|----------|----------|
+| All workers fail (completed_jobs=0) | Sync fails with first error message |
+| Some workers succeed | Warning log emitted; sync continues; next sync will retry failed files |
+| Context cancelled | All workers exit; `ctx.Err()` returned |
+
+This prevents a single timeout (e.g. worker 9 times out on a large file) from losing the progress of all other workers (workers 1–8 successfully downloaded 187 files).
+
+## Per-Worker Logging
+
+Each worker logs with a `workerID` field (1-indexed) for correlation:
+
+```text
+info:  downloaded file workerID=2 path="notes/tasks.md" done=47
+info:  parallel download complete completed_jobs=187 worker_failures=1 total_jobs=200
+error: worker pull failed workerID=3 path="notes/secret.md" error="..."
+```
+
+## Action Breakdown
+
+At the start of plan execution, `executePlan` logs the full action breakdown:
+
+```text
+info:  sync plan uploads=12 deleteRemote=3 deleteLocal=1 merges=5 downloads=203
+```
+
+Non-download actions (uploads, deletes, merges) run sequentially first. Then parallel downloads run with the worker pool.
 
 ## Configuration
 
 | Location | Field | Default |
 |----------|-------|---------|
-| `SyncConfig` struct | `DownloadConcurrency int` | `10` |
-| Code constant | `defaultDownloadConcurrency` (engine.go) | `10` |
+| `SyncConfig` struct | `DownloadConcurrency int` | `3` |
+| Code constant | `defaultDownloadConcurrency` (engine.go) | `3` |
 
 The `SyncConfig.DownloadConcurrency` field serializes as `"downloadConcurrency"`
-in JSON. A value of `0` or negative defaults to 10.
+in JSON. A value of `0` or negative defaults to 3.
 
 ## Testing
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -118,9 +120,43 @@ func (e *Engine) handshake(ctx context.Context, conn *websocket.Conn, version in
 }
 
 func (e *Engine) dialWorker(ctx context.Context) (*websocket.Conn, error) {
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
-	if err != nil {
-		return nil, fmt.Errorf("worker dial: %w", err)
+	const (
+		baseDelay  = 200 * time.Millisecond
+		maxDelay   = 8 * time.Second
+		maxRetries = 7 // allows ~6 retries; 200ms*2^6=12.8s capped to 8s
+	)
+
+	// Seed a private rand so retries across workers/processes don't collide.
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	var conn *websocket.Conn
+	var err error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			jitter := time.Duration(rng.Int63n(int64(baseDelay)))
+			delay := baseDelay*time.Duration(1<<uint(attempt-1)) + jitter
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+			e.Logger.Debug().Int("attempt", attempt+1).Dur("delay", delay).Msg("dialWorker retrying")
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		conn, _, err = websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
+		if err == nil {
+			break
+		}
+
+		if attempt == maxRetries-1 {
+			return nil, fmt.Errorf("worker dial: %w", err)
+		}
+
+		e.Logger.Warn().Int("attempt", attempt+1).Err(err).Msg("dialWorker failed, will retry")
 	}
 
 	keyHash := ""
