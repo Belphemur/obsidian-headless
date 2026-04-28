@@ -103,6 +103,18 @@ When a worker exits early (dial or pull/write error), it does **not** drain the 
 
 After all workers finish, a summary log is emitted with `completed=N` and `failed=N` counts.
 
+## Partial Failure Tolerance
+
+If some workers succeed and others fail, the sync **continues** rather than failing entirely:
+
+| Scenario | Behavior |
+|----------|----------|
+| All workers fail (done=0) | Sync fails with first error message |
+| Some workers succeed | Warning log emitted; sync continues; next sync will retry failed files |
+| Context cancelled | All workers exit; `ctx.Err()` returned |
+
+This prevents a single timeout (e.g. worker 9 times out on a large file) from losing the progress of all other workers (workers 1–8 successfully downloaded 187 files).
+
 ## Per-Worker Logging
 
 Each worker logs with a `workerID` field (1-indexed) for correlation:
