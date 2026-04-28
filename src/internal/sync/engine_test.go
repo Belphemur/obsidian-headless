@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -137,11 +138,14 @@ func TestSaveState(t *testing.T) {
 }
 
 type mockSyncServer struct {
-	t             *testing.T
-	recordsByUID  map[int64]model.FileRecord
-	recordsByPath map[string]model.FileRecord
-	contentByUID  map[int64][]byte
-	upgrader      websocket.Upgrader
+	t              *testing.T
+	mu             sync.Mutex
+	recordsByUID   map[int64]model.FileRecord
+	recordsByPath  map[string]model.FileRecord
+	contentByUID   map[int64][]byte
+	upgrader       websocket.Upgrader
+	pingCount      int
+	closeAfterPing bool
 }
 
 func newMockSyncServer(t *testing.T) *mockSyncServer {
@@ -164,6 +168,8 @@ func (s *mockSyncServer) addRecord(path string, uid int64, content []byte) {
 		UID:     uid,
 		Deleted: false,
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.recordsByUID[uid] = record
 	s.recordsByPath[path] = record
 	s.contentByUID[uid] = content
@@ -197,7 +203,13 @@ func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Send any existing records as pushes
+			s.mu.Lock()
+			records := make([]model.FileRecord, 0, len(s.recordsByUID))
 			for _, record := range s.recordsByUID {
+				records = append(records, record)
+			}
+			s.mu.Unlock()
+			for _, record := range records {
 				if err := conn.WriteJSON(map[string]any{
 					"op":      "push",
 					"path":    record.Path,
@@ -217,7 +229,10 @@ func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		case "pull":
 			uid := int64Value(msg["uid"])
+			s.mu.Lock()
 			record, ok := s.recordsByUID[uid]
+			content := s.contentByUID[uid]
+			s.mu.Unlock()
 			if !ok {
 				if err := conn.WriteJSON(map[string]any{"res": "err", "msg": "not found"}); err != nil {
 					return
@@ -230,7 +245,6 @@ func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 				continue
 			}
-			content := s.contentByUID[uid]
 			pieces := 0
 			if len(content) > 0 {
 				pieces = (len(content) + chunkSize - 1) / chunkSize
@@ -299,14 +313,27 @@ func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 						}
 					} else {
 						record.Hash = fmt.Sprintf("%x", content)
+						s.mu.Lock()
 						s.recordsByUID[uid] = record
 						s.recordsByPath[path] = record
 						s.contentByUID[uid] = content
+						s.mu.Unlock()
 						if err := conn.WriteJSON(map[string]any{"res": "ok"}); err != nil {
 							return
 						}
 					}
 				}
+			}
+		case "ping":
+			s.mu.Lock()
+			s.pingCount++
+			shouldClose := s.closeAfterPing
+			s.mu.Unlock()
+			if err := conn.WriteJSON(map[string]any{"op": "pong"}); err != nil {
+				return
+			}
+			if shouldClose {
+				return
 			}
 		case "delete":
 			// delete is implemented as push with deleted:true in the actual protocol
@@ -347,9 +374,11 @@ func TestExecutePlan(t *testing.T) {
 	}
 
 	remote := make(map[string]model.FileRecord)
+	mock.mu.Lock()
 	for _, r := range mock.recordsByUID {
 		remote[r.Path] = r
 	}
+	mock.mu.Unlock()
 
 	e := &Engine{
 		Config: model.SyncConfig{VaultPath: vault},
@@ -384,7 +413,9 @@ func TestExecutePlan(t *testing.T) {
 	}
 
 	// Verify remote file was uploaded
+	mock.mu.Lock()
 	if len(mock.contentByUID) != 2 {
+		mock.mu.Unlock()
 		t.Fatalf("expected 2 remote records, got %d", len(mock.contentByUID))
 	}
 	foundLocal := false
@@ -394,6 +425,7 @@ func TestExecutePlan(t *testing.T) {
 			break
 		}
 	}
+	mock.mu.Unlock()
 	if !foundLocal {
 		t.Fatal("uploaded local content not found on mock server")
 	}
