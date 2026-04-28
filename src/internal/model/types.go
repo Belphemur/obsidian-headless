@@ -47,22 +47,23 @@ type PublishFile struct {
 }
 
 type SyncConfig struct {
-	VaultID           string   `json:"vaultId"`
-	VaultName         string   `json:"vaultName"`
-	VaultPath         string   `json:"vaultPath"`
-	Host              string   `json:"host"`
-	EncryptionVersion int      `json:"encryptionVersion"`
-	EncryptionKey     string   `json:"-"` // not persisted; loaded at runtime from the secrets store
-	EncryptionSalt    string   `json:"-"` // not persisted; loaded at runtime from the secrets store
-	ConflictStrategy  string   `json:"conflictStrategy"`
-	SyncMode          string   `json:"syncMode,omitempty"`
-	DeviceName        string   `json:"deviceName,omitempty"`
-	ConfigDir         string   `json:"configDir,omitempty"`
-	AllowTypes        []string `json:"allowTypes,omitempty"`
-	AllowSpecialFiles []string `json:"allowSpecialFiles,omitempty"`
-	IgnoreFolders     []string `json:"ignoreFolders,omitempty"`
-	StatePath         string   `json:"statePath,omitempty"`
-	PeriodicScan      string   `json:"periodicScan,omitempty"`
+	VaultID             string   `json:"vaultId"`
+	VaultName           string   `json:"vaultName"`
+	VaultPath           string   `json:"vaultPath"`
+	Host                string   `json:"host"`
+	EncryptionVersion   int      `json:"encryptionVersion"`
+	EncryptionKey       string   `json:"-"` // not persisted; loaded at runtime from the secrets store
+	EncryptionSalt      string   `json:"-"` // not persisted; loaded at runtime from the secrets store
+	ConflictStrategy    string   `json:"conflictStrategy"`
+	SyncMode            string   `json:"syncMode,omitempty"`
+	DeviceName          string   `json:"deviceName,omitempty"`
+	ConfigDir           string   `json:"configDir,omitempty"`
+	AllowTypes          []string `json:"allowTypes,omitempty"`
+	AllowSpecialFiles   []string `json:"allowSpecialFiles,omitempty"`
+	IgnoreFolders       []string `json:"ignoreFolders,omitempty"`
+	StatePath           string   `json:"statePath,omitempty"`
+	PeriodicScan        string   `json:"periodicScan,omitempty"`
+	DownloadConcurrency int      `json:"downloadConcurrency,omitempty"`
 }
 
 type PublishConfig struct {

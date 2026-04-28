@@ -159,6 +159,8 @@ func newMockSyncServer(t *testing.T) *mockSyncServer {
 }
 
 func (s *mockSyncServer) addRecord(path string, uid int64, content []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	record := model.FileRecord{
 		Path:    path,
 		Hash:    fmt.Sprintf("%x", content),
@@ -168,11 +170,19 @@ func (s *mockSyncServer) addRecord(path string, uid int64, content []byte) {
 		UID:     uid,
 		Deleted: false,
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.recordsByUID[uid] = record
 	s.recordsByPath[path] = record
 	s.contentByUID[uid] = content
+}
+
+func (s *mockSyncServer) cloneRecordsByPath() map[string]model.FileRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make(map[string]model.FileRecord, len(s.recordsByPath))
+	for k, v := range s.recordsByPath {
+		result[k] = v
+	}
+	return result
 }
 
 func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +212,7 @@ func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			if err := conn.WriteJSON(map[string]any{"res": "ok"}); err != nil {
 				return
 			}
-			// Send any existing records as pushes
+			// Snapshot records under lock to avoid holding it during writes.
 			s.mu.Lock()
 			records := make([]model.FileRecord, 0, len(s.recordsByUID))
 			for _, record := range s.recordsByUID {
@@ -264,7 +274,10 @@ func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			size := int(int64Value(msg["size"]))
 			pieces := int(int64Value(msg["pieces"]))
 			now := time.Now().UnixMilli()
+
+			s.mu.Lock()
 			uid := int64(len(s.recordsByUID) + 1)
+			s.mu.Unlock()
 
 			record := model.FileRecord{
 				Path:    path,
@@ -276,7 +289,6 @@ func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 				Deleted: false,
 			}
 
-			// Send push echo first
 			if err := conn.WriteJSON(map[string]any{
 				"op":      "push",
 				"path":    path,
@@ -350,19 +362,18 @@ func TestExecutePlan(t *testing.T) {
 
 	vault := t.TempDir()
 	mustWriteFile(t, filepath.Join(vault, "local.md"), []byte("local content"))
+	wsURL := "ws" + server.URL[4:]
 
-	conn, _, err := websocket.DefaultDialer.Dial("ws"+server.URL[4:], nil)
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
 
-	// Send init handshake
 	if err := conn.WriteJSON(map[string]any{"op": "init"}); err != nil {
 		t.Fatal(err)
 	}
 
-	// Wait for ready message
 	for {
 		var msg map[string]any
 		if err := conn.ReadJSON(&msg); err != nil {
@@ -373,15 +384,13 @@ func TestExecutePlan(t *testing.T) {
 		}
 	}
 
-	remote := make(map[string]model.FileRecord)
-	mock.mu.Lock()
-	for _, r := range mock.recordsByUID {
-		remote[r.Path] = r
-	}
-	mock.mu.Unlock()
+	remote := mock.cloneRecordsByPath()
 
 	e := &Engine{
-		Config: model.SyncConfig{VaultPath: vault},
+		Config: model.SyncConfig{
+			VaultPath: vault,
+			Host:      wsURL,
+		},
 		Logger: testLogger(),
 	}
 
@@ -403,7 +412,6 @@ func TestExecutePlan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify local file was downloaded
 	data, err := os.ReadFile(filepath.Join(vault, "remote.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -412,13 +420,14 @@ func TestExecutePlan(t *testing.T) {
 		t.Fatalf("unexpected downloaded content: %q", string(data))
 	}
 
-	// Verify remote file was uploaded
 	mock.mu.Lock()
-	if len(mock.contentByUID) != 2 {
-		mock.mu.Unlock()
-		t.Fatalf("expected 2 remote records, got %d", len(mock.contentByUID))
+	numRecords := len(mock.contentByUID)
+	mock.mu.Unlock()
+	if numRecords != 2 {
+		t.Fatalf("expected 2 remote records, got %d", numRecords)
 	}
 	foundLocal := false
+	mock.mu.Lock()
 	for _, content := range mock.contentByUID {
 		if string(content) == "local content" {
 			foundLocal = true
@@ -428,6 +437,151 @@ func TestExecutePlan(t *testing.T) {
 	mock.mu.Unlock()
 	if !foundLocal {
 		t.Fatal("uploaded local content not found on mock server")
+	}
+}
+
+func TestExecutePlanParallelDownloads(t *testing.T) {
+	const numFiles = 200
+
+	mock := newMockSyncServer(t)
+	for i := range numFiles {
+		path := fmt.Sprintf("file-%04d.md", i)
+		content := []byte(fmt.Sprintf("content for file %d\n", i))
+		mock.addRecord(path, int64(i+1), content)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
+	defer server.Close()
+
+	vault := t.TempDir()
+	wsURL := "ws" + server.URL[4:]
+
+	currentLocal := map[string]model.FileRecord{}
+	previousLocal := map[string]model.FileRecord{}
+	currentRemote := mock.cloneRecordsByPath()
+	previousRemote := map[string]model.FileRecord{}
+
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian")
+	if len(plan) != numFiles {
+		t.Fatalf("expected %d actions, got %d", numFiles, len(plan))
+	}
+
+	e := &Engine{
+		Config: model.SyncConfig{
+			VaultPath:           vault,
+			Host:                wsURL,
+			DownloadConcurrency: 10,
+		},
+		Logger: testLogger(),
+	}
+
+	mainConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mainConn.Close()
+
+	if err := mainConn.WriteJSON(map[string]any{"op": "init"}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		var msg map[string]any
+		if err := mainConn.ReadJSON(&msg); err != nil {
+			t.Fatal(err)
+		}
+		if msg["op"] == "ready" {
+			break
+		}
+	}
+
+	ctx := context.Background()
+	session := newRemoteSession(mainConn, currentRemote, 1, ctx, nil, testLogger(), nil)
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, session); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range numFiles {
+		path := fmt.Sprintf("file-%04d.md", i)
+		expected := fmt.Sprintf("content for file %d\n", i)
+		data, err := os.ReadFile(filepath.Join(vault, path))
+		if err != nil {
+			t.Fatalf("missing downloaded file %s: %v", path, err)
+		}
+		if string(data) != expected {
+			t.Fatalf("file %s content mismatch: got %q, want %q", path, string(data), expected)
+		}
+	}
+}
+
+func TestExecutePlanParallelSmallSync(t *testing.T) {
+	mock := newMockSyncServer(t)
+	mock.addRecord("a.md", 1, []byte("file a"))
+	mock.addRecord("b.md", 2, []byte("file b"))
+	mock.addRecord("c.md", 3, []byte("file c"))
+
+	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
+	defer server.Close()
+
+	vault := t.TempDir()
+	wsURL := "ws" + server.URL[4:]
+
+	currentLocal := map[string]model.FileRecord{}
+	previousLocal := map[string]model.FileRecord{}
+	currentRemote := mock.cloneRecordsByPath()
+	previousRemote := map[string]model.FileRecord{}
+
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian")
+	if len(plan) != 3 {
+		t.Fatalf("expected 3 actions, got %d", len(plan))
+	}
+
+	e := &Engine{
+		Config: model.SyncConfig{
+			VaultPath:           vault,
+			Host:                wsURL,
+			DownloadConcurrency: 10,
+		},
+		Logger: testLogger(),
+	}
+
+	mainConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mainConn.Close()
+
+	if err := mainConn.WriteJSON(map[string]any{"op": "init"}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		var msg map[string]any
+		if err := mainConn.ReadJSON(&msg); err != nil {
+			t.Fatal(err)
+		}
+		if msg["op"] == "ready" {
+			break
+		}
+	}
+
+	ctx := context.Background()
+	session := newRemoteSession(mainConn, currentRemote, 1, ctx, nil, testLogger(), nil)
+
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, session); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, expected := range map[string]string{
+		"a.md": "file a",
+		"b.md": "file b",
+		"c.md": "file c",
+	} {
+		data, err := os.ReadFile(filepath.Join(vault, name))
+		if err != nil {
+			t.Fatalf("missing downloaded file %s: %v", name, err)
+		}
+		if string(data) != expected {
+			t.Fatalf("file %s content mismatch: got %q, want %q", name, string(data), expected)
+		}
 	}
 }
 

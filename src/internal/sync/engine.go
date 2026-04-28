@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	chunkSize         = 2 * 1024 * 1024
-	maxRemoteFileSize = 200 * 1024 * 1024
-	staleLockAge      = 24 * time.Hour
-	syncInterval      = 30 * time.Second
+	chunkSize                  = 2 * 1024 * 1024
+	maxRemoteFileSize          = 200 * 1024 * 1024
+	staleLockAge               = 24 * time.Hour
+	syncInterval               = 30 * time.Second
+	defaultDownloadConcurrency = 10
 )
 
 type Engine struct {
@@ -225,47 +226,30 @@ func (e *Engine) scanLocal() (map[string]model.FileRecord, error) {
 }
 
 // executePlan executes a list of sync actions.
+// Non-download actions run sequentially on the main connection.
+// Download actions run in parallel using a worker pool of dedicated connections.
 func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLocal map[string]model.FileRecord, previousRemote map[string]model.FileRecord, session *remoteSession) error {
+	var nonDownloads []syncAction
+	var downloads []syncAction
 	for _, action := range plan {
+		if action.Path == "" {
+			e.Logger.Error().Msg("EMPTY PATH IN ACTION!")
+			continue
+		}
+		if action.Kind == syncActionDownload {
+			downloads = append(downloads, action)
+		} else {
+			nonDownloads = append(nonDownloads, action)
+		}
+	}
+
+	for _, action := range nonDownloads {
 		if err := ctx.Err(); err != nil {
 			e.Logger.Info().Err(err).Msg("sync cancelled, stopping plan execution")
 			return err
 		}
 		e.Logger.Debug().Str("kind", action.Kind.String()).Str("path", action.Path).Msg("action")
-		if action.Path == "" {
-			e.Logger.Error().Msg("EMPTY PATH IN ACTION!")
-			continue
-		}
 		switch action.Kind {
-		case syncActionDownload:
-			record, exists := session.remote[action.Path]
-			if !exists {
-				e.Logger.Warn().Str("path", action.Path).Msg("download: remote record not found, skipping")
-				continue
-			}
-			record.Path = action.Path
-			if record.Folder {
-				if !filepath.IsLocal(filepath.FromSlash(record.Path)) {
-					return fmt.Errorf("invalid remote directory path %q", record.Path)
-				}
-				dirPath, err := util.SafeJoin(e.Config.VaultPath, record.Path)
-				if err != nil {
-					return err
-				}
-				if err := os.MkdirAll(dirPath, 0o755); err != nil {
-					return err
-				}
-				e.Logger.Debug().Str("path", action.Path).Msg("ensured remote directory exists locally")
-				continue
-			}
-			content, err := session.pull(record.UID)
-			if err != nil {
-				return err
-			}
-			if err := util.WriteFileWithTimes(e.Config.VaultPath, record, content); err != nil {
-				return err
-			}
-			e.Logger.Info().Str("path", action.Path).Msg("downloaded remote file")
 		case syncActionUpload:
 			record := currentLocal[action.Path]
 			if !filepath.IsLocal(filepath.FromSlash(action.Path)) {
@@ -328,9 +312,143 @@ func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLoca
 				}
 				e.Logger.Info().Str("path", action.Path).Msg("downloaded remote file (JSON merge fallback)")
 			}
+		default:
 		}
 	}
-	return nil
+
+	// Separate folder downloads (must happen before parallel file downloads)
+	// and collect file downloads for the worker pool.
+	var fileDownloads []syncAction
+	for _, action := range downloads {
+		record, exists := session.remote[action.Path]
+		if !exists {
+			e.Logger.Warn().Str("path", action.Path).Msg("download: remote record not found, skipping")
+			continue
+		}
+		record.Path = action.Path
+		if record.Folder {
+			if !filepath.IsLocal(filepath.FromSlash(record.Path)) {
+				return fmt.Errorf("invalid remote directory path %q", record.Path)
+			}
+			dirPath, err := util.SafeJoin(e.Config.VaultPath, record.Path)
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(dirPath, 0o755); err != nil {
+				return err
+			}
+			e.Logger.Debug().Str("path", action.Path).Msg("ensured remote directory exists locally")
+			continue
+		}
+		fileDownloads = append(fileDownloads, action)
+	}
+
+	if len(fileDownloads) == 0 {
+		return nil
+	}
+
+	return e.executeDownloadsParallel(ctx, fileDownloads, session)
+}
+
+type downloadJob struct {
+	path   string
+	record model.FileRecord
+}
+
+// executeDownloadsParallel processes download actions using a pool of worker
+// goroutines, each with its own WebSocket connection. The number of workers
+// is min(len(actions), configured download concurrency), so small syncs
+// don't create idle connections.
+func (e *Engine) executeDownloadsParallel(ctx context.Context, actions []syncAction, session *remoteSession) error {
+	concurrency := e.Config.DownloadConcurrency
+	if concurrency <= 0 {
+		concurrency = defaultDownloadConcurrency
+	}
+	if concurrency > len(actions) {
+		concurrency = len(actions)
+	}
+
+	jobs := make(chan downloadJob, len(actions))
+	errs := make(chan error, 1)
+	var wg sync.WaitGroup
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			conn, err := e.dialWorker(ctx)
+			if err != nil {
+				e.Logger.Warn().Err(err).Msg("worker dial failed, draining jobs")
+				for range jobs {
+				}
+				return
+			}
+			defer conn.Close()
+
+			workerSession := newRemoteSession(conn, session.remote, session.version, ctx, e.enc, e.Logger, e.rawKey)
+
+			for job := range jobs {
+				select {
+				case <-ctx.Done():
+					for range jobs {
+					}
+					return
+				default:
+				}
+
+				content, err := workerSession.pull(job.record.UID)
+				if err != nil {
+					select {
+					case errs <- fmt.Errorf("pull %q: %w", job.path, err):
+					default:
+					}
+					for range jobs {
+					}
+					return
+				}
+
+				if err := util.WriteFileWithTimes(e.Config.VaultPath, job.record, content); err != nil {
+					select {
+					case errs <- fmt.Errorf("write %q: %w", job.path, err):
+					default:
+					}
+					for range jobs {
+					}
+					return
+				}
+
+				e.Logger.Debug().Str("path", job.path).Msg("downloaded remote file")
+			}
+		}()
+	}
+
+	for _, action := range actions {
+		record, exists := session.remote[action.Path]
+		if !exists {
+			e.Logger.Warn().Str("path", action.Path).Msg("download: remote record not found, skipping")
+			continue
+		}
+		record.Path = action.Path
+
+		select {
+		case jobs <- downloadJob{path: action.Path, record: record}:
+		case <-ctx.Done():
+			close(jobs)
+			wg.Wait()
+			return ctx.Err()
+		}
+	}
+	close(jobs)
+
+	wg.Wait()
+
+	select {
+	case err := <-errs:
+		return err
+	default:
+		return nil
+	}
 }
 
 // mergeTextFile performs a three-way merge for a Markdown file.
