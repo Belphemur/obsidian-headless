@@ -243,6 +243,27 @@ func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLoca
 		}
 	}
 
+	uploadCount, deleteRemoteCount, deleteLocalCount, mergeCount := 0, 0, 0, 0
+	for _, action := range nonDownloads {
+		switch action.Kind {
+		case syncActionUpload:
+			uploadCount++
+		case syncActionDeleteRemote:
+			deleteRemoteCount++
+		case syncActionDeleteLocal:
+			deleteLocalCount++
+		case syncActionMergeText, syncActionMergeJSON:
+			mergeCount++
+		}
+	}
+	e.Logger.Info().
+		Int("uploads", uploadCount).
+		Int("deleteRemote", deleteRemoteCount).
+		Int("deleteLocal", deleteLocalCount).
+		Int("merges", mergeCount).
+		Int("downloads", len(downloads)).
+		Msg("sync plan")
+
 	for _, action := range nonDownloads {
 		if err := ctx.Err(); err != nil {
 			e.Logger.Info().Err(err).Msg("sync cancelled, stopping plan execution")
@@ -369,26 +390,33 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 	}
 
 	jobsCh := make(chan downloadJob, len(jobs))
-	errs := make(chan error, 1)
 	ctxCancelled := make(chan struct{}, 1)
 	var wg sync.WaitGroup
 
+	varmu := struct {
+		mu       sync.Mutex
+		done     int
+		failed   int
+		errMsg   string
+	}{}
+
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
+		workerID := i + 1
 		go func() {
 			defer wg.Done()
 
 			conn, err := e.dialWorker(ctx)
 			if err != nil {
-				e.Logger.Warn().Err(err).Msg("worker dial failed")
-				select {
-				case errs <- fmt.Errorf("worker dial: %w", err):
-				default:
+				e.Logger.Warn().Int("workerID", workerID).Err(err).Msg("worker dial failed")
+				varmu.mu.Lock()
+				varmu.failed++
+				if varmu.errMsg == "" {
+					varmu.errMsg = fmt.Sprintf("worker %d dial: %v", workerID, err)
 				}
+				varmu.mu.Unlock()
 				return
 			}
-			// Close the connection when the context is cancelled so the
-			// read/write goroutines unblock immediately.
 			stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 			defer stop()
 			defer conn.Close()
@@ -398,22 +426,31 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 			for job := range jobsCh {
 				content, err := workerSession.pull(job.record.UID)
 				if err != nil {
-					select {
-					case errs <- fmt.Errorf("pull %q: %w", job.path, err):
-					default:
+					e.Logger.Error().Int("workerID", workerID).Str("path", job.path).Err(err).Msg("worker pull failed")
+					varmu.mu.Lock()
+					varmu.failed++
+					if varmu.errMsg == "" {
+						varmu.errMsg = fmt.Sprintf("worker %d pull %q: %v", workerID, job.path, err)
 					}
+					varmu.mu.Unlock()
 					return
 				}
 
 				if err := util.WriteFileWithTimes(e.Config.VaultPath, job.record, content); err != nil {
-					select {
-					case errs <- fmt.Errorf("write %q: %w", job.path, err):
-					default:
+					e.Logger.Error().Int("workerID", workerID).Str("path", job.path).Err(err).Msg("worker write failed")
+					varmu.mu.Lock()
+					varmu.failed++
+					if varmu.errMsg == "" {
+						varmu.errMsg = fmt.Sprintf("worker %d write %q: %v", workerID, job.path, err)
 					}
+					varmu.mu.Unlock()
 					return
 				}
 
-				e.Logger.Debug().Str("path", job.path).Msg("downloaded remote file")
+				varmu.mu.Lock()
+				varmu.done++
+				e.Logger.Debug().Int("workerID", workerID).Str("path", job.path).Int("done", varmu.done).Msg("worker downloaded file")
+				varmu.mu.Unlock()
 			}
 		}()
 	}
@@ -431,9 +468,18 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 
 	wg.Wait()
 
+	varmu.mu.Lock()
+	done := varmu.done
+	failed := varmu.failed
+	errMsg := varmu.errMsg
+	varmu.mu.Unlock()
+
+	e.Logger.Info().Int("completed", done).Int("failed", failed).Msg("parallel download complete")
+
+	if errMsg != "" {
+		return fmt.Errorf("%s", errMsg)
+	}
 	select {
-	case err := <-errs:
-		return err
 	case <-ctxCancelled:
 		return ctx.Err()
 	default:

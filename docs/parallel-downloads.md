@@ -94,22 +94,44 @@ read-only during the parallel download phase.
 
 | Scenario | Behavior |
 |----------|----------|
-| Worker dial fails | Error sent to buffered error channel (size 1). Worker exits immediately without draining jobs. Other workers continue processing remaining jobs. |
-| Pull fails (network error) | Error sent to buffered error channel (size 1). Worker exits immediately without draining jobs. Other workers continue. First error wins. |
+| Worker dial fails | Retries up to 4 times with exponential backoff (200ms base, 8s max) + jitter. After max retries, worker exits with logged error. |
+| Pull fails (network error) | Worker logs error with worker ID and path, then exits. Remaining workers continue. First error wins. |
 | Write to disk fails | Same as pull failure. |
 | Context cancelled | `context.AfterFunc` closes each worker's WebSocket connection, unblocking any in-progress reads/writes. Workers exit. `ctx.Err()` returned. |
 
 When a worker exits early (dial or pull/write error), it does **not** drain the jobs channel — the remaining jobs stay in the channel and are processed by workers that haven't exited yet. The `context.AfterFunc` on each connection ensures workers don't hang if the context is cancelled while waiting on a network read.
 
+After all workers finish, a summary log is emitted with `completed=N` and `failed=N` counts.
+
+## Per-Worker Logging
+
+Each worker logs with a `workerID` field (1-indexed) for correlation:
+
+```
+debug: worker downloaded file workerID=2 path="notes/tasks.md" done=47
+info:  parallel download complete completed=187 failed=1
+error: worker pull failed workerID=3 path="notes/secret.md" error="..." workerID=3
+```
+
+## Action Breakdown
+
+At the start of plan execution, `executePlan` logs the full action breakdown:
+
+```
+info:  sync plan uploads=12 deleteRemote=3 deleteLocal=1 merges=5 downloads=203
+```
+
+Non-download actions (uploads, deletes, merges) run sequentially first. Then parallel downloads run with the worker pool.
+
 ## Configuration
 
 | Location | Field | Default |
 |----------|-------|---------|
-| `SyncConfig` struct | `DownloadConcurrency int` | `10` |
-| Code constant | `defaultDownloadConcurrency` (engine.go) | `10` |
+| `SyncConfig` struct | `DownloadConcurrency int` | `3` |
+| Code constant | `defaultDownloadConcurrency` (engine.go) | `3` |
 
 The `SyncConfig.DownloadConcurrency` field serializes as `"downloadConcurrency"`
-in JSON. A value of `0` or negative defaults to 10.
+in JSON. A value of `0` or negative defaults to 3.
 
 ## Testing
 
