@@ -24,7 +24,7 @@ const (
 	maxRemoteFileSize          = 200 * 1024 * 1024
 	staleLockAge               = 24 * time.Hour
 	syncInterval               = 30 * time.Second
-	defaultDownloadConcurrency = 3
+	defaultDownloadConcurrency = 5
 )
 
 type Engine struct {
