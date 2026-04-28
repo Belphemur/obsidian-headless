@@ -627,6 +627,7 @@ func (e *Engine) saveState(store *storage.StateStore, currentLocal, currentRemot
 // diffRecords compares current against previous and returns records to upsert
 // and paths to delete.
 func diffRecords(current, previous map[string]model.FileRecord) (upserts []model.FileRecord, deletes []string) {
+	upserts = make([]model.FileRecord, 0, len(current))
 	for path, rec := range current {
 		prev, had := previous[path]
 		if !had || !rec.Equal(prev) {

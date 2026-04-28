@@ -44,7 +44,7 @@ func (d *sqliteDriver) Unlock() error {
 	return nil
 }
 
-func (d *sqliteDriver) Run(reader io.Reader) error {
+func (d *sqliteDriver) Run(reader io.Reader) (err error) {
 	script, err := io.ReadAll(reader)
 	if err != nil {
 		return err
@@ -53,11 +53,16 @@ func (d *sqliteDriver) Run(reader io.Reader) error {
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(string(script)); err != nil {
-		_ = tx.Rollback()
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err = tx.Exec(string(script)); err != nil {
 		return err
 	}
-	return tx.Commit()
+	err = tx.Commit()
+	return err
 }
 
 func (d *sqliteDriver) SetVersion(version int, dirty bool) (err error) {
