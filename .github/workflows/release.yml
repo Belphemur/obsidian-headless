@@ -64,12 +64,12 @@ jobs:
 
       - name: Attest Build Provenance for Archives
         if: steps.check_release.outputs.release_created == 'true'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-checksums: dist/checksums.txt
 
       - name: Attest Build Provenance for Docker Images
         if: steps.check_release.outputs.release_created == 'true'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-checksums: dist/digests.txt
