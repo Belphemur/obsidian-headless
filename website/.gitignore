@@ -1,13 +1,25 @@
 # Dependencies
 node_modules/
 
-# Build output
+# VuePress build output
+src/.vuepress/.temp/
+src/.vuepress/.cache/
 src/.vuepress/dist/
 
-# VuePress cache and temp files
-.cache/
-.temp/
+# Generated CLI docs (from src/cmd/gendocs)
+src/cli-reference/**/*.md
+!src/cli-reference/.gitkeep
 
-# OS files
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
 .DS_Store
 Thumbs.db

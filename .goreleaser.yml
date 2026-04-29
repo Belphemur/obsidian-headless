@@ -1,3 +1,4 @@
+# Website: https://belphemur.github.io/obsidian-headless/
 version: 2
 project_name: obsidian-headless
 
@@ -148,7 +149,7 @@ nfpms:
       without the desktop app.
     license: GPL-3.0
     vendor: Belphemur
-    homepage: "https://github.com/Belphemur/obsidian-headless"
+    homepage: "https://belphemur.github.io/obsidian-headless/"
     section: utils
     formats:
       - deb
@@ -171,7 +172,7 @@ homebrew_casks:
       owner: Belphemur
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: "https://github.com/Belphemur/obsidian-headless"
+    homepage: "https://belphemur.github.io/obsidian-headless/"
     description: |
       Obsidian headless client for syncing and publishing vaults
       without the desktop app.
@@ -195,7 +196,7 @@ aurs:
     maintainers:
       - "Belphemur <obsidian-sync@admincmd.com>"
     license: GPL-3.0
-    homepage: "https://github.com/Belphemur/obsidian-headless"
+    homepage: "https://belphemur.github.io/obsidian-headless/"
     description: Obsidian headless client for syncing and publishing vaults without the desktop app in go.
     private_key: "{{ .Env.AUR_SSH_KEY }}"
     git_url: "ssh://aur@aur.archlinux.org/obsidian-headless-go-bin.git"
@@ -212,7 +213,7 @@ winget:
     short_description: "Headless Obsidian sync and publish client"
     license: GPL-3.0
     package_identifier: Belphemur.ObsidianHeadless
-    homepage: "https://github.com/Belphemur/obsidian-headless"
+    homepage: "https://belphemur.github.io/obsidian-headless/"
     description: |
       Obsidian headless client for syncing and publishing vaults
       without the desktop app.
