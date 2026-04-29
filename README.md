@@ -13,7 +13,7 @@ Built with Go `1.26`.
 ### macOS (Homebrew)
 
 ```bash
-brew install belphemur/homebrew-tap/obsidian-headless
+brew install --cask belphemur/homebrew-tap/obsidian-headless
 ```
 
 ### Linux
@@ -22,10 +22,10 @@ Pre-built packages are available on the [GitHub Releases](https://github.com/Bel
 
 | Distribution | Package | Command |
 |---|---|---|
-| Debian / Ubuntu | `.deb` | `sudo dpkg -i obsidian-headless_*_amd64.deb` |
-| Fedora / RHEL | `.rpm` | `sudo rpm -i obsidian-headless_*_amd64.rpm` |
-| Alpine Linux | `.apk` | `sudo apk add --allow-untrusted obsidian-headless_*_amd64.apk` |
-| Arch Linux | `.pkg.tar.zst` | `sudo pacman -U obsidian-headless_*_amd64.pkg.tar.zst` |
+| Debian / Ubuntu | `.deb` | `sudo apt install ./obsidian-headless*.deb` |
+| Fedora / RHEL | `.rpm` | `sudo dnf install ./obsidian-headless*.rpm` |
+| Alpine Linux | `.apk` | `sudo apk add --allow-untrusted ./obsidian-headless*.apk` |
+| Arch Linux | `.pkg.tar.zst` | `sudo pacman -U ./obsidian-headless*.pkg.tar.zst` |
 | Arch Linux (AUR) | AUR | `yay -S obsidian-headless-bin` |
 
 ### Windows
