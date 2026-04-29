@@ -1,4 +1,13 @@
-/node_modules
-/dist
+node_modules
+dist
 /pkg
 /bin
+
+# Compiled CLI doc generator binary
+src/gendocs
+
+# Vuepress Cache
+**/.vuepress/.cache/**
+# Vuepress Temp
+**/.vuepress/.temp/**
+

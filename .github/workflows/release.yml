@@ -76,3 +76,53 @@ jobs:
         uses: actions/attest-build-provenance@v4
         with:
           subject-checksums: dist/digests.txt
+
+  docs:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/go.mod
+
+      - name: Generate CLI docs
+        working-directory: src
+        run: go run ./cmd/gendocs -output ../website/src/cli-reference
+
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Build docs
+        working-directory: website
+        run: npm run docs:build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/src/.vuepress/dist
+
+  deploy:
+    needs: docs
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

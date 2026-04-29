@@ -281,7 +281,13 @@ ob publish-unlink [--path <local-path>]
 
 ## Documentation
 
-Detailed documentation lives in the `docs/` directory:
+Full documentation is available at **[belphemur.github.io/obsidian-headless](https://belphemur.github.io/obsidian-headless)**:
+
+- [Installation Guide](https://belphemur.github.io/obsidian-headless/installation) — Install via brew, apt, rpm, apk, pacman, winget, go install, or Docker
+- [Usage Guide](https://belphemur.github.io/obsidian-headless/usage) — Complete CLI command reference for Sync and Publish
+- [Architecture](https://belphemur.github.io/obsidian-headless/architecture/) — Sync protocol, encryption, and REST API deep-dive
+
+Additional reference docs in the `docs/` directory:
 
 | Document | Description |
 |----------|-------------|

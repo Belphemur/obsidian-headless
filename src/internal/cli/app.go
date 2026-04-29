@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/api"
@@ -51,6 +52,13 @@ func (a *App) Execute(ctx context.Context) error {
 func (a *App) ExecuteArgs(ctx context.Context, args []string) error {
 	a.root.SetArgs(args)
 	return a.root.ExecuteContext(ctx)
+}
+
+func (a *App) Command() *cobra.Command {
+	if rc, ok := a.root.(*rootCommand); ok {
+		return rc.Command
+	}
+	return nil
 }
 
 func (a *App) client() *api.Client {
