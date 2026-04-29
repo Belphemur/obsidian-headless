@@ -194,9 +194,7 @@ aurs:
       - "Belphemur <obsidian-sync@admincmd.com>"
     license: GPL-3.0
     homepage: "https://github.com/Belphemur/obsidian-headless"
-    description: |
-      Obsidian headless client for syncing and publishing vaults
-      without the desktop app in go.
+    description: Obsidian headless client for syncing and publishing vaults without the desktop app in go.
     private_key: "{{ .Env.AUR_SSH_KEY }}"
     git_url: "ssh://aur@aur.archlinux.org/obsidian-headless-go-bin.git"
     skip_upload: auto
