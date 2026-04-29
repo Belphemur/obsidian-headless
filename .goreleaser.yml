@@ -175,6 +175,12 @@ homebrew_casks:
       without the desktop app.
     generate_completions_from_executable:
       shell_parameter_format: cobra
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ob"]
+          end
     skip_upload: auto
     commit_author:
       name: goreleaserbot
