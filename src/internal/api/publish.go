@@ -9,7 +9,7 @@ import (
 	"net/url"
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 )
 
 func (c *Client) listPublishSites(ctx context.Context, token string) ([]model.PublishSite, error) {
