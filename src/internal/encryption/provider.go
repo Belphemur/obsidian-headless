@@ -3,6 +3,7 @@ package encryption
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -133,6 +134,9 @@ func (e *encryptionV0) DecryptPath(encoded string) (string, error) {
 
 func (e *encryptionV0) EncryptData(data []byte) ([]byte, error) {
 	iv := make([]byte, 12)
+	if _, err := rand.Read(iv); err != nil {
+		return nil, fmt.Errorf("failed to generate random IV: %w", err)
+	}
 	return e.gcm.Seal(iv, iv, data, nil), nil
 }
 
@@ -246,6 +250,9 @@ func (e *encryptionV2V3) DecryptPath(encoded string) (string, error) {
 
 func (e *encryptionV2V3) EncryptData(data []byte) ([]byte, error) {
 	iv := make([]byte, 12)
+	if _, err := rand.Read(iv); err != nil {
+		return nil, fmt.Errorf("failed to generate random IV: %w", err)
+	}
 	return e.gcm.Seal(iv, iv, data, nil), nil
 }
 

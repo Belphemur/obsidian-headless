@@ -63,18 +63,18 @@ Deterministic IV sacrifices IND-CPA security for path deduplication. This is con
 
 ### Content Encryption
 
-File content is encrypted using **AES-256-GCM** with a zero 12-byte IV:
+File content is encrypted using **AES-256-GCM** with a random 12-byte IV:
 
 ```text
-iv = zeros(12)
+iv = random(12)
 ciphertext = AES-GCM-Encrypt(key=raw_key, iv=iv, plaintext=content)
 wire_format = iv || ciphertext || auth_tag
 ```
 
 The IV is prepended to the ciphertext for transmission.
 
-::: warning
-The IV is fixed at 12 zero bytes. This is a protocol-level constraint inherited from the official Obsidian Sync client for compatibility — changing it would corrupt existing encrypted vaults.
+::: tip
+A random 12-byte IV is generated for each encryption via the system CSPRNG. The IV is prepended to the ciphertext so the decrypt side can recover it.
 :::
 
 ### Content Hash
@@ -167,7 +167,7 @@ The implementation follows RFC 5297:
 File content is encrypted with **AES-256-GCM** using the HKDF-derived `gcm_key`:
 
 ```text
-iv = zeros(12)
+iv = random(12)
 ciphertext = AES-GCM-Encrypt(key=gcm_key, iv=iv, plaintext=content)
 wire_format = iv || ciphertext || auth_tag
 ```
@@ -189,7 +189,7 @@ encrypted_hash = hex( AES-SIV-Seal(key=siv_keys, plaintext=UTF-8(hash)) )
 | Key derivation | scrypt | scrypt |
 | Key hash | `SHA-256(raw_key)` | `HKDF(raw_key, salt, "ObsidianKeyHash")` |
 | Path encryption | AES-GCM (deterministic IV) | AES-SIV (RFC 5297) |
-| Content encryption | AES-GCM (zero IV) | AES-GCM (HKDF-derived key, zero IV) |
+| Content encryption | AES-GCM (random IV) | AES-GCM (HKDF-derived key, random IV) |
 | Path IV source | `SHA-256(path)[0:12]` | Synthetic IV from CMAC |
 | Deterministic? | Yes (paths only) | Yes (paths and hashes) |
 | Auth tag size | 16 bytes (GCM) | 16 bytes (SIV + GCM) |
