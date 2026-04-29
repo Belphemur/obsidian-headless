@@ -1,4 +1,13 @@
+# Dependencies
 node_modules/
-dist/
+
+# Build output
+src/.vuepress/dist/
+
+# VuePress cache and temp files
 .cache/
 .temp/
+
+# OS files
+.DS_Store
+Thumbs.db
