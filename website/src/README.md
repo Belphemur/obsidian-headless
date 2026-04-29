@@ -1,10 +1,10 @@
 ---
 home: true
 title: Home
-heroImage: /logo.svg
-heroAlt: Obsidian Headless Logo
-heroText: Obsidian Headless
-tagline: Headless CLI client for Obsidian Sync and Obsidian Publish
+heroImage: /obsidian-sync-headless.png
+heroAlt: Obsidian Headless Go Logo
+heroText: Obsidian Headless Go
+tagline: Headless Go CLI client for Obsidian Sync and Obsidian Publish
 actions:
   - text: Get Started
     link: /installation
@@ -47,9 +47,9 @@ ob sync-setup --vault "My Vault" --path /path/to/vault
 ob sync --continuous
 ```
 
-## What is Obsidian Headless?
+## What is Obsidian Headless Go?
 
-Obsidian Headless is the official CLI companion for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish). It brings the full power of Obsidian's sync and publish engines to the command line — no GUI required.
+Obsidian Headless Go is the official CLI companion for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish). It brings the full power of Obsidian's sync and publish engines to the command line — no GUI required.
 
 Perfect for:
 - **Servers & NAS:** Keep vaults in sync on headless Linux machines

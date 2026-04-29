@@ -11,3 +11,6 @@ src/gendocs
 # Vuepress Temp
 **/.vuepress/.temp/**
 
+# MCP Playwright browser output
+.playwright-mcp/
+
