@@ -162,7 +162,6 @@ nfpms:
         dst: /usr/share/doc/obsidian-headless/README.md
       - src: ./build/obsidian-headless-sync@.service
         dst: /usr/lib/systemd/user/obsidian-headless-sync@.service
-        type: config
 
 # Homebrew Cask - pushes to Belphemur/homebrew-tap
 # https://goreleaser.com/customization/publish/homebrew_casks/
