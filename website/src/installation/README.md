@@ -6,11 +6,11 @@ title: Installation
 
 Choose your platform:
 
-- [macOS](macos.html) — Homebrew Cask
-- [Linux](linux.html) — deb, rpm, pacman, apk, systemd
-- [Windows](windows.html) — Winget
-- [Docker](docker.html) — Docker and Docker Compose
-- [From Source](from-source.html) — Go install and build from source
+- [macOS](macos.md) — Homebrew Cask
+- [Linux](linux.md) — deb, rpm, pacman, apk, systemd
+- [Windows](windows.md) — Winget
+- [Docker](docker.md) — Docker and Docker Compose
+- [From Source](from-source.md) — Go install and build from source
 
 ## Verify Installation
 

@@ -5,7 +5,9 @@
   "private": true,
   "scripts": {
     "docs:dev": "vuepress-vite dev src",
-    "docs:build": "vuepress-vite build src"
+    "docs:build": "vuepress-vite build src",
+    "docs:preview": "docker compose -f docker-compose.docs.yml up --build -d && node -e \"setTimeout(() => {}, 2000)\" && echo 'Docs served at http://localhost:8080/obsidian-headless/'",
+    "docs:preview:stop": "docker compose -f docker-compose.docs.yml down"
   },
   "devDependencies": {
     "@vuepress/bundler-vite": "^2.0.0-rc.28",

@@ -2,7 +2,7 @@
 home: true
 title: Home
 heroImage: /obsidian-sync-headless.png
-heroAlt: Obsidian Headless Logo
+heroAlt: Obsidian Headless Go Logo
 heroText: Obsidian Headless Go
 tagline: Headless Go CLI client for Obsidian Sync and Obsidian Publish
 actions:

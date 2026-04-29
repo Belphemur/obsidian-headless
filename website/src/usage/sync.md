@@ -104,15 +104,14 @@ ob sync-unlink [--path <path>]
 |------|---------|-------------|
 | `--path` | `.` | Local vault path |
 
-## `ob sync`
+## `ob sync-run`
 
 Run sync for a configured vault.
 
 ```bash
-ob sync [--path <path>] [--continuous]
+ob sync-run [<selector>] [--continuous]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--path` | `.` | Local vault path |
 | `--continuous` | `false` | Run continuously (watch for changes) |

@@ -23,6 +23,7 @@ Configuration and state are stored in the following locations:
 | `sync/{vaultID}/config.json` | Vault sync configuration |
 | `sync/{vaultID}/state.db` | Sync state database |
 | `publish/{siteID}/config.json` | Publish site configuration |
+| `publish/{siteID}/cache.json` | File hash cache for publish |
 
 ## Auth Token Precedence
 

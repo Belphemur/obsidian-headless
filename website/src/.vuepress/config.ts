@@ -14,7 +14,7 @@ export default defineUserConfig({
     ['link', { rel: 'icon', href: '/obsidian-sync-headless.png', type: 'image/png' }],
     ['meta', { name: 'theme-color', content: '#A88BFA' }],
     ['meta', { property: 'og:title', content: 'Obsidian Headless Go' }],
-    ['meta', { property: 'og:description', content: 'Headless CLI client for Obsidian Sync and Obsidian Publish' }],
+    ['meta', { property: 'og:description', content: 'Headless Go CLI client for Obsidian Sync and Obsidian Publish' }],
   ],
 
   theme: defaultTheme({

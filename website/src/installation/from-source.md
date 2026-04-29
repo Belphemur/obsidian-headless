@@ -7,7 +7,7 @@ title: From Source
 ## Go Install
 
 ```bash
-go install github.com/Belphemur/obsidian-headless/src-go/cmd/ob-go@latest
+go install github.com/Belphemur/obsidian-headless/src/cmd/ob-go@latest
 ln -sf "$(go env GOPATH)/bin/ob-go" "$(go env GOPATH)/bin/ob"
 ```
 
