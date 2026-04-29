@@ -78,7 +78,6 @@ jobs:
           subject-checksums: dist/digests.txt
 
   docs:
-    needs: release
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -89,7 +88,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 'lts/*'
+          node-version: '24'
 
       - name: Set up Go
         uses: actions/setup-go@v6

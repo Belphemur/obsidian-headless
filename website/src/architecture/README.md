@@ -12,30 +12,35 @@ For deeper dives into specific areas, see the [architecture subpages](#further-r
 
 The source code lives under `src/` and is split into focused packages:
 
-```
+```text
 src/
-├── api/          # HTTP REST client for Obsidian cloud services
-├── cli/          # Commander.js CLI entry point
-├── config/       # Configuration management (auth, sync, publish)
-├── encryption/   # Encryption providers and AES-SIV implementation
-├── fs/           # File system adapter with inode-aware watch
-├── publish/      # Publish scanning, upload, and removal engine
-├── storage/      # SQLite state store for sync metadata
-├── sync/         # Sync engine, WebSocket connection, filters, and merge
-└── utils/        # Shared helpers (crypto, encoding, debounce, paths, etc.)
+├── cmd/ob-go/     # CLI entry point
+├── internal/
+│   ├── api/       # REST client for Obsidian HTTP API
+│   ├── cli/       # Cobra command definitions (auth, sync, publish)
+│   ├── config/    # Configuration management (auth, secrets, vault configs)
+│   ├── encryption/# EncryptionProvider interface, V0 & V2/V3 implementations
+│   ├── logging/   # zerolog console + file logger with rotation
+│   ├── model/     # Shared data types (UserInfo, Vault, SyncConfig, etc.)
+│   ├── publish/   # Publish engine (scan, hash, upload, remove)
+│   ├── storage/   # SQLite state store (modernc.org/sqlite), migrations, credential encryption
+│   ├── sync/      # WebSocket sync engine, plan builder, three-way merge, lock
+│   └── util/      # File scanning, hashing, path safety, password derivation
+└── go.mod
 ```
 
 | Package | Key Files | Purpose |
 |---------|-----------|---------|
-| `api` | `client.ts` | HTTP REST client for Obsidian cloud services |
-| `cli` | `main.ts` | Commander.js CLI entry point |
-| `config` | `index.ts` | Configuration management (auth, sync, publish) |
-| `encryption` | `types.ts`, `aes-siv.ts`, `providers.ts` | Encryption providers and AES-SIV (RFC 5297) implementation |
-| `fs` | `adapter.ts` | File system adapter with inode-aware file watching |
-| `publish` | `engine.ts` | Publish scanning, upload, and removal engine |
-| `storage` | `state-store.ts` | SQLite state store for sync metadata |
-| `sync` | `engine.ts`, `connection.ts`, `filter.ts`, `merge.ts`, `lock.ts`, `backoff.ts` | Sync engine, WebSocket connection, filters, three-way merge, file locking, and backoff |
-| `utils` | `crypto.ts`, `encoding.ts`, `debounce.ts`, `paths.ts`, etc. | Shared helpers for crypto, encoding, debounce, path handling, and more |
+| `api` | `client.go` | HTTP REST client for Obsidian cloud services |
+| `cli` | `root.go`, `sync.go` | Cobra CLI entry point and command tree |
+| `config` | `config.go`, `secrets.go` | Configuration management (auth, sync, publish) |
+| `encryption` | `provider.go` | EncryptionProvider interface, V0 AES-GCM, V2/V3 AES-SIV + AES-GCM |
+| `logging` | `logger.go` | zerolog console + file logger with lumberjack rotation |
+| `model` | `types.go` | Shared types (UserInfo, Vault, SyncConfig, FileRecord, etc.) |
+| `publish` | `engine.go` | Publish scanning, upload, and removal engine |
+| `storage` | `state.go`, `crypto.go` | SQLite state store via modernc.org/sqlite, credential encryption |
+| `sync` | `engine.go`, `connection.go`, `plan.go`, `merge.go`, `lock.go` | Sync engine, WebSocket connection, plan builder, three-way merge, file locking |
+| `util` | `files.go` | File scanning, SHA-256 hashing, safe path join, random hex |
 
 ## Data Flow
 
@@ -43,22 +48,24 @@ src/
 
 The sync flow keeps a local vault in sync with the Obsidian Sync server over a WebSocket connection.
 
-```
+```text
 ┌──────────┐     WebSocket      ┌───────────────┐
 │  CLI      │◄──────────────────►│  Obsidian     │
-│  (main)   │   JSON + binary   │  Sync Server  │
+│ (ob-go)   │   JSON + binary   │  Sync Server  │
 └─────┬─────┘                   └───────────────┘
       │
       ├── SyncEngine
       │     ├── SyncServerConnection  (WebSocket management)
-      │     ├── FileSystemAdapter     (local file I/O + watch)
+      │     ├── fsnotify watcher      (local file change detection)
       │     ├── StateStore            (SQLite sync metadata)
-      │     ├── SyncFilter            (which files to sync)
+      │     ├── SyncPlan              (upload/download/delete/merge actions)
       │     ├── EncryptionProvider    (encrypt/decrypt content + paths)
-      │     └── merge.ts             (three-way merge for conflicts)
+      │     └── merge.go             (three-way merge for conflicts)
       │
       └── Config (auth token, vault settings, log setup)
 ```
+
+WebSocket connection, engine.RunOnce/RunContinuous, file watcher (fsnotify), plan builder (upload/download/delete/merge actions), parallel downloads with worker pool, three-way merge for text, JSON key-level merge for configs, 2MB chunks, 200MB max file, 30s interval, 5 concurrent downloads.
 
 For details on the sync protocol, see [Sync Protocol](./sync-protocol.md). For encryption specifics, see [Encryption](./encryption.md).
 
@@ -66,10 +73,10 @@ For details on the sync protocol, see [Sync Protocol](./sync-protocol.md). For e
 
 The publish flow scans local files and uploads them to the Obsidian Publish API.
 
-```
+```text
 ┌──────────┐     HTTP POST      ┌───────────────┐
 │  CLI      │──────────────────►│  Obsidian     │
-│  (main)   │   multipart       │  Publish API  │
+│ (ob-go)   │   multipart       │  Publish API  │
 └─────┬─────┘                   └───────────────┘
       │
       ├── PublishEngine
@@ -85,34 +92,24 @@ For details on the REST API used by publish (and sync), see [REST API](./rest-ap
 
 ## File Watching Strategy
 
-The `FileSystemAdapter` uses `fs.watch({ recursive: true })` under the hood, with OS-specific optimisations:
-
-| Platform | Backend | Inode tracking | Notes |
-|----------|---------|:--:|-------|
-| **Linux** | inotify (recursive since Node 19) | ✅ | Rename detection via inode matching. Subject to `fs.inotify.max_user_watches` limit. |
-| **macOS** | FSEvents | ✅ | Rename detection via inode matching. Very efficient native event stream. |
-| **Windows** | ReadDirectoryChangesW | ❌ | No inode tracking — NTFS file IDs can be reused. Renames are reported as delete + create. |
-
-### Inode-based rename detection (Linux / macOS)
-
-When a file disappears, its inode is held in a pending-renames buffer for 150 ms. If a new file appears with the same inode within that window, the adapter emits a single `"renamed"` event (with both old and new paths) instead of separate `"file-removed"` + `"file-created"` events. This lets the sync engine move the metadata record without re-hashing or re-uploading the unchanged content.
+The sync engine uses `fsnotify` (cross-platform Go file system notifications), with a periodic full-rescan for consistency. Event aggregation with debounce is used to batch rapid changes. In continuous mode, the watcher triggers sync cycles on file changes.
 
 ### Watch disabled for read-only modes
 
-In `pull-only` and `mirror-remote` sync modes, local file changes are never uploaded. The adapter's `watch()` call is skipped entirely; only an initial `listAll()` scan is performed. This eliminates inotify/FSEvents overhead on machines that only download.
+In pull-only and mirror sync modes, local file changes are never uploaded. The fsnotify watcher is not started; only an initial scan is performed. This eliminates filesystem event overhead on machines that only download.
 
 ## Configuration Storage
 
 All configuration is stored under a platform-specific base directory:
 
 - **Linux**: `$XDG_CONFIG_HOME/obsidian-headless` or `~/.config/obsidian-headless`
-- **macOS / Windows**: `~/.obsidian-headless`
+- **macOS**: `~/.obsidian-headless`
 
 Directory structure:
 
-```
+```text
 ~/.config/obsidian-headless/
-├── auth_token              # Stored authentication token
+├── credentials.db          # Encrypted SQLite fallback for auth token
 ├── sync/
 │   └── <vault-id>/
 │       ├── config.json     # SyncConfig
@@ -125,18 +122,22 @@ Directory structure:
         └── cache.json      # File hash cache
 ```
 
+- **auth token**: OS keyring (with encrypted SQLite fallback at `credentials.db`)
+- **vault config**: `sync/{vaultID}/config.json` + `state.db`
+- **site config**: `publish/{siteID}/config.json` + `cache.json`
+
 ## Dependencies
 
 | Package | Purpose |
 |---------|---------|
-| `commander` | CLI framework for command parsing |
-| `better-sqlite3` | SQLite3 binding for sync state storage |
-| `yaml` | YAML parsing for frontmatter extraction |
+| `spf13/cobra` | CLI framework for command parsing and flag management |
+| `modernc.org/sqlite` | Pure-Go SQLite driver for sync state storage |
+| `gopkg.in/yaml.v3` | YAML parsing for frontmatter extraction |
 
 ## Runtime Requirements
 
-- **Node.js 24+** — Required for native WebSocket, Web Crypto, `Promise.withResolvers`, and `node:crypto` scrypt
-- **Platforms**: macOS, Linux, Windows (x64, arm64)
+- **Go 1.21+** — Required for building the CLI binary. Uses Go 1.26 in CI.
+- **Platforms**: Linux, macOS, Windows (amd64, arm64)
 
 ## Further Reading
 

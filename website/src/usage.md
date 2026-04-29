@@ -256,7 +256,7 @@ Configuration and state are stored in the following locations:
 
 | File | Purpose |
 |------|---------|
-| `auth_token` | Authentication token |
+| `auth_token` | Not stored on disk — token is saved in the OS keyring (or encrypted `credentials.db` fallback) |
 | `credentials.db` | Encrypted credentials database |
 | `master.key` | Master encryption key |
 | `sync/{vaultID}/config.json` | Vault sync configuration |

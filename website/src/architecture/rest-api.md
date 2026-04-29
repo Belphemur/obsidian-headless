@@ -205,10 +205,11 @@ Validate access to a vault with the provided key hash.
 ```json
 {
   "token": "abc123...",
-  "uid": "vault-uid",
+  "vault_uid": "vault-uid",
   "keyhash": "hex-key-hash",
   "host": "sync-1.obsidian.md",
-  "supported_encryption_version": 3
+  "supported_encryption_version": 3,
+  "encryption_version": 3
 }
 ```
 

@@ -23,7 +23,7 @@ Versions 2 and 3 use the same algorithm. The version number is passed through to
 
 All encryption versions derive the master key from a user password and vault salt using **scrypt**:
 
-```
+```text
 raw_key = scrypt(
   password = NFKC(user_password),
   salt     = NFKC(vault_salt),
@@ -42,7 +42,7 @@ Both the password and salt are Unicode NFKC-normalised before hashing. The resul
 
 The key hash is sent to the server for authentication:
 
-```
+```text
 key_hash = hex( SHA-256( raw_key ) )
 ```
 
@@ -50,7 +50,7 @@ key_hash = hex( SHA-256( raw_key ) )
 
 Paths are encrypted using **AES-256-GCM** with a deterministic IV derived from the path string:
 
-```
+```text
 iv = SHA-256( UTF-8(path) )[0:12]
 encrypted_path = hex( AES-GCM-Encrypt(key=raw_key, iv=iv, plaintext=UTF-8(path)) )
 ```
@@ -63,15 +63,19 @@ Deterministic IV sacrifices IND-CPA security for path deduplication. This is con
 
 ### Content Encryption
 
-File content is encrypted using **AES-256-GCM** with a random 12-byte IV:
+File content is encrypted using **AES-256-GCM** with a zero 12-byte IV:
 
-```
-iv = random(12)
+```text
+iv = zeros(12)
 ciphertext = AES-GCM-Encrypt(key=raw_key, iv=iv, plaintext=content)
 wire_format = iv || ciphertext || auth_tag
 ```
 
 The IV is prepended to the ciphertext for transmission.
+
+::: warning
+The IV is fixed at 12 zero bytes. This is a protocol-level constraint inherited from the official Obsidian Sync client for compatibility — changing it would corrupt existing encrypted vaults.
+:::
 
 ### Content Hash
 
@@ -83,7 +87,7 @@ Content hashes are encrypted using the same deterministic path encryption scheme
 
 From the scrypt-derived `raw_key`, three sub-keys are derived using **HKDF-SHA-256**:
 
-```
+```text
 hkdf_base = HKDF-Import(raw_key, algorithm="HKDF")
 
 // 1. Key hash (sent to server for authentication)
@@ -128,13 +132,13 @@ gcm_key = HKDF-DeriveKey(
 
 Paths are encrypted using **AES-SIV** (RFC 5297), a deterministic authenticated encryption scheme:
 
-```
+```text
 encrypted_path = hex( AES-SIV-Seal(key=siv_keys, plaintext=UTF-8(path)) )
 ```
 
 AES-SIV produces a 16-byte synthetic IV (SIV tag) prepended to the ciphertext:
 
-```
+```text
 output = SIV_tag (16 bytes) || ciphertext
 ```
 
@@ -162,8 +166,8 @@ The implementation follows RFC 5297:
 
 File content is encrypted with **AES-256-GCM** using the HKDF-derived `gcm_key`:
 
-```
-iv = random(12)
+```text
+iv = zeros(12)
 ciphertext = AES-GCM-Encrypt(key=gcm_key, iv=iv, plaintext=content)
 wire_format = iv || ciphertext || auth_tag
 ```
@@ -174,7 +178,7 @@ This is the same scheme as V0 content encryption, but with a different key.
 
 Content hashes are encrypted using AES-SIV (same as path encryption):
 
-```
+```text
 encrypted_hash = hex( AES-SIV-Seal(key=siv_keys, plaintext=UTF-8(hash)) )
 ```
 
@@ -185,7 +189,7 @@ encrypted_hash = hex( AES-SIV-Seal(key=siv_keys, plaintext=UTF-8(hash)) )
 | Key derivation | scrypt | scrypt |
 | Key hash | `SHA-256(raw_key)` | `HKDF(raw_key, salt, "ObsidianKeyHash")` |
 | Path encryption | AES-GCM (deterministic IV) | AES-SIV (RFC 5297) |
-| Content encryption | AES-GCM (random IV) | AES-GCM (HKDF-derived key, random IV) |
+| Content encryption | AES-GCM (zero IV) | AES-GCM (HKDF-derived key, zero IV) |
 | Path IV source | `SHA-256(path)[0:12]` | Synthetic IV from CMAC |
 | Deterministic? | Yes (paths only) | Yes (paths and hashes) |
 | Auth tag size | 16 bytes (GCM) | 16 bytes (SIV + GCM) |

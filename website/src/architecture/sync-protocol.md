@@ -23,7 +23,7 @@ All control messages are JSON objects sent as **text** WebSocket frames. File co
 | **Protocol** | WebSocket Secure (WSS) |
 | **URL** | `wss://<host>/` — where `<host>` is the vault's assigned sync server (e.g., `sync-1.obsidian.md`) |
 | **Binary type** | `arraybuffer` |
-| **Security** | Only connections to `*.obsidian.md` and `127.0.0.1` are permitted |
+| **Security** | Production sync uses Obsidian sync hosts. Localhost may be used for local development/testing. The current implementation does not enforce a host allowlist. |
 
 ### Heartbeat
 
@@ -415,7 +415,7 @@ The client uses exponential backoff for reconnection:
 | Parameter | Value |
 |-----------|-------|
 | Base delay | 5 seconds |
-| Max delay | 5 minutes |
+| Max delay | 60 seconds |
 | Jitter | Applied to avoid thundering herd |
 | Reset | On successful connection |
 
@@ -426,4 +426,4 @@ All file paths transmitted over the wire are encrypted using the vault's encrypt
 - **V0**: Paths are base64-encoded then AES-GCM encrypted
 - **V2/V3**: Paths are AES-SIV encrypted (deterministic, allowing server-side dedup)
 
-The encryption is applied per-path-segment, preserving the `/` directory separator structure. See [Encryption Protocol](./encryption.md) for details.
+The encryption is applied to the full path string, so `/` directory separators are encrypted as part of the path rather than preserved on the wire. See [Encryption Protocol](./encryption.md) for details.

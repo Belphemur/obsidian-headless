@@ -25,14 +25,14 @@ features:
     details: Official Docker images on ghcr.io with s6-overlay process supervision. Run sync as a container with environment-based configuration.
   - title: CLI-First
     details: Full Cobra-based CLI with every Obsidian Sync and Publish operation. Automate, script, and integrate into your workflow.
-footer: MIT Licensed | Copyright © 2024-present Belphemur | [GitHub](https://github.com/Belphemur/obsidian-headless)
+footer: GPL-3.0 Licensed | Copyright © 2024-present Belphemur | [GitHub](https://github.com/Belphemur/obsidian-headless)
 ---
 
 ## Quick Start
 
 ```bash
 # Install via package manager
-brew install belphemur/tap/obsidian-headless-go
+brew install --cask obsidian-headless
 
 # Login to your Obsidian account
 ob login
