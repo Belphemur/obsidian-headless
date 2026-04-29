@@ -173,6 +173,8 @@ homebrew_casks:
     description: |
       Obsidian headless client for syncing and publishing vaults
       without the desktop app.
+    generate_completions_from_executable:
+      shell_parameter_format: cobra
     skip_upload: auto
     commit_author:
       name: goreleaserbot
