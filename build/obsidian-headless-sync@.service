@@ -1,0 +1,94 @@
+# obsidian-headless-sync@.service — Systemd template unit for Obsidian Headless continuous sync
+#
+# WHAT THIS SERVICE DOES:
+#   This template runs `ob sync --continuous --path <VAULT_PATH>` as a managed
+#   systemd service. The continuous mode keeps your Obsidian vault in sync
+#   indefinitely using WebSocket real-time updates and local fsnotify watchers.
+#
+#   The instance name (`%I`) is the unescaped vault path. For example, enabling
+#   the instance `obsidian-headless-sync@/home/user/vault.service` will sync
+#   `/home/user/vault` continuously.
+#
+# HOW TO INSTALL:
+#   The package installs this file to /usr/lib/systemd/user/, so systemd
+#   discovers it automatically. No manual copying is needed if installed
+#   via .deb, .rpm, .apk, or .archlinux package.
+#
+#   Manual installation (no package manager):
+#   As a USER service (per-user, no root required):
+#     cp obsidian-headless-sync@.service ~/.config/systemd/user/
+#     systemctl --user daemon-reload
+#
+#   As a SYSTEM service (machine-wide, requires root):
+#     sudo cp obsidian-headless-sync@.service /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#
+# HOW TO ENABLE & START:
+#   Replace `/path/to/vault` with the absolute path to your Obsidian vault.
+#
+#   User service:
+#     systemctl --user enable --now "obsidian-headless-sync@/path/to/vault.service"
+#
+#   System service:
+#     sudo systemctl enable --now "obsidian-headless-sync@/path/to/vault.service"
+#
+# HOW TO CHECK STATUS:
+#   User service:
+#     systemctl --user status "obsidian-headless-sync@/path/to/vault.service"
+#
+#   System service:
+#     sudo systemctl status "obsidian-headless-sync@/path/to/vault.service"
+#
+# HOW TO VIEW LOGS:
+#   User service:
+#     journalctl --user -u "obsidian-headless-sync@/path/to/vault.service" -f
+#
+#   System service:
+#     sudo journalctl -u "obsidian-headless-sync@/path/to/vault.service" -f
+#
+# DOCUMENTATION:
+#   Project:      https://github.com/Belphemur/obsidian-headless
+#   Config dir:   ~/.config/obsidian-headless/
+#   Binary path:  /usr/local/bin/ob
+
+[Unit]
+Description=Obsidian Headless continuous sync for vault %I
+Documentation=https://github.com/Belphemur/obsidian-headless
+
+# Ensure the network is up before starting, since sync requires WebSocket connectivity
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# The process runs indefinitely in continuous mode
+Type=simple
+
+# Fail fast if the vault path doesn't exist (mirrors s6-overlay behavior)
+ExecStartPre=/bin/test -d %I
+
+# Start the Obsidian Headless sync daemon for the given vault path
+ExecStart=/usr/local/bin/ob sync --continuous --path %I
+
+# Run from the vault directory so relative paths resolve correctly
+WorkingDirectory=%I
+
+# Restart policy: only restart on unclean exits (crashes), not on clean exits
+Restart=on-failure
+RestartSec=10s
+
+# Rate-limit restarts to prevent restart loops
+StartLimitBurst=5
+StartLimitInterval=120s
+
+# Optional system-service hardening (uncomment for systemd system services):
+# NoNewPrivileges=yes
+# PrivateTmp=yes
+# ProtectSystem=strict
+# ProtectHome=read-only
+# ReadWritePaths=%I
+# ReadWritePaths=%h/.config/obsidian-headless
+
+[Install]
+# Bind to the default target so the service starts automatically on boot (system)
+# or user session start (user)
+WantedBy=default.target
