@@ -189,16 +189,16 @@ homebrew_casks:
 # AUR - Arch User Repository package
 # https://goreleaser.com/customization/publish/aur/
 aurs:
-  - name: obsidian-headless-bin
+  - name: obsidian-headless-go-bin
     maintainers:
       - "Belphemur <obsidian-sync@admincmd.com>"
     license: GPL-3.0
     homepage: "https://github.com/Belphemur/obsidian-headless"
     description: |
       Obsidian headless client for syncing and publishing vaults
-      without the desktop app.
+      without the desktop app in go.
     private_key: "{{ .Env.AUR_SSH_KEY }}"
-    git_url: "ssh://aur@aur.archlinux.org/obsidian-headless-bin.git"
+    git_url: "ssh://aur@aur.archlinux.org/obsidian-headless-go-bin.git"
     skip_upload: auto
     commit_author:
       name: goreleaserbot
