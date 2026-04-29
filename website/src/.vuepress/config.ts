@@ -5,21 +5,21 @@ import { searchPlugin } from '@vuepress/plugin-search'
 
 export default defineUserConfig({
   bundler: viteBundler(),
-  title: 'Obsidian Headless',
-  description: 'Headless CLI client for Obsidian Sync and Obsidian Publish — run sync and publish from the command line, in Docker, or on servers',
+  title: 'Obsidian Headless Go',
+  description: 'Headless Go CLI client for Obsidian Sync and Obsidian Publish — run sync and publish from the command line, in Docker, or on servers',
   base: '/obsidian-headless/',
   lang: 'en-US',
 
   head: [
-    ['link', { rel: 'icon', href: '/logo.svg', type: 'image/svg+xml' }],
+    ['link', { rel: 'icon', href: '/obsidian-sync-headless.png', type: 'image/png' }],
     ['meta', { name: 'theme-color', content: '#A88BFA' }],
-    ['meta', { property: 'og:title', content: 'Obsidian Headless' }],
+    ['meta', { property: 'og:title', content: 'Obsidian Headless Go' }],
     ['meta', { property: 'og:description', content: 'Headless CLI client for Obsidian Sync and Obsidian Publish' }],
   ],
 
   theme: defaultTheme({
-    logo: '/logo.svg',
-    logoDark: '/logo.svg',
+    logo: '/obsidian-sync-headless.png',
+    logoDark: '/obsidian-sync-headless.png',
 
     repo: 'Belphemur/obsidian-headless',
     docsRepo: 'Belphemur/obsidian-headless',
@@ -31,8 +31,27 @@ export default defineUserConfig({
 
     navbar: [
       { text: 'Home', link: '/' },
-      { text: 'Installation', link: '/installation' },
-      { text: 'Usage', link: '/usage' },
+      {
+        text: 'Installation',
+        children: [
+          { text: 'Overview', link: '/installation/' },
+          { text: 'macOS', link: '/installation/macos' },
+          { text: 'Linux', link: '/installation/linux' },
+          { text: 'Windows', link: '/installation/windows' },
+          { text: 'Docker', link: '/installation/docker' },
+          { text: 'From Source', link: '/installation/from-source' },
+        ],
+      },
+      {
+        text: 'Usage',
+        children: [
+          { text: 'Overview', link: '/usage/' },
+          { text: 'Authentication', link: '/usage/authentication' },
+          { text: 'Sync', link: '/usage/sync' },
+          { text: 'Publish', link: '/usage/publish' },
+          { text: 'Configuration', link: '/usage/configuration' },
+        ],
+      },
       {
         text: 'Architecture',
         children: [
@@ -42,16 +61,25 @@ export default defineUserConfig({
           { text: 'REST API', link: '/architecture/rest-api' },
         ],
       },
-      {
-        text: 'GitHub',
-        link: 'https://github.com/Belphemur/obsidian-headless',
-      },
     ],
 
     sidebar: {
       '/': [''],
-      '/installation': [''],
-      '/usage': [''],
+      '/installation/': [
+        '',
+        'macos',
+        'linux',
+        'windows',
+        'docker',
+        'from-source',
+      ],
+      '/usage/': [
+        '',
+        'authentication',
+        'sync',
+        'publish',
+        'configuration',
+      ],
       '/architecture/': [
         '',
         'sync-protocol',
