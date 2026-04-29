@@ -72,6 +72,12 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
 
 # Configures the checksum file generation
 # https://goreleaser.com/customization/checksum/
@@ -129,3 +135,106 @@ dockers_v2:
       "org.opencontainers.image.version": "{{.Version}}"
       "org.opencontainers.image.source": "{{.GitURL}}"
       "org.opencontainers.image.description": "Obsidian headless client for syncing and publishing vaults without the desktop app."
+
+# START: New Publishing Sections
+
+# NFPM - Linux native package generation (.deb, .rpm, .apk, .archlinux)
+# https://goreleaser.com/customization/package/nfpm/
+nfpms:
+  - package_name: obsidian-headless
+    maintainer: "Belphemur <obsidian-sync@admincmd.com>"
+    description: |
+      Obsidian headless client for syncing and publishing vaults
+      without the desktop app.
+    license: GPL-3.0
+    vendor: Belphemur
+    homepage: "https://github.com/Belphemur/obsidian-headless"
+    section: utils
+    formats:
+      - deb
+      - rpm
+      - apk
+      - archlinux
+    contents:
+      - src: ./LICENSE
+        dst: /usr/share/doc/obsidian-headless/LICENSE
+      - src: ./README.md
+        dst: /usr/share/doc/obsidian-headless/README.md
+
+# Homebrew Cask - pushes to Belphemur/homebrew-tap
+# https://goreleaser.com/customization/publish/homebrew_casks/
+homebrew_casks:
+  - name: obsidian-headless
+    repository:
+      owner: Belphemur
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/Belphemur/obsidian-headless"
+    description: |
+      Obsidian headless client for syncing and publishing vaults
+      without the desktop app.
+    generate_completions_from_executable:
+      shell_parameter_format: cobra
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ob"]
+          end
+    skip_upload: auto
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+
+# AUR - Arch User Repository package
+# https://goreleaser.com/customization/publish/aur/
+aurs:
+  - name: obsidian-headless-bin
+    maintainers:
+      - "Belphemur <obsidian-sync@admincmd.com>"
+    license: GPL-3.0
+    homepage: "https://github.com/Belphemur/obsidian-headless"
+    description: |
+      Obsidian headless client for syncing and publishing vaults
+      without the desktop app.
+    private_key: "{{ .Env.AUR_SSH_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/obsidian-headless-bin.git"
+    skip_upload: auto
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+
+# Winget - Windows Package Manager
+# https://goreleaser.com/customization/publish/winget/
+winget:
+  - name: obsidian-headless
+    publisher: Belphemur
+    short_description: "Headless Obsidian sync and publish client"
+    license: GPL-3.0
+    package_identifier: Belphemur.ObsidianHeadless
+    homepage: "https://github.com/Belphemur/obsidian-headless"
+    description: |
+      Obsidian headless client for syncing and publishing vaults
+      without the desktop app.
+    repository:
+      owner: Belphemur
+      name: winget-pkgs
+      branch: "obsidian-headless-{{.Version}}"
+      token: "{{ .Env.WINGET_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    skip_upload: auto
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    tags:
+      - obsidian
+      - sync
+      - publish
+      - cli
+
+# END: New Publishing Sections
