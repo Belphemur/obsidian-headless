@@ -70,7 +70,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: website
-        run: npm ci --legacy-peers
+        run: npm ci --legacy-peer-deps
 
       - name: Build docs (dry run)
         working-directory: website
