@@ -60,14 +60,6 @@ jobs:
         with:
           node-version: "lts/*"
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: src/go.mod
-
-      - name: Generate CLI docs
-        working-directory: src
-        run: go run ./cmd/gendocs -output ../website/src/cli-reference
-
       - name: Install dependencies
         working-directory: website
         run: npm ci --legacy-peer-deps
