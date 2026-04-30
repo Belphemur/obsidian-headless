@@ -4,8 +4,6 @@ title: Sync Protocol
 
 # Sync Protocol
 
-[[toc]]
-
 ## Overview
 
 The Obsidian Headless sync engine communicates with Obsidian's cloud servers over a **WebSocket (WSS)** connection. The protocol enables bidirectional file synchronization between a local vault and the Obsidian cloud, supporting encrypted file uploads, downloads, and real-time change notifications.

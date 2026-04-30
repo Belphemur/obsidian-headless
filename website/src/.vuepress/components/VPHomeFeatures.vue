@@ -1,0 +1,82 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useData } from '@theme/useData'
+
+interface Feature {
+  title: string
+  details: string
+  icon?: string
+}
+
+interface HomePageFrontmatter {
+  features?: Feature[]
+  heroText?: string | null
+  tagline?: string | null
+  heroImage?: string | null
+  heroImageDark?: string | null
+  heroAlt?: string
+  heroHeight?: number
+  actions?: { text: string; link: string; type?: 'primary' | 'secondary' }[]
+  footer?: string
+  footerHtml?: boolean
+}
+
+const { frontmatter } = useData<HomePageFrontmatter>()
+
+const features = computed<Feature[]>(() => frontmatter.value.features ?? [])
+</script>
+
+<template>
+  <div v-if="features.length" class="vp-features">
+    <div v-for="feature in features" :key="feature.title" class="vp-feature-item">
+      <Icon v-if="feature.icon" :icon="feature.icon" class="feature-icon" />
+      <h2>{{ feature.title }}</h2>
+      <p>{{ feature.details }}</p>
+    </div>
+  </div>
+</template>
+
+<style lang="scss">
+.vp-features {
+  display: flex;
+  flex-wrap: wrap;
+  place-content: stretch space-between;
+  align-items: flex-start;
+
+  margin-top: 2.5rem;
+  padding: 1.2rem 0;
+  border-top: 1px solid var(--vp-c-divider);
+
+  transition: border-color var(--vp-t-color);
+
+  @media (max-width: 719px) {
+    flex-flow: column;
+  }
+}
+
+.vp-feature-item {
+  flex-grow: 1;
+  flex-basis: 30%;
+  max-width: 30%;
+
+  @media (max-width: 719px) {
+    max-width: 100%;
+    padding: 0 2.5rem;
+  }
+
+  h2 {
+    padding-bottom: 0;
+    border-bottom: none;
+    font-weight: 500;
+    font-size: 1.4rem;
+
+    @media (max-width: 419px) {
+      font-size: 1.25rem;
+    }
+  }
+
+  p {
+    color: var(--vp-c-text-mute);
+  }
+}
+</style>

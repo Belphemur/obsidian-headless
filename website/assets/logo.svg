@@ -1,37 +1,89 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Obsidian Headless Logo">
-  <title>Obsidian Headless</title>
-  <desc>A faceted crystal icon with an integrated terminal prompt, representing the Obsidian Headless project.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="100%" height="100%">
+  <defs>
+    <!-- Geometric, sharp arrowhead marker to avoid any bulbous shapes -->
+    <marker id="arrow" markerWidth="200" markerHeight="200" refX="50" refY="100" orient="auto" markerUnits="userSpaceOnUse" overflow="visible">
+      <!-- White outer outline for the arrowhead -->
+      <polygon points="20,40 120,100 20,160 50,100" fill="#ffffff" stroke="#ffffff" stroke-width="24" stroke-linejoin="round" />
+      <!-- Purple inner fill for the arrowhead -->
+      <polygon points="20,40 120,100 20,160 50,100" fill="#ca8dfd" />
+    </marker>
 
-  <!-- Main crystal shape with terminal prompt cutout -->
-  <path fill-rule="evenodd" d="
-    M 50,30
-    L 150,30
-    L 170,80
-    L 100,190
-    L 30,80
-    Z
+    <style>
+      .crystal-face {
+      stroke-linejoin: round;
+      stroke-width: 1px;
+      }
+    </style>
+  </defs>
 
-    M 70,88
-    L 108,110
-    L 70,132
-    L 70,118
-    L 88,110
-    L 70,102
-    Z
+  <!-- LAYER 1: BACK ARROW (Behind the crystal) -->
+  <g id="layer-back-arrow" transform="rotate(-15 500 500)">
+    <!-- White outer border -->
+    <path d="M 800,450 C 700,250 300,250 200,450"
+          fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round" />
+    <!-- Purple inner stem with sharp marker attached -->
+    <path d="M 800,450 C 700,250 300,250 200,450"
+          fill="none" stroke="#ca8dfd" stroke-width="20" stroke-linecap="round" marker-end="url(#arrow)" />
+    </g>
 
-    M 114,106
-    L 150,106
-    L 150,122
-    L 114,122
-    Z
-  " fill="#A88BFA"/>
+    <!-- LAYER 2: CRYSTAL BASE -->
+    <g id="crystal">
+      <!-- Top Left (Dark) -->
+      <polygon points="500,130 270,355 500,300" fill="#19003b" stroke="#19003b" class="crystal-face" />
+      <!-- Top Right (Light) -->
+      <polygon points="500,130 500,300 730,355" fill="#ca8dfd" stroke="#ca8dfd" class="crystal-face" />
 
-  <!-- Internal facet lines -->
-  <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.25">
-    <path d="M 50,30 L 100,110"/>
-    <path d="M 150,30 L 100,110"/>
-    <path d="M 30,80 L 100,110"/>
-    <path d="M 170,80 L 100,110"/>
-    <path d="M 100,110 L 100,190"/>
-  </g>
-</svg>
+      <!-- Upper Left Inner -->
+      <polygon points="270,355 370,420 500,300" fill="#380a82" stroke="#380a82" class="crystal-face" />
+      <!-- Upper Right Inner -->
+      <polygon points="500,300 630,420 730,355" fill="#9642ea" stroke="#9642ea" class="crystal-face" />
+
+      <!-- Far Left Outer -->
+      <polygon points="270,355 330,690 370,420" fill="#270063" stroke="#270063" class="crystal-face" />
+
+      <!-- Center Left -->
+      <polygon points="370,420 440,670 585,570 500,300" fill="#7626de" stroke="#7626de" class="crystal-face" />
+      <!-- Center Right -->
+      <polygon points="500,300 585,570 630,420" fill="#a554f6" stroke="#a554f6" class="crystal-face" />
+
+      <!-- Far Right Outer -->
+      <polygon points="630,420 670,690 730,355" fill="#b366ff" stroke="#b366ff" class="crystal-face" />
+
+      <!-- Lower Left Inner -->
+      <polygon points="370,420 330,690 440,670" fill="#5111b5" stroke="#5111b5" class="crystal-face" />
+      <!-- Lower Right Inner -->
+      <polygon points="630,420 585,570 670,690" fill="#8531f2" stroke="#8531f2" class="crystal-face" />
+
+      <!-- Bottom Left Tip -->
+      <polygon points="330,690 500,870 440,670" fill="#16003b" stroke="#16003b" class="crystal-face" />
+      <!-- Bottom Center Tip -->
+      <polygon points="440,670 500,870 585,570" fill="#380a82" stroke="#380a82" class="crystal-face" />
+      <!-- Bottom Right Tip -->
+      <polygon points="585,570 500,870 670,690" fill="#0f0026" stroke="#0f0026" class="crystal-face" />
+    </g>
+
+    <!-- LAYER 3: CLI PROMPT -->
+    <g id="cli-prompt">
+      <!-- Dark shadow/depth to separate it from the crystal -->
+      <polyline points="410,450 470,510 410,570"
+                fill="none" stroke="#19003b" stroke-width="36" stroke-linecap="round" stroke-linejoin="round" transform="translate(0,8)"/>
+      <line x1="490" y1="580" x2="580" y2="580"
+            stroke="#19003b" stroke-width="36" stroke-linecap="round" transform="translate(0,8)" />
+
+      <!-- Bright white CLI syntax -->
+      <polyline points="410,450 470,510 410,570"
+                fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" />
+      <line x1="490" y1="580" x2="580" y2="580"
+            stroke="#ffffff" stroke-width="24" stroke-linecap="round" />
+      </g>
+
+      <!-- LAYER 4: FRONT ARROW (In front of the crystal) -->
+      <g id="layer-front-arrow" transform="rotate(-15 500 500)">
+        <!-- White outer border -->
+        <path d="M 200,550 C 300,750 700,750 800,550"
+              fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round" />
+        <!-- Purple inner stem with sharp marker attached -->
+        <path d="M 200,550 C 300,750 700,750 800,550"
+              fill="none" stroke="#ca8dfd" stroke-width="20" stroke-linecap="round" marker-end="url(#arrow)" />
+        </g>
+      </svg>

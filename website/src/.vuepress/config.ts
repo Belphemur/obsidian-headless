@@ -2,24 +2,35 @@ import { defineUserConfig } from 'vuepress'
 import { defaultTheme } from '@vuepress/theme-default'
 import { viteBundler } from '@vuepress/bundler-vite'
 import { searchPlugin } from '@vuepress/plugin-search'
+import { iconPlugin } from '@vuepress/plugin-icon'
+import { markdownChartPlugin } from '@vuepress/plugin-markdown-chart'
+import { path } from '@vuepress/utils'
 
 export default defineUserConfig({
-  bundler: viteBundler(),
+  bundler: viteBundler({
+    viteOptions: {
+      resolve: {
+        alias: {
+          '@theme/VPHomeFeatures.vue': path.resolve(__dirname, 'components/VPHomeFeatures.vue'),
+        },
+      },
+    },
+  }),
   title: 'Obsidian Headless Go',
   description: 'Headless Go CLI client for Obsidian Sync and Obsidian Publish — run sync and publish from the command line, in Docker, or on servers',
   base: '/obsidian-headless/',
   lang: 'en-US',
 
   head: [
-    ['link', { rel: 'icon', href: '/obsidian-sync-headless.png', type: 'image/png' }],
+    ['link', { rel: 'icon', href: '/logo.svg', type: 'image/svg+xml' }],
     ['meta', { name: 'theme-color', content: '#A88BFA' }],
     ['meta', { property: 'og:title', content: 'Obsidian Headless Go' }],
     ['meta', { property: 'og:description', content: 'Headless Go CLI client for Obsidian Sync and Obsidian Publish' }],
   ],
 
   theme: defaultTheme({
-    logo: '/obsidian-sync-headless.png',
-    logoDark: '/obsidian-sync-headless.png',
+    logo: '/logo.svg',
+    logoDark: '/logo.svg',
 
     repo: 'Belphemur/obsidian-headless',
     docsRepo: 'Belphemur/obsidian-headless',
@@ -31,6 +42,7 @@ export default defineUserConfig({
 
     navbar: [
       { text: 'Home', link: '/' },
+      { text: 'Getting Started', link: '/getting-started' },
       {
         text: 'Installation',
         children: [
@@ -64,7 +76,7 @@ export default defineUserConfig({
     ],
 
     sidebar: {
-      '/': [''],
+      '/': ['', '/getting-started'],
       '/installation/': [
         '',
         'macos',
@@ -103,6 +115,16 @@ export default defineUserConfig({
           placeholder: 'Search',
         },
       },
+    }),
+    iconPlugin({
+      // Font Awesome 6 free icons
+      assets: 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
+      type: 'fontawesome',
+      component: 'Icon',
+    }),
+    markdownChartPlugin({
+      // Enable mermaid
+      mermaid: true,
     }),
   ],
 })
