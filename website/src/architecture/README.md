@@ -12,21 +12,21 @@ For deeper dives into specific areas, see the [architecture subpages](#further-r
 
 The source code lives under `src/` and is split into focused packages:
 
-```text
-src/
-├── cmd/ob-go/     # CLI entry point
-├── internal/
-│   ├── api/       # REST client for Obsidian HTTP API
-│   ├── cli/       # Cobra command definitions (auth, sync, publish)
-│   ├── config/    # Configuration management (auth, secrets, vault configs)
-│   ├── encryption/# EncryptionProvider interface, V0 & V2/V3 implementations
-│   ├── logging/   # zerolog console + file logger with rotation
-│   ├── model/     # Shared data types (UserInfo, Vault, SyncConfig, etc.)
-│   ├── publish/   # Publish engine (scan, hash, upload, remove)
-│   ├── storage/   # SQLite state store (modernc.org/sqlite), migrations, credential encryption
-│   ├── sync/      # WebSocket sync engine, plan builder, three-way merge, lock
-│   └── util/      # File scanning, hashing, path safety, password derivation
-└── go.mod
+```mermaid
+graph TD
+    A[src/] --> B[cmd/ob-go/]
+    A --> C[internal/]
+    A --> D[go.mod]
+    C --> E[api/]
+    C --> F[cli/]
+    C --> G[config/]
+    C --> H[encryption/]
+    C --> I[logging/]
+    C --> J[model/]
+    C --> K[publish/]
+    C --> L[storage/]
+    C --> M[sync/]
+    C --> N[util/]
 ```
 
 | Package | Key Files | Purpose |
@@ -48,21 +48,17 @@ src/
 
 The sync flow keeps a local vault in sync with the Obsidian Sync server over a WebSocket connection.
 
-```text
-┌──────────┐     WebSocket      ┌───────────────┐
-│  CLI      │◄──────────────────►│  Obsidian     │
-│ (ob-go)   │   JSON + binary   │  Sync Server  │
-└─────┬─────┘                   └───────────────┘
-      │
-      ├── SyncEngine
-      │     ├── SyncServerConnection  (WebSocket management)
-      │     ├── fsnotify watcher      (local file change detection)
-      │     ├── StateStore            (SQLite sync metadata)
-      │     ├── SyncPlan              (upload/download/delete/merge actions)
-      │     ├── EncryptionProvider    (encrypt/decrypt content + paths)
-      │     └── merge.go             (three-way merge for conflicts)
-      │
-      └── Config (auth token, vault settings, log setup)
+```mermaid
+graph TD
+    CLI[CLI ob-go] <-->|WebSocket JSON+binary| Server[Obsidian Sync Server]
+    CLI --> Engine[SyncEngine]
+    Engine --> Conn[SyncServerConnection]
+    Engine --> Watcher[fsnotify watcher]
+    Engine --> State[StateStore SQLite]
+    Engine --> Plan[SyncPlan]
+    Engine --> Encrypt[EncryptionProvider]
+    Engine --> Merge[merge.go]
+    CLI --> Config[Config]
 ```
 
 WebSocket connection, engine.RunOnce/RunContinuous, file watcher (fsnotify), plan builder (upload/download/delete/merge actions), parallel downloads with worker pool, three-way merge for text, JSON key-level merge for configs, 2MB chunks, 200MB max file, 30s interval, 5 concurrent downloads.
@@ -73,19 +69,15 @@ For details on the sync protocol, see [Sync Protocol](./sync-protocol.md). For e
 
 The publish flow scans local files and uploads them to the Obsidian Publish API.
 
-```text
-┌──────────┐     HTTP POST      ┌───────────────┐
-│  CLI      │──────────────────►│  Obsidian     │
-│ (ob-go)   │   multipart       │  Publish API  │
-└─────┬─────┘                   └───────────────┘
-      │
-      ├── PublishEngine
-      │     ├── Local file scanning
-      │     ├── Frontmatter parsing (publish: true/false)
-      │     ├── Hash comparison with server
-      │     └── Upload/remove operations
-      │
-      └── Config (publish site settings, cache)
+```mermaid
+graph TD
+    CLI[CLI ob-go] -->|HTTP POST multipart| API[Obsidian Publish API]
+    CLI --> Engine[PublishEngine]
+    Engine --> Scan[Local file scanning]
+    Engine --> Frontmatter[Frontmatter parsing]
+    Engine --> Hash[Hash comparison]
+    Engine --> Upload[Upload/remove ops]
+    CLI --> Config[Config]
 ```
 
 For details on the REST API used by publish (and sync), see [REST API](./rest-api.md).
@@ -107,19 +99,19 @@ All configuration is stored under a platform-specific base directory:
 
 Directory structure:
 
-```text
-~/.config/obsidian-headless/
-├── credentials.db          # Encrypted SQLite fallback for auth token
-├── sync/
-│   └── <vault-id>/
-│       ├── config.json     # SyncConfig
-│       ├── state.db        # SQLite state database
-│       ├── sync.lock/      # Directory-based file lock
-│       └── sync.log        # Log output
-└── publish/
-    └── <site-id>/
-        ├── config.json     # PublishConfig
-        └── cache.json      # File hash cache
+```mermaid
+graph TD
+    A["~/.config/obsidian-headless/"] --> B[credentials.db]
+    A --> C[sync/]
+    A --> D[publish/]
+    C --> E["<vault-id>/"]
+    E --> F[config.json]
+    E --> G[state.db]
+    E --> H[sync.lock/]
+    E --> I[sync.log]
+    D --> J["<site-id>/"]
+    J --> K[config.json]
+    J --> L[cache.json]
 ```
 
 - **auth token**: OS keyring (with encrypted SQLite fallback at `credentials.db`)

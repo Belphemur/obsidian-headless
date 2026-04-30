@@ -32,7 +32,7 @@ features:
   - title: CLI-First
     icon: fa-solid:terminal
     details: Full Cobra-based CLI with every Obsidian Sync and Publish operation. Automate, script, and integrate into your workflow.
-footer: GPL-3.0 Licensed | Copyright © 2024-present Belphemur | <a href="https://github.com/Belphemur/obsidian-headless" target="_blank" rel="noopener noreferrer">GitHub</a>
+footer: GPL-3.0 Licensed | Copyright © 2026-present Belphemur | <a href="https://github.com/Belphemur/obsidian-headless" target="_blank" rel="noopener noreferrer">GitHub</a>
 ---
 
 ## Getting Started
@@ -60,6 +60,7 @@ See the full **[Getting Started guide](./getting-started.md)** for detailed step
 Obsidian Headless Go is the official CLI companion for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish). It brings the full power of Obsidian's sync and publish engines to the command line — no GUI required.
 
 Perfect for:
+
 - **Servers & NAS:** Keep vaults in sync on headless Linux machines
 - **CI/CD:** Publish documentation sites automatically on push
 - **Docker:** Run sync as a container with environment variables

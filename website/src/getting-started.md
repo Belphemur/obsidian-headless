@@ -122,12 +122,12 @@ Install the CLI on your machine, log in, and set up sync.
 
 ### Step 1 — Install the CLI
 
-Choose your platform from the [Installation Guide](/installation/):
+Choose your platform from the [Installation Guide](./installation/README.md):
 
-- [macOS](/installation/macos) — `brew install --cask obsidian-headless`
-- [Linux](/installation/linux) — deb, rpm, pacman, apk
-- [Windows](/installation/windows) — `winget install obsidian-headless`
-- [From Source](/installation/from-source) — `go install`
+- [macOS](./installation/macos.md) — `brew install --cask obsidian-headless`
+- [Linux](./installation/linux.md) — deb, rpm, pacman, apk
+- [Windows](./installation/windows.md) — `winget install obsidian-headless`
+- [From Source](./installation/from-source.md) — `go install`
 
 Verify installation:
 
@@ -204,6 +204,6 @@ The `--continuous` flag runs the sync daemon in the foreground, watching for loc
 
 ## Next Steps
 
-- [Usage Guide](/usage/) — Full command reference for sync and publish
-- [Configuration](/usage/configuration) — Directory structure and config files
-- [Architecture](/architecture/) — How Sync Protocol, Encryption, and REST API work
+- [Usage Guide](./usage/README.md) — Full command reference for sync and publish
+- [Configuration](./usage/configuration.md) — Directory structure and config files
+- [Architecture](./architecture/README.md) — How Sync Protocol, Encryption, and REST API work

@@ -4,8 +4,6 @@ title: REST API
 
 # REST API
 
-[[toc]]
-
 ## Overview
 
 The Obsidian REST API provides HTTP endpoints for authentication, vault management, and publish operations. The headless client communicates with these endpoints to sync data, manage sites, and upload content.
