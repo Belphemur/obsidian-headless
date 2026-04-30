@@ -3,6 +3,8 @@
 Headless client for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish).
 Sync and publish your vaults from the command line without the desktop app.
 
+Full documentation: https://belphemur.github.io/obsidian-headless/
+
 Built with Go `1.26`.
 
 - Entry point: `src/cmd/ob-go/main.go`
