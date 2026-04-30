@@ -54,7 +54,7 @@ ob sync-setup --vault <vault> [--path <path>] [--password <password>] [flags]
 | `--password` | | Encryption password (prompts for encrypted vaults) |
 | `--device-name` | | Device name |
 | `--config-dir` | `.obsidian` | Config directory |
-| `--state-path` | | Custom state database path |
+| `--state-path` | | Custom state database path (default: `~/.config/obsidian-headless/sync/{vaultID}/state.db`) |
 | `--periodic-scan` | `1h` | Periodic full rescan interval (e.g. `60s`, `5m`, `1h`); set to `0` to disable |
 
 ## `ob sync-config`
@@ -75,7 +75,7 @@ ob sync-config [--path <path>] [--mode <mode>] [--conflict-strategy <strategy>] 
 | `--configs` | | Comma-separated config categories to allow |
 | `--device-name` | | Device name |
 | `--config-dir` | `.obsidian` | Config directory |
-| `--state-path` | | Custom state database path |
+| `--state-path` | | Custom state database path (default: `~/.config/obsidian-headless/sync/{vaultID}/state.db`) |
 | `--periodic-scan` | | Periodic full rescan interval (e.g. `60s`, `5m`, `1h`); set to `0` to disable |
 
 When called without any update flags, displays the current configuration.
@@ -104,14 +104,15 @@ ob sync-unlink [--path <path>]
 |------|---------|-------------|
 | `--path` | `.` | Local vault path |
 
-## `ob sync-run`
+## `ob sync`
 
 Run sync for a configured vault.
 
 ```bash
-ob sync-run [<selector>] [--continuous]
+ob sync [--path <path>] [--continuous]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--path` | `.` | Local vault path |
 | `--continuous` | `false` | Run continuously (watch for changes) |
