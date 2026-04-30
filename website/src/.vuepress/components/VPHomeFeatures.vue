@@ -1,13 +1,29 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-
 import { useData } from '@theme/useData'
 
-import type { DefaultThemeHomePageFrontmatter } from '../../shared/index.js'
+interface Feature {
+  title: string
+  details: string
+  icon?: string
+}
 
-const { frontmatter } = useData<DefaultThemeHomePageFrontmatter>()
+interface HomePageFrontmatter {
+  features?: Feature[]
+  heroText?: string | null
+  tagline?: string | null
+  heroImage?: string | null
+  heroImageDark?: string | null
+  heroAlt?: string
+  heroHeight?: number
+  actions?: { text: string; link: string; type?: 'primary' | 'secondary' }[]
+  footer?: string
+  footerHtml?: boolean
+}
 
-const features = computed(() => frontmatter.value.features ?? [])
+const { frontmatter } = useData<HomePageFrontmatter>()
+
+const features = computed<Feature[]>(() => frontmatter.value.features ?? [])
 </script>
 
 <template>

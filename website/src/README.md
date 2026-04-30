@@ -28,7 +28,7 @@ features:
     details: Available on Linux, macOS, and Windows. Native packages for apt, dnf, pacman, apk; Homebrew Cask for macOS; Winget for Windows.
   - title: Docker Native
     icon: fa-brands:docker
-    details: Official Docker images on ghcr with s6-overlay process supervision. Run sync as a container with environment-based configuration.
+    details: Official Docker images on ghcr.io with s6-overlay process supervision. Run sync as a container with environment-based configuration.
   - title: CLI-First
     icon: fa-solid:terminal
     details: Full Cobra-based CLI with every Obsidian Sync and Publish operation. Automate, script, and integrate into your workflow.

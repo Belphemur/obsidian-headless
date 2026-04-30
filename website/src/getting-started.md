@@ -91,7 +91,7 @@ services:
       - PGID=1000
     volumes:
       - ./vault:/vault
-      - ./config:/config
+      - ./config:/home/obsidian/.config
     restart: unless-stopped
 ```
 </details>
@@ -102,7 +102,7 @@ Start the container:
 docker compose up -d
 ```
 
-On first run the container performs `ob sync-setup` automatically to link your local directory to the remote vault, then enters continuous sync mode. Subsequent restarts skip the setup and go straight to syncing.
+The container runs `ob sync-setup` automatically on every start when `VAULT_NAME` is set. The setup command is idempotent — it safely re-links the vault if needed without duplicating configuration. Once linked, the container enters continuous sync mode.
 
 Watch logs:
 
@@ -143,11 +143,9 @@ The `ob login` command authenticates you with Obsidian Sync and Publish:
 ob login
 ```
 
-It will prompt for your email, password, and MFA code if two-factor authentication is enabled. You can also pass credentials as flags:
+It will prompt for your email, password, and MFA code if two-factor authentication is enabled.
 
-```bash
-ob login --email you@example.com --password your-password
-```
+> **Security:** Avoid passing passwords directly on the command line. They can be exposed in shell history and process lists. Use the interactive prompt or a credential manager instead.
 
 The auth token is stored securely in your OS keyring (with an encrypted SQLite fallback). You only need to log in once.
 

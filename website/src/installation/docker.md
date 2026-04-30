@@ -63,7 +63,7 @@ CONFIG_HOST_PATH=./config
 docker compose up -d
 ```
 
-On first run the container performs `ob sync-setup` automatically, then enters continuous sync mode. Subsequent restarts skip the setup.
+The container runs `ob sync-setup` automatically on every start when `VAULT_NAME` is set. The setup command is idempotent — it safely re-links the vault if needed without duplicating configuration. Once linked, the container enters continuous sync mode.
 
 Watch logs:
 
@@ -86,7 +86,7 @@ services:
       - PGID=1000
     volumes:
       - /path/to/vault:/vault
-      - obsidian-config:/config
+      - obsidian-config:/home/obsidian/.config
     restart: unless-stopped
 
 volumes:
