@@ -22,7 +22,18 @@ export default defineUserConfig({
   lang: 'en-US',
 
   head: [
-    ['link', { rel: 'icon', href: '/logo.svg', type: 'image/svg+xml' }],
+    // Standard favicons
+    ['link', { rel: 'icon', href: '/favicon.ico', sizes: '48x48' }],
+    ['link', { rel: 'icon', href: '/favicon-32x32.png', type: 'image/png', sizes: '32x32' }],
+    ['link', { rel: 'icon', href: '/favicon-16x16.png', type: 'image/png', sizes: '16x16' }],
+    // Apple Touch Icon
+    ['link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }],
+    // Android Chrome
+    ['link', { rel: 'icon', href: '/android-chrome-192x192.png', type: 'image/png', sizes: '192x192' }],
+    ['link', { rel: 'icon', href: '/android-chrome-512x512.png', type: 'image/png', sizes: '512x512' }],
+    // Web Manifest
+    ['link', { rel: 'manifest', href: '/site.webmanifest' }],
+    // Meta
     ['meta', { name: 'theme-color', content: '#A88BFA' }],
     ['meta', { property: 'og:title', content: 'Obsidian Headless Go' }],
     ['meta', { property: 'og:description', content: 'Headless Go CLI client for Obsidian Sync and Obsidian Publish' }],
