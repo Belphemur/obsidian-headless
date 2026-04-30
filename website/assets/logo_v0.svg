@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Gem gradients -->
+    <linearGradient id="gemBase" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%"   stop-color="#b8a0e8"/>
+      <stop offset="30%"  stop-color="#7c4dcc"/>
+      <stop offset="65%"  stop-color="#4a2a9e"/>
+      <stop offset="100%" stop-color="#1a0d3d"/>
+    </linearGradient>
+    <linearGradient id="topFacet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#e8d8ff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#a07de0" stop-opacity="0.4"/>
+    </linearGradient>
+    <linearGradient id="leftFacet" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#c4a0ff" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#3d1f8a" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="rightFacet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#5a30b0" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#1a0d3d" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient id="centerFacet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#9060d8"/>
+      <stop offset="100%" stop-color="#2d1b69"/>
+    </linearGradient>
+
+    <!-- Glowing filters -->
+    <filter id="glow" x="-15%" y="-15%" width="130%" height="130%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="subtleglow" x="-8%" y="-8%" width="116%" height="116%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- ══════════════════════════════════════════
+  OUTER BEVEL
+  ══════════════════════════════════════════ -->
+  <polygon
+    points="162,30  350,30  482,162  482,350  350,482  162,482  30,350  30,162"
+    fill="#12082e"
+    stroke="#2d1b69"
+    stroke-width="5"
+    />
+
+  <!-- ══════════════════════════════════════════
+  MAIN GEM BODY
+  ══════════════════════════════════════════ -->
+  <polygon
+    points="172,48  340,48  464,172  464,340  340,464  172,464  48,340  48,172"
+    fill="url(#gemBase)"
+    />
+
+  <!-- ══════════════════════════════════════════
+  FACETS
+  ══════════════════════════════════════════ -->
+  <polygon points="172,48  340,48  300,130  212,130" fill="url(#topFacet)"/>
+  <polygon points="48,172  172,48  212,130  130,212" fill="#c4a0ff" opacity="0.45"/>
+  <polygon points="340,48  464,172  382,212  300,130" fill="#5a30b0" opacity="0.55"/>
+  <polygon points="48,172  48,340  130,300  130,212" fill="url(#leftFacet)"/>
+  <polygon points="464,172  464,340  382,300  382,212" fill="url(#rightFacet)"/>
+  <polygon points="48,340  172,464  212,382  130,300" fill="#4a2a9e" opacity="0.6"/>
+  <polygon points="464,340  340,464  300,382  382,300" fill="#1a0d3d" opacity="0.85"/>
+  <polygon points="172,464  340,464  300,382  212,382" fill="#2d1b69" opacity="0.9"/>
+  <polygon points="212,130  300,130  382,212  382,300  300,382  212,382  130,300  130,212" fill="url(#centerFacet)" opacity="0.8"/>
+  <polygon points="212,130  300,130  256,185" fill="#d4b8ff" opacity="0.25"/>
+
+  <!-- ══════════════════════════════════════════
+  SYNC ARROWS (Perfect Circle Geometry)
+  Center: 256, 256 | Radius: 85
+  ══════════════════════════════════════════ -->
+
+  <!-- TOP ARC: Sweeps from left to right -->
+  <path
+    d="M 174,234 A 85,85 0 0,1 338,234"
+    fill="none"
+    stroke="#d8b4ff"
+    stroke-width="20"
+    stroke-linecap="round"
+    filter="url(#glow)"
+    />
+  <!-- Top Arrowhead (Pointing down-right) -->
+  <polygon
+    points="344,258 319,239 357,229"
+    fill="#d8b4ff"
+    stroke="#d8b4ff"
+    stroke-width="4"
+    stroke-linejoin="round"
+    filter="url(#subtleglow)"
+    />
+
+  <!-- BOTTOM ARC: Sweeps from right to left -->
+  <path
+    d="M 338,278 A 85,85 0 0,1 174,278"
+    fill="none"
+    stroke="#d8b4ff"
+    stroke-width="20"
+    stroke-linecap="round"
+    filter="url(#glow)"
+    />
+  <!-- Bottom Arrowhead (Pointing up-left) -->
+  <polygon
+    points="168,254 193,273 155,283"
+    fill="#d8b4ff"
+    stroke="#d8b4ff"
+    stroke-width="4"
+    stroke-linejoin="round"
+    filter="url(#subtleglow)"
+    />
+
+  <!-- ══════════════════════════════════════════
+  CLI PROMPT (>_)
+  ══════════════════════════════════════════ -->
+  <text
+    x="246"
+    y="260"
+    text-anchor="middle"
+    dominant-baseline="middle"
+    font-family="'Courier New', Courier, monospace"
+    font-size="76"
+    font-weight="bold"
+    fill="#ffffff"
+    filter="url(#glow)"
+    opacity="0.95"
+    >&gt;_</text>
+
+  <!-- ══════════════════════════════════════════
+  GLOSS / SHINE
+  ══════════════════════════════════════════ -->
+  <polygon points="172,48  240,48  190,100  140,80" fill="white" opacity="0.15"/>
+  <polygon points="48,172  48,210  90,175" fill="white" opacity="0.08"/>
+</svg>

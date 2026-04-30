@@ -1,134 +1,89 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="100%" height="100%">
   <defs>
-    <!-- Gem gradients -->
-    <linearGradient id="gemBase" x1="20%" y1="0%" x2="80%" y2="100%">
-      <stop offset="0%"   stop-color="#b8a0e8"/>
-      <stop offset="30%"  stop-color="#7c4dcc"/>
-      <stop offset="65%"  stop-color="#4a2a9e"/>
-      <stop offset="100%" stop-color="#1a0d3d"/>
-    </linearGradient>
-    <linearGradient id="topFacet" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%"   stop-color="#e8d8ff" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#a07de0" stop-opacity="0.4"/>
-    </linearGradient>
-    <linearGradient id="leftFacet" x1="100%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"   stop-color="#c4a0ff" stop-opacity="0.7"/>
-      <stop offset="100%" stop-color="#3d1f8a" stop-opacity="0.9"/>
-    </linearGradient>
-    <linearGradient id="rightFacet" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%"   stop-color="#5a30b0" stop-opacity="0.9"/>
-      <stop offset="100%" stop-color="#1a0d3d" stop-opacity="1"/>
-    </linearGradient>
-    <linearGradient id="centerFacet" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%"   stop-color="#9060d8"/>
-      <stop offset="100%" stop-color="#2d1b69"/>
-    </linearGradient>
+    <!-- Geometric, sharp arrowhead marker to avoid any bulbous shapes -->
+    <marker id="arrow" markerWidth="200" markerHeight="200" refX="50" refY="100" orient="auto" markerUnits="userSpaceOnUse" overflow="visible">
+      <!-- White outer outline for the arrowhead -->
+      <polygon points="20,40 120,100 20,160 50,100" fill="#ffffff" stroke="#ffffff" stroke-width="24" stroke-linejoin="round" />
+      <!-- Purple inner fill for the arrowhead -->
+      <polygon points="20,40 120,100 20,160 50,100" fill="#ca8dfd" />
+    </marker>
 
-    <!-- Glowing filters -->
-    <filter id="glow" x="-15%" y="-15%" width="130%" height="130%">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <filter id="subtleglow" x="-8%" y="-8%" width="116%" height="116%">
-      <feGaussianBlur stdDeviation="2" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
+    <style>
+      .crystal-face {
+      stroke-linejoin: round;
+      stroke-width: 1px;
+      }
+    </style>
   </defs>
 
-  <!-- ══════════════════════════════════════════
-  OUTER BEVEL
-  ══════════════════════════════════════════ -->
-  <polygon
-    points="162,30  350,30  482,162  482,350  350,482  162,482  30,350  30,162"
-    fill="#12082e"
-    stroke="#2d1b69"
-    stroke-width="5"
-    />
+  <!-- LAYER 1: BACK ARROW (Behind the crystal) -->
+  <g id="layer-back-arrow" transform="rotate(-15 500 500)">
+    <!-- White outer border -->
+    <path d="M 800,450 C 700,250 300,250 200,450"
+          fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round" />
+    <!-- Purple inner stem with sharp marker attached -->
+    <path d="M 800,450 C 700,250 300,250 200,450"
+          fill="none" stroke="#ca8dfd" stroke-width="20" stroke-linecap="round" marker-end="url(#arrow)" />
+    </g>
 
-  <!-- ══════════════════════════════════════════
-  MAIN GEM BODY
-  ══════════════════════════════════════════ -->
-  <polygon
-    points="172,48  340,48  464,172  464,340  340,464  172,464  48,340  48,172"
-    fill="url(#gemBase)"
-    />
+    <!-- LAYER 2: CRYSTAL BASE -->
+    <g id="crystal">
+      <!-- Top Left (Dark) -->
+      <polygon points="500,130 270,355 500,300" fill="#19003b" stroke="#19003b" class="crystal-face" />
+      <!-- Top Right (Light) -->
+      <polygon points="500,130 500,300 730,355" fill="#ca8dfd" stroke="#ca8dfd" class="crystal-face" />
 
-  <!-- ══════════════════════════════════════════
-  FACETS
-  ══════════════════════════════════════════ -->
-  <polygon points="172,48  340,48  300,130  212,130" fill="url(#topFacet)"/>
-  <polygon points="48,172  172,48  212,130  130,212" fill="#c4a0ff" opacity="0.45"/>
-  <polygon points="340,48  464,172  382,212  300,130" fill="#5a30b0" opacity="0.55"/>
-  <polygon points="48,172  48,340  130,300  130,212" fill="url(#leftFacet)"/>
-  <polygon points="464,172  464,340  382,300  382,212" fill="url(#rightFacet)"/>
-  <polygon points="48,340  172,464  212,382  130,300" fill="#4a2a9e" opacity="0.6"/>
-  <polygon points="464,340  340,464  300,382  382,300" fill="#1a0d3d" opacity="0.85"/>
-  <polygon points="172,464  340,464  300,382  212,382" fill="#2d1b69" opacity="0.9"/>
-  <polygon points="212,130  300,130  382,212  382,300  300,382  212,382  130,300  130,212" fill="url(#centerFacet)" opacity="0.8"/>
-  <polygon points="212,130  300,130  256,185" fill="#d4b8ff" opacity="0.25"/>
+      <!-- Upper Left Inner -->
+      <polygon points="270,355 370,420 500,300" fill="#380a82" stroke="#380a82" class="crystal-face" />
+      <!-- Upper Right Inner -->
+      <polygon points="500,300 630,420 730,355" fill="#9642ea" stroke="#9642ea" class="crystal-face" />
 
-  <!-- ══════════════════════════════════════════
-  SYNC ARROWS (Perfect Circle Geometry)
-  Center: 256, 256 | Radius: 85
-  ══════════════════════════════════════════ -->
+      <!-- Far Left Outer -->
+      <polygon points="270,355 330,690 370,420" fill="#270063" stroke="#270063" class="crystal-face" />
 
-  <!-- TOP ARC: Sweeps from left to right -->
-  <path
-    d="M 174,234 A 85,85 0 0,1 338,234"
-    fill="none"
-    stroke="#d8b4ff"
-    stroke-width="20"
-    stroke-linecap="round"
-    filter="url(#glow)"
-    />
-  <!-- Top Arrowhead (Pointing down-right) -->
-  <polygon
-    points="344,258 319,239 357,229"
-    fill="#d8b4ff"
-    stroke="#d8b4ff"
-    stroke-width="4"
-    stroke-linejoin="round"
-    filter="url(#subtleglow)"
-    />
+      <!-- Center Left -->
+      <polygon points="370,420 440,670 585,570 500,300" fill="#7626de" stroke="#7626de" class="crystal-face" />
+      <!-- Center Right -->
+      <polygon points="500,300 585,570 630,420" fill="#a554f6" stroke="#a554f6" class="crystal-face" />
 
-  <!-- BOTTOM ARC: Sweeps from right to left -->
-  <path
-    d="M 338,278 A 85,85 0 0,1 174,278"
-    fill="none"
-    stroke="#d8b4ff"
-    stroke-width="20"
-    stroke-linecap="round"
-    filter="url(#glow)"
-    />
-  <!-- Bottom Arrowhead (Pointing up-left) -->
-  <polygon
-    points="168,254 193,273 155,283"
-    fill="#d8b4ff"
-    stroke="#d8b4ff"
-    stroke-width="4"
-    stroke-linejoin="round"
-    filter="url(#subtleglow)"
-    />
+      <!-- Far Right Outer -->
+      <polygon points="630,420 670,690 730,355" fill="#b366ff" stroke="#b366ff" class="crystal-face" />
 
-  <!-- ══════════════════════════════════════════
-  CLI PROMPT (>_)
-  ══════════════════════════════════════════ -->
-  <text
-    x="246"
-    y="260"
-    text-anchor="middle"
-    dominant-baseline="middle"
-    font-family="'Courier New', Courier, monospace"
-    font-size="76"
-    font-weight="bold"
-    fill="#ffffff"
-    filter="url(#glow)"
-    opacity="0.95"
-    >&gt;_</text>
+      <!-- Lower Left Inner -->
+      <polygon points="370,420 330,690 440,670" fill="#5111b5" stroke="#5111b5" class="crystal-face" />
+      <!-- Lower Right Inner -->
+      <polygon points="630,420 585,570 670,690" fill="#8531f2" stroke="#8531f2" class="crystal-face" />
 
-  <!-- ══════════════════════════════════════════
-  GLOSS / SHINE
-  ══════════════════════════════════════════ -->
-  <polygon points="172,48  240,48  190,100  140,80" fill="white" opacity="0.15"/>
-  <polygon points="48,172  48,210  90,175" fill="white" opacity="0.08"/>
-</svg>
+      <!-- Bottom Left Tip -->
+      <polygon points="330,690 500,870 440,670" fill="#16003b" stroke="#16003b" class="crystal-face" />
+      <!-- Bottom Center Tip -->
+      <polygon points="440,670 500,870 585,570" fill="#380a82" stroke="#380a82" class="crystal-face" />
+      <!-- Bottom Right Tip -->
+      <polygon points="585,570 500,870 670,690" fill="#0f0026" stroke="#0f0026" class="crystal-face" />
+    </g>
+
+    <!-- LAYER 3: CLI PROMPT -->
+    <g id="cli-prompt">
+      <!-- Dark shadow/depth to separate it from the crystal -->
+      <polyline points="410,450 470,510 410,570"
+                fill="none" stroke="#19003b" stroke-width="36" stroke-linecap="round" stroke-linejoin="round" transform="translate(0,8)"/>
+      <line x1="490" y1="580" x2="580" y2="580"
+            stroke="#19003b" stroke-width="36" stroke-linecap="round" transform="translate(0,8)" />
+
+      <!-- Bright white CLI syntax -->
+      <polyline points="410,450 470,510 410,570"
+                fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" />
+      <line x1="490" y1="580" x2="580" y2="580"
+            stroke="#ffffff" stroke-width="24" stroke-linecap="round" />
+      </g>
+
+      <!-- LAYER 4: FRONT ARROW (In front of the crystal) -->
+      <g id="layer-front-arrow" transform="rotate(-15 500 500)">
+        <!-- White outer border -->
+        <path d="M 200,550 C 300,750 700,750 800,550"
+              fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round" />
+        <!-- Purple inner stem with sharp marker attached -->
+        <path d="M 200,550 C 300,750 700,750 800,550"
+              fill="none" stroke="#ca8dfd" stroke-width="20" stroke-linecap="round" marker-end="url(#arrow)" />
+        </g>
+      </svg>
