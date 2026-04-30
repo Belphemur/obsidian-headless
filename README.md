@@ -1,4 +1,4 @@
-# Obsidian Headless
+# Obsidian Headless Go
 
 Headless client for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish).
 Sync and publish your vaults from the command line without the desktop app.
