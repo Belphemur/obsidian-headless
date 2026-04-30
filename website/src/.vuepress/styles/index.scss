@@ -1,0 +1,13 @@
+// Feature card icons — bigger, centered, with hover animation
+.feature-icon {
+  display: block;
+  margin: 0 auto 0.75rem;
+  font-size: 2.5em;
+  color: #A88BFA;
+  transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.vp-feature-item:hover .feature-icon {
+  transform: scale(1.15);
+  color: #7B6FE7;
+}
