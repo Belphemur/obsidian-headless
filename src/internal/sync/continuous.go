@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"sync"
@@ -9,7 +10,9 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
+	"github.com/sony/gobreaker/v2"
 
+	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
@@ -129,27 +132,38 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		initial, _ := store.Initial()
 		_ = store.Close()
 
-		conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
-		if err != nil {
-			return fmt.Errorf("failed to dial websocket: %w", err)
-		}
+		_, cbErr := e.executeWithBreaker(func() (struct{}, error) {
+			conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
+			if err != nil {
+				return struct{}{}, fmt.Errorf("failed to dial websocket: %w", err)
+			}
 
-		stopClose := context.AfterFunc(ctx, func() {
-			_ = conn.Close()
+			stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+
+			newVersion, remote, err := e.handshake(ctx, conn, cs.version, initial)
+			if err != nil {
+				stopClose()
+				_ = conn.Close()
+				return struct{}{}, err
+			}
+
+			cs.conn = conn
+			cs.stopClose = stopClose
+			cs.version = newVersion
+			cs.remote = remote
+			cs.lastMessageTs = time.Now()
+			return struct{}{}, nil
 		})
 
-		newVersion, remote, err := e.handshake(ctx, conn, cs.version, initial)
-		if err != nil {
-			stopClose()
-			_ = conn.Close()
-			return err
+		if cbErr != nil {
+			if errors.Is(cbErr, gobreaker.ErrOpenState) || errors.Is(cbErr, gobreaker.ErrTooManyRequests) {
+				return &circuitbreaker.BreakerError{
+					Message: fmt.Sprintf("Vault %s sync is temporarily unavailable (circuit open); retry in ~60s", e.Config.VaultID),
+					Err:     cbErr,
+				}
+			}
+			return cbErr
 		}
-
-		cs.conn = conn
-		cs.stopClose = stopClose
-		cs.version = newVersion
-		cs.remote = remote
-		cs.lastMessageTs = time.Now()
 		return nil
 	}
 
@@ -377,14 +391,20 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		}
 
 		// Open a dedicated connection for plan execution
-		connB, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
-		if err != nil {
-			e.Logger.Error().Err(err).Msg("continuous: failed to dial execution connection")
+		var connB *websocket.Conn
+		_, cbErr := e.executeWithBreaker(func() (struct{}, error) {
+			var err error
+			connB, _, err = websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
+			if err != nil {
+				return struct{}{}, fmt.Errorf("continuous: failed to dial execution connection: %w", err)
+			}
+			return struct{}{}, nil
+		})
+		if cbErr != nil {
+			e.Logger.Error().Err(cbErr).Msg("continuous: execution connection failed")
 			return
 		}
-		stopCloseB := context.AfterFunc(ctx, func() {
-			_ = connB.Close()
-		})
+		stopCloseB := context.AfterFunc(ctx, func() { _ = connB.Close() })
 		defer func() {
 			stopCloseB()
 			_ = connB.Close()

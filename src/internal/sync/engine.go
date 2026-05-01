@@ -11,7 +11,9 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
+	"github.com/sony/gobreaker/v2"
 
+	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/encryption"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
@@ -39,6 +41,7 @@ type Engine struct {
 	remote    map[string]model.FileRecord
 	version   int64
 	stopClose func() bool
+	wsCB      *gobreaker.CircuitBreaker[struct{}]
 
 	mu sync.Mutex
 }
@@ -68,8 +71,16 @@ func NewEngine(config model.SyncConfig, token string, logger zerolog.Logger) (*E
 	}
 
 	e.remote = make(map[string]model.FileRecord)
+	e.wsCB = gobreaker.NewCircuitBreaker[struct{}](circuitbreaker.SyncWS(config.VaultID, logger))
 
 	return e, nil
+}
+
+func (e *Engine) executeWithBreaker(fn func() (struct{}, error)) (struct{}, error) {
+	if e.wsCB == nil {
+		return fn()
+	}
+	return e.wsCB.Execute(fn)
 }
 
 func (e *Engine) RunOnce(ctx context.Context) error {

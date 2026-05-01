@@ -6,7 +6,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
+	"github.com/sony/gobreaker/v2"
+
 	"github.com/Belphemur/obsidian-headless/src-go/internal/buildinfo"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 )
 
@@ -17,10 +21,11 @@ type Client struct {
 	apiBase        string
 	publishAPIBase string
 	http           *http.Client
+	cb             *gobreaker.CircuitBreaker[struct{}]
 }
 
 // New creates a new API client.
-func New(apiBase string, timeout time.Duration) *Client {
+func New(apiBase string, timeout time.Duration, logger zerolog.Logger) *Client {
 	if apiBase == "" {
 		apiBase = "https://api.obsidian.md"
 	}
@@ -29,10 +34,15 @@ func New(apiBase string, timeout time.Duration) *Client {
 	if strings.Contains(apiBase, "127.0.0.1") || strings.Contains(apiBase, "localhost") {
 		publishAPIBase = apiBase
 	}
+
+	settings := circuitbreaker.HTTPDefault(logger)
+	cb := gobreaker.NewCircuitBreaker[struct{}](settings)
+
 	return &Client{
 		apiBase:        strings.TrimRight(apiBase, "/"),
 		publishAPIBase: strings.TrimRight(publishAPIBase, "/"),
 		http:           &http.Client{Timeout: timeout},
+		cb:             cb,
 	}
 }
 

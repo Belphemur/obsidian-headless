@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 )
 
@@ -23,7 +25,7 @@ func TestListPublishSites(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	sites, err := client.ListPublishSites(context.Background(), "tok")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -45,7 +47,7 @@ func TestCreatePublishSite(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	site, err := client.CreatePublishSite(context.Background(), "tok")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -67,7 +69,7 @@ func TestSetPublishSlug(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	if err := client.SetPublishSlug(context.Background(), "tok", "s1", server.URL, "my-slug"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,7 +87,7 @@ func TestGetPublishSlugs(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	slugs, err := client.GetPublishSlugs(context.Background(), "tok", []string{"s1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -107,7 +109,7 @@ func TestListPublishedFiles(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	files, err := client.ListPublishedFiles(context.Background(), "tok", model.PublishSite{ID: "s1", Host: server.URL})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -129,7 +131,7 @@ func TestDeletePublishedFile(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	if err := client.DeletePublishedFile(context.Background(), "tok", model.PublishSite{ID: "s1", Host: server.URL}, "index.md"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/sony/gobreaker/v2"
+
+	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
 )
 
 func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target any, opts ...*RequestOptions) error {
@@ -19,51 +23,61 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 	}
 
 	operation := func() error {
-		// Always send OPTIONS preflight first (matches TypeScript client behavior)
-		preflightReq, _ := http.NewRequestWithContext(ctx, http.MethodOptions, endpoint, nil)
-		if resp, err := c.http.Do(preflightReq); err == nil {
-			resp.Body.Close()
-		}
-
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-		if err != nil {
-			return backoff.Permanent(err)
-		}
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("User-Agent", userAgent)
-		if len(opts) > 0 && opts[0] != nil && opts[0].Headers != nil {
-			for k, v := range opts[0].Headers {
-				request.Header.Set(k, v)
+		_, cbErr := c.cb.Execute(func() (struct{}, error) {
+			// Always send OPTIONS preflight first (matches TypeScript client behavior)
+			preflightReq, _ := http.NewRequestWithContext(ctx, http.MethodOptions, endpoint, nil)
+			if resp, err := c.http.Do(preflightReq); err == nil {
+				resp.Body.Close()
 			}
-		}
 
-		response, err := c.http.Do(request)
-		if err != nil {
-			return backoff.Permanent(err)
-		}
-		defer func() {
-			_ = response.Body.Close()
-		}()
-
-		bodyBytes, err := io.ReadAll(response.Body)
-		if err != nil {
-			return backoff.Permanent(err)
-		}
-
-		var appErr apiError
-		_ = json.Unmarshal(bodyBytes, &appErr)
-
-		if apiErr := makeAPIError(response.StatusCode, response.Status, appErr, target); apiErr != nil {
-			if isServerOverloaded(apiErr) {
-				return apiErr
+			request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+			if err != nil {
+				return struct{}{}, backoff.Permanent(err)
 			}
-			return backoff.Permanent(apiErr)
-		}
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("User-Agent", userAgent)
+			if len(opts) > 0 && opts[0] != nil && opts[0].Headers != nil {
+				for k, v := range opts[0].Headers {
+					request.Header.Set(k, v)
+				}
+			}
 
-		if target == nil {
-			return nil
+			response, err := c.http.Do(request)
+			if err != nil {
+				return struct{}{}, backoff.Permanent(err)
+			}
+			defer func() {
+				_ = response.Body.Close()
+			}()
+
+			bodyBytes, err := io.ReadAll(response.Body)
+			if err != nil {
+				return struct{}{}, backoff.Permanent(err)
+			}
+
+			var appErr apiError
+			_ = json.Unmarshal(bodyBytes, &appErr)
+
+			if apiErr := makeAPIError(response.StatusCode, response.Status, appErr, target); apiErr != nil {
+				if isServerOverloaded(apiErr) {
+					return struct{}{}, apiErr
+				}
+				return struct{}{}, backoff.Permanent(apiErr)
+			}
+
+			if target == nil {
+				return struct{}{}, nil
+			}
+			return struct{}{}, json.Unmarshal(bodyBytes, target)
+		})
+
+		if errors.Is(cbErr, gobreaker.ErrOpenState) || errors.Is(cbErr, gobreaker.ErrTooManyRequests) {
+			return backoff.Permanent(&circuitbreaker.BreakerError{
+				Message: "Obsidian API is temporarily unavailable (circuit open); retry in ~30s",
+				Err:     cbErr,
+			})
 		}
-		return json.Unmarshal(bodyBytes, target)
+		return cbErr
 	}
 
 	return c.withRetry(ctx, operation)

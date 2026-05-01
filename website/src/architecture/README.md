@@ -27,11 +27,13 @@ graph TD
     C --> L[storage/]
     C --> M[sync/]
     C --> N[util/]
+    C --> O[circuitbreaker/]
 ```
 
 | Package | Key Files | Purpose |
 |---------|-----------|---------|
 | `api` | `client.go` | HTTP REST client for Obsidian cloud services |
+| `circuitbreaker` | `config.go` | Circuit breaker factory functions and error types |
 | `cli` | `root.go`, `sync.go` | Cobra CLI entry point and command tree |
 | `config` | `config.go`, `secrets.go` | Configuration management (auth, sync, publish) |
 | `encryption` | `provider.go` | EncryptionProvider interface, V0 AES-GCM, V2/V3 AES-SIV + AES-GCM |
@@ -125,6 +127,7 @@ graph TD
 | `spf13/cobra` | CLI framework for command parsing and flag management |
 | `modernc.org/sqlite` | Pure-Go SQLite driver for sync state storage |
 | `gopkg.in/yaml.v3` | YAML parsing for frontmatter extraction |
+| `sony/gobreaker/v2` | Circuit breaker for API and WebSocket resilience |
 
 ## Runtime Requirements
 
@@ -136,3 +139,4 @@ graph TD
 - [Sync Protocol](./sync-protocol.md) — Deep dive into the WebSocket sync protocol
 - [Encryption](./encryption.md) — Encryption providers, AES-SIV, and key derivation
 - [REST API](./rest-api.md) — HTTP REST client and API endpoints
+- [Circuit Breaker](./circuit-breaker.md) — Pattern overview, retry integration, and state management

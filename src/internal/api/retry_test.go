@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/rs/zerolog"
 )
 
 func TestWithRetry_SuccessFirstTry(t *testing.T) {
 	t.Parallel()
-	client := New("", 5*time.Second)
+	client := New("", 5*time.Second, zerolog.Nop())
 	calls := 0
 	op := func() error {
 		calls++
@@ -27,7 +28,7 @@ func TestWithRetry_SuccessFirstTry(t *testing.T) {
 
 func TestWithRetry_PermanentError(t *testing.T) {
 	t.Parallel()
-	client := New("", 5*time.Second)
+	client := New("", 5*time.Second, zerolog.Nop())
 	calls := 0
 	op := func() error {
 		calls++
@@ -43,7 +44,7 @@ func TestWithRetry_PermanentError(t *testing.T) {
 
 func TestWithRetry_ContextCancelled(t *testing.T) {
 	t.Parallel()
-	client := New("", 5*time.Second)
+	client := New("", 5*time.Second, zerolog.Nop())
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
 	op := func() error {
