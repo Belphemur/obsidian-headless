@@ -233,6 +233,8 @@ go test -race -count=1 -timeout=10m -shuffle=on ./...
 - `-count=1` — disables caching (prevents cache-based flakiness)
 - `-shuffle=on` — randomizes test order to catch hidden inter-test dependencies
 
+CI also runs `golangci-lint run` to enforce style, bug, and complexity checks automatically.
+
 ## Code Quality
 
 Run the following commands before committing:
@@ -244,4 +246,7 @@ go vet ./...
 go fix ./...
 go build ./...
 go test ./...
+golangci-lint run
 ```
+
+**golangci-lint** runs a collection of linters that catch style issues, potential bugs, unused code, and complexity problems that `go vet` alone does not detect. It is the final gate before opening a pull request.
