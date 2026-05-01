@@ -82,6 +82,7 @@ export default defineUserConfig({
           { text: 'Sync Protocol', link: '/architecture/sync-protocol' },
           { text: 'Encryption', link: '/architecture/encryption' },
           { text: 'REST API', link: '/architecture/rest-api' },
+          { text: 'Circuit Breaker', link: '/architecture/circuit-breaker' },
         ],
       },
     ],
@@ -108,6 +109,7 @@ export default defineUserConfig({
         'sync-protocol',
         'encryption',
         'rest-api',
+        'circuit-breaker',
       ],
     },
 
