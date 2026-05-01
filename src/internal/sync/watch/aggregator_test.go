@@ -34,7 +34,9 @@ func TestAggregator_PushRename_Overwrites(t *testing.T) {
 	agg := NewAggregator(out)
 
 	// First push a regular create
+	oldDelay := quiescenceDelay
 	quiescenceDelay = 500 * time.Millisecond // reduce delay for test
+	t.Cleanup(func() { quiescenceDelay = oldDelay })
 	agg.Push("/test", EventCreate)
 
 	// Then push a rename for the same path (should overwrite create)

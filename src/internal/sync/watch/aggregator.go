@@ -42,6 +42,7 @@ func (a *Aggregator) Push(path string, eventType EventType) {
 		pending.timer.Stop()
 		pending.lastSeen = now
 		pending.eventType = eventType
+		pending.oldPath = ""
 		pending.token++
 		token := pending.token
 		delay := quiescenceDelay

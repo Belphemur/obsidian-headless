@@ -3,7 +3,6 @@ package watch
 import (
 	"os"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -17,18 +16,6 @@ type FileState struct {
 type Scanner struct {
 	mu    sync.RWMutex
 	state map[string]FileState
-}
-
-func getInode(info os.FileInfo) uint64 {
-	if info == nil {
-		return 0
-	}
-	// Use syscall.Stat_t for Unix-like platforms; returns 0 on Windows.
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0
-	}
-	return stat.Ino
 }
 
 func NewScanner() *Scanner {

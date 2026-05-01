@@ -445,7 +445,10 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			return nil
 		case <-trigger:
 			scheduleSync()
-		case ev := <-watcher.Out:
+		case ev, ok := <-watcher.Out:
+			if !ok {
+				return nil
+			}
 			if ev.Type == watchpkg.EventRename {
 				renamesMu.Lock()
 				pendingRenames = append(pendingRenames, ev)

@@ -16,7 +16,7 @@ import (
 
 const eventBufSize = 1024
 
-const renameDetectMS = 150 * time.Millisecond
+const renameDetectWindow = 150 * time.Millisecond
 
 type pendingRename struct {
 	ino   uint64
@@ -185,7 +185,21 @@ func (w *Watcher) handleFileCreate(path string, info os.FileInfo) {
 				w.agg.PushRename(path, pending.path)
 				return
 			}
-			w.renameMu.Unlock()
+			// Check for path match with different inode (delete+recreate)
+			if oldIno, exists := w.pendingRenamePaths[path]; exists && oldIno != ino {
+				if old, ok := w.pendingRenames[oldIno]; ok {
+					old.timer.Stop()
+					delete(w.pendingRenames, oldIno)
+					delete(w.pendingRenamePaths, path)
+					w.renameMu.Unlock()
+					w.logger.Info().Str("path", path).Msg("new file created at pending deletion path, cancelling deferred deletion")
+					// Fall through to normal create
+				} else {
+					w.renameMu.Unlock()
+				}
+			} else {
+				w.renameMu.Unlock()
+			}
 		}
 	}
 
@@ -205,7 +219,7 @@ func (w *Watcher) deferDeletion(path string, ino uint64) {
 		old.timer.Stop()
 		delete(w.pendingRenamePaths, old.path)
 	}
-	timer := time.AfterFunc(renameDetectMS, func() {
+	timer := time.AfterFunc(renameDetectWindow, func() {
 		// Timer expired without a matching create → real deletion
 		w.renameMu.Lock()
 		if _, ok := w.pendingRenames[ino]; ok {
