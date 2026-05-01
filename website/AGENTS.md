@@ -106,7 +106,7 @@ Callout titles are optional. If provided, place them on the same line as the ope
 
 ## Diagrams
 
-Use Mermaid code blocks for ALL diagrams:
+Use Mermaid code blocks for ALL diagrams. Do NOT use ASCII art or plain-text diagrams:
 
 ````markdown
 ```mermaid
@@ -116,7 +116,7 @@ graph TD
 ```
 ````
 
-Supported diagram types: `graph TD`, `graph LR`, `sequenceDiagram`, `flowchart TD`.
+Supported diagram types: `graph TD`, `graph LR`, `sequenceDiagram`, `flowchart TD`, `stateDiagram-v2`.
 
 Ensure Mermaid syntax is valid. The site includes `mermaid` as a dependency, so diagrams render automatically.
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -25,7 +26,10 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 	operation := func() error {
 		_, cbErr := c.cb.Execute(func() (struct{}, error) {
 			// Always send OPTIONS preflight first (matches TypeScript client behavior)
-			preflightReq, _ := http.NewRequestWithContext(ctx, http.MethodOptions, endpoint, nil)
+			preflightReq, err := http.NewRequestWithContext(ctx, http.MethodOptions, endpoint, nil)
+			if err != nil {
+				return struct{}{}, backoff.Permanent(fmt.Errorf("failed to create options request: %w", err))
+			}
 			if resp, err := c.http.Do(preflightReq); err == nil {
 				resp.Body.Close()
 			}
@@ -68,7 +72,10 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target
 			if target == nil {
 				return struct{}{}, nil
 			}
-			return struct{}{}, json.Unmarshal(bodyBytes, target)
+			if err := json.Unmarshal(bodyBytes, target); err != nil {
+				return struct{}{}, backoff.Permanent(err)
+			}
+			return struct{}{}, nil
 		})
 
 		if errors.Is(cbErr, gobreaker.ErrOpenState) || errors.Is(cbErr, gobreaker.ErrTooManyRequests) {

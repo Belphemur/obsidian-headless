@@ -45,7 +45,11 @@ func (e *Engine) ensureConnected(ctx context.Context) error {
 
 		stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
 
-		version, remote, err := e.handshake(ctx, conn, e.version, initial)
+		e.mu.Lock()
+		currentVersion := e.version
+		e.mu.Unlock()
+
+		version, remote, err := e.handshake(ctx, conn, currentVersion, initial)
 		if err != nil {
 			stopClose()
 			_ = conn.Close()

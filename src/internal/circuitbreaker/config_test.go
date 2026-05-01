@@ -14,7 +14,7 @@ import (
 
 func TestHTTPDefault(t *testing.T) {
 	t.Parallel()
-	logger := zerolog.New(nil)
+	logger := zerolog.Nop()
 	s := circuitbreaker.HTTPDefault(logger)
 
 	assert.Equal(t, "obsidian-api", s.Name)
@@ -25,7 +25,7 @@ func TestHTTPDefault(t *testing.T) {
 
 func TestSyncWS(t *testing.T) {
 	t.Parallel()
-	logger := zerolog.New(nil)
+	logger := zerolog.Nop()
 	vaultID := "test-vault-123"
 	s := circuitbreaker.SyncWS(vaultID, logger)
 
@@ -37,7 +37,7 @@ func TestSyncWS(t *testing.T) {
 
 func TestHTTPDefault_ReadyToTrip(t *testing.T) {
 	t.Parallel()
-	logger := zerolog.New(nil)
+	logger := zerolog.Nop()
 	s := circuitbreaker.HTTPDefault(logger)
 
 	assert.False(t, s.ReadyToTrip(gobreaker.Counts{ConsecutiveFailures: 4}))
@@ -47,7 +47,7 @@ func TestHTTPDefault_ReadyToTrip(t *testing.T) {
 
 func TestSyncWS_ReadyToTrip(t *testing.T) {
 	t.Parallel()
-	logger := zerolog.New(nil)
+	logger := zerolog.Nop()
 	s := circuitbreaker.SyncWS("vault", logger)
 
 	assert.False(t, s.ReadyToTrip(gobreaker.Counts{ConsecutiveFailures: 2}))
@@ -105,7 +105,7 @@ func TestIsBreakerError(t *testing.T) {
 
 func TestHTTPDefault_IsSuccessful(t *testing.T) {
 	t.Parallel()
-	logger := zerolog.New(nil)
+	logger := zerolog.Nop()
 	s := circuitbreaker.HTTPDefault(logger)
 
 	assert.True(t, s.IsSuccessful(nil))
@@ -114,7 +114,7 @@ func TestHTTPDefault_IsSuccessful(t *testing.T) {
 
 func TestSyncWS_IsSuccessful(t *testing.T) {
 	t.Parallel()
-	logger := zerolog.New(nil)
+	logger := zerolog.Nop()
 	s := circuitbreaker.SyncWS("vault", logger)
 
 	assert.True(t, s.IsSuccessful(nil))
@@ -123,7 +123,7 @@ func TestSyncWS_IsSuccessful(t *testing.T) {
 
 func TestHTTPDefault_IsExcluded(t *testing.T) {
 	t.Parallel()
-	logger := zerolog.New(nil)
+	logger := zerolog.Nop()
 	s := circuitbreaker.HTTPDefault(logger)
 
 	assert.True(t, s.IsExcluded(context.Canceled))
@@ -133,7 +133,7 @@ func TestHTTPDefault_IsExcluded(t *testing.T) {
 
 func TestSyncWS_IsExcluded(t *testing.T) {
 	t.Parallel()
-	logger := zerolog.New(nil)
+	logger := zerolog.Nop()
 	s := circuitbreaker.SyncWS("vault", logger)
 
 	assert.True(t, s.IsExcluded(context.Canceled))

@@ -23,32 +23,31 @@ This project deploys circuit breakers at two levels:
 
 The circuit breaker is layered inside the existing retry mechanism, following the ["Polly pattern"](https://github.com/App-vNext/Polly#policywrap): retry wraps breaker wraps transport.
 
-```
-Request → Retry (exponential backoff) → Circuit Breaker → HTTP/WS call
+```mermaid
+flowchart LR
+    Request -->|exponential backoff| Retry
+    Retry --> CircuitBreaker
+    CircuitBreaker --> HTTP[HTTP/WS call]
 ```
 
 Each retry attempt passes through the breaker. When the breaker is open, `gobreaker.ErrOpenState` is returned immediately and treated as a permanent error by the retrier, so no more retries are attempted until the breaker transitions to half-open.
 
 ### Retry + Breaker Flow
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Retry Policy (cenkalti/backoff)                        │
-│                                                         │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │  Circuit Breaker (sony/gobreaker)                 │  │
-│  │                                                   │  │
-│  │  ┌─────────────────────────────────────────────┐  │  │
-│  │  │  HTTP Call (api.Client.postJSON)            │  │  │
-│  │  │  — or —                                     │  │  │
-│  │  │  WS Connect (sync.Engine.dialWorker)        │  │  │
-│  │  └─────────────────────────────────────────────┘  │  │
-│  │                                                   │  │
-│  │  On gobreaker.ErrOpenState → backoff.Permanent    │  │
-│  └───────────────────────────────────────────────────┘  │
-│                                                         │
-│  On timeout / network error → retry with backoff        │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Retry["Retry Policy (cenkalti/backoff)"]
+        subgraph Breaker["Circuit Breaker (sony/gobreaker)"]
+            subgraph Transport["Transport"]
+                HTTP["HTTP Call (api.Client.postJSON)"]
+                WS["WS Connect (sync.Engine.dialWorker)"]
+            end
+            ErrOpen["gobreaker.ErrOpenState"]
+            Permanent["backoff.Permanent"]
+            ErrOpen --> Permanent
+        end
+    end
+    Transport -->|timeout / network error| Retry
 ```
 
 ### HTTP Breaker (Shared)
@@ -112,22 +111,13 @@ The circuit breaker follows a three-state cycle:
 - If a probe fails, the breaker returns to **Open** (service still degraded).
 - This prevents a recovered-but-fragile service from being immediately overwhelmed.
 
-```
-                  ReadyToTrip met
-  ┌────────┐  ─────────────────►  ┌──────┐
-  │        │                      │      │
-  │ CLOSED │                      │ OPEN │
-  │        │◄──────────────────── │      │
-  └───┬────┘   Probe succeeds     └──┬───┘
-      │                              │
-      │                              │ Timeout expires
-      │                              │
-      │           Probe fails        ▼
-      │     ┌──────────────►  ┌─────────────┐
-      │     │                 │             │
-      └─────┴─────────────────│  HALF-OPEN  │
-                              │             │
-                              └─────────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> Closed
+    Closed --> Open : ReadyToTrip met
+    Open --> HalfOpen : Timeout expires
+    HalfOpen --> Closed : Probe succeeds
+    HalfOpen --> Open : Probe fails
 ```
 
 ### State Change Logging
@@ -204,7 +194,7 @@ The `circuitbreaker` package defines a `BreakerError` type that wraps the underl
 ```go
 type BreakerError struct {
     Message string
-    Cause   error // gobreaker.ErrOpenState
+    Err     error // gobreaker.ErrOpenState
 }
 
 func (e *BreakerError) Error() string { return e.Message }
@@ -216,7 +206,7 @@ func (e *BreakerError) Error() string { return e.Message }
 func IsBreakerError(err error) bool
 ```
 
-Returns `true` if the error chain contains a `BreakerError`. Used by the CLI and retry layers to detect open-circuit conditions.
+Returns `true` if the error is or wraps a `BreakerError`, or if it is an unwrapped `gobreaker.ErrOpenState` or `gobreaker.ErrTooManyRequests` sentinel error. Used by the CLI and retry layers to detect open-circuit conditions.
 
 ### User-Facing Messages
 

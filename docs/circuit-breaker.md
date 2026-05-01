@@ -188,7 +188,7 @@ The `circuitbreaker` package defines a `BreakerError` type that wraps the underl
 ```go
 type BreakerError struct {
     Message string
-    Cause   error // gobreaker.ErrOpenState
+    Err     error // gobreaker.ErrOpenState
 }
 
 func (e *BreakerError) Error() string { return e.Message }
@@ -200,7 +200,7 @@ func (e *BreakerError) Error() string { return e.Message }
 func IsBreakerError(err error) bool
 ```
 
-Returns `true` if the error chain contains a `BreakerError`. Used by the CLI and retry layers to detect open-circuit conditions.
+Returns `true` if the error is or wraps a `BreakerError`, or if it is an unwrapped `gobreaker.ErrOpenState` or `gobreaker.ErrTooManyRequests` sentinel error. Used by the CLI and retry layers to detect open-circuit conditions.
 
 ### User-Facing Messages
 

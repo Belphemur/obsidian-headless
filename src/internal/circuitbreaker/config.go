@@ -58,14 +58,14 @@ func HTTPDefault(logger zerolog.Logger) gobreaker.Settings {
 			return err == nil
 		},
 		IsExcluded: func(err error) bool {
-			return errors.Is(err, context.Canceled)
+			return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 		},
 		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
 			logger.Warn().
 				Str("name", name).
 				Str("from", from.String()).
 				Str("to", to.String()).
-				Msgf("circuit breaker %s state changed from %s to %s", name, from.String(), to.String())
+				Msg("circuit breaker state changed")
 		},
 	}
 }
@@ -84,14 +84,14 @@ func SyncWS(vaultID string, logger zerolog.Logger) gobreaker.Settings {
 			return err == nil
 		},
 		IsExcluded: func(err error) bool {
-			return errors.Is(err, context.Canceled)
+			return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 		},
 		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
 			logger.Warn().
 				Str("name", name).
 				Str("from", from.String()).
 				Str("to", to.String()).
-				Msgf("circuit breaker %s state changed from %s to %s", name, from.String(), to.String())
+				Msg("circuit breaker state changed")
 		},
 	}
 }
