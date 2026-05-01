@@ -22,13 +22,15 @@ import (
 func waitFor(t *testing.T, timeout time.Duration, desc string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	for {
 		if cond() {
 			return
 		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out after %v waiting for: %s", timeout, desc)
+		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatalf("timed out after %v waiting for: %s", timeout, desc)
 }
 
 func TestContinuousInitialSync(t *testing.T) {

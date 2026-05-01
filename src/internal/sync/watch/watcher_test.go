@@ -18,7 +18,8 @@ func testLogger(t *testing.T) zerolog.Logger {
 // waitForEvent reads from the watcher channel until the predicate matches or timeout expires.
 func waitForEvent(t *testing.T, ch <-chan ScanEvent, timeout time.Duration, desc string, pred func(ScanEvent) bool) ScanEvent {
 	t.Helper()
-	deadline := time.After(timeout)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	for {
 		select {
 		case ev, ok := <-ch:
@@ -28,7 +29,7 @@ func waitForEvent(t *testing.T, ch <-chan ScanEvent, timeout time.Duration, desc
 			if pred(ev) {
 				return ev
 			}
-		case <-deadline:
+		case <-timer.C:
 			t.Fatalf("timed out after %v waiting for: %s", timeout, desc)
 		}
 	}
@@ -138,7 +139,8 @@ func TestWatcher_Shutdown_FlushesPendingRenames(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
 	go w.Run(ctx)
 
