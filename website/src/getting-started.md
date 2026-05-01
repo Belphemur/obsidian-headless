@@ -5,12 +5,12 @@ title: Getting Started
 # Getting Started
 
 ::: danger ⚠️ Third-Party Disclaimer
-**Obsidian Headless Go is a third-party, community-maintained tool.** It is NOT an official Obsidian product, and it is NOT supported by Obsidian.
+**The Headless Go client for Obsidian is a third-party, community-maintained tool.** It is NOT an official Obsidian product, and it is NOT supported by Obsidian.
 
 If you encounter any issues, do **NOT** contact Obsidian support. Instead, please [open an issue on GitHub](https://github.com/Belphemur/obsidian-headless/issues).
 :::
 
-Choose your setup: run Obsidian Headless Go as a Docker container or install the CLI directly on your machine.
+Choose your setup: run the Headless Go client for Obsidian as a Docker container or install the CLI directly on your machine.
 
 ## Docker Quick Start
 

@@ -1,4 +1,4 @@
-# Website: https://belphemur.github.io/obsidian-headless/
+# Website: https://belphemur.github.io/obsidian-headless/ (Headless Go client for Obsidian Sync and Publish)
 version: 2
 project_name: obsidian-headless
 
@@ -123,7 +123,7 @@ dockers_v2:
       - build/get-token.sh
       - build/README.md
     annotations:
-      "org.opencontainers.image.description": "Obsidian headless client for syncing and publishing vaults without the desktop app."
+      "org.opencontainers.image.description": "Headless Go client for Obsidian Sync and Publish"
       "org.opencontainers.image.created": "{{.Date}}"
       "org.opencontainers.image.name": "{{.ProjectName}}"
       "org.opencontainers.image.revision": "{{.FullCommit}}"
@@ -135,7 +135,7 @@ dockers_v2:
       "org.opencontainers.image.revision": "{{.FullCommit}}"
       "org.opencontainers.image.version": "{{.Version}}"
       "org.opencontainers.image.source": "{{.GitURL}}"
-      "org.opencontainers.image.description": "Obsidian headless client for syncing and publishing vaults without the desktop app."
+      "org.opencontainers.image.description": "Headless Go client for Obsidian Sync and Publish"
 
 # START: New Publishing Sections
 
@@ -145,8 +145,7 @@ nfpms:
   - package_name: obsidian-headless
     maintainer: "Belphemur <obsidian-sync@admincmd.com>"
     description: |
-      Obsidian headless client for syncing and publishing vaults
-      without the desktop app.
+      Headless Go client for Obsidian Sync and Publish.
     license: GPL-3.0
     vendor: Belphemur
     homepage: "https://belphemur.github.io/obsidian-headless/"
@@ -174,8 +173,7 @@ homebrew_casks:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: "https://belphemur.github.io/obsidian-headless/"
     description: |
-      Obsidian headless client for syncing and publishing vaults
-      without the desktop app.
+      Headless Go client for Obsidian Sync and Publish.
     generate_completions_from_executable:
       shell_parameter_format: cobra
     hooks:
@@ -197,7 +195,7 @@ aurs:
       - "Belphemur <obsidian-sync@admincmd.com>"
     license: GPL-3.0
     homepage: "https://belphemur.github.io/obsidian-headless/"
-    description: Obsidian headless client for syncing and publishing vaults without the desktop app in go.
+    description: Headless Go client for Obsidian Sync and Publish.
     private_key: "{{ .Env.AUR_SSH_KEY }}"
     git_url: "ssh://aur@aur.archlinux.org/obsidian-headless-go-bin.git"
     skip_upload: auto
@@ -210,13 +208,12 @@ aurs:
 winget:
   - name: obsidian-headless
     publisher: Belphemur
-    short_description: "Headless Obsidian sync and publish client"
+    short_description: "Headless Go client for Obsidian Sync and Publish"
     license: GPL-3.0
     package_identifier: Belphemur.ObsidianHeadless
     homepage: "https://belphemur.github.io/obsidian-headless/"
     description: |
-      Obsidian headless client for syncing and publishing vaults
-      without the desktop app.
+      Headless Go client for Obsidian Sync and Publish.
     repository:
       owner: Belphemur
       name: winget-pkgs

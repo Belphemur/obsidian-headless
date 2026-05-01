@@ -1,6 +1,6 @@
-# Obsidian Headless Go
+# Headless Go client for Obsidian
 
-Headless client for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish).
+Headless Go CLI client for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish).
 Sync and publish your vaults from the command line without the desktop app.
 
 Full documentation: https://belphemur.github.io/obsidian-headless/

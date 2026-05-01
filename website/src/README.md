@@ -2,8 +2,8 @@
 home: true
 title: Home
 heroImage: /logo.svg
-heroAlt: Obsidian Headless Go Logo
-heroText: Obsidian Headless Go
+heroAlt: Headless Go client for Obsidian Logo
+heroText: Headless Go client for Obsidian
 tagline: Headless Go CLI client for Obsidian Sync and Obsidian Publish
 footerHtml: true
 actions:
@@ -37,7 +37,7 @@ footer: GPL-3.0 Licensed | Copyright © 2026-present Belphemur | <a href="https:
 
 ## Getting Started
 
-Choose your setup and get Obsidian Headless Go running in under 5 minutes:
+Choose your setup and get the Headless Go client for Obsidian running in under 5 minutes:
 
 - **[Docker](./getting-started.md#docker-quick-start)** — Run sync as a container. Login, configure environment variables, and start.
 - **[Local CLI](./getting-started.md#local-quick-start)** — Install the binary, log in, set up sync, and run it directly on your machine.
@@ -55,9 +55,9 @@ ob sync-run --continuous
 
 See the full **[Getting Started guide](./getting-started.md)** for detailed step-by-step instructions.
 
-## What is Obsidian Headless Go?
+## What is the Headless Go client for Obsidian?
 
-Obsidian Headless Go is a community-maintained CLI companion for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish). It brings the full power of Obsidian's sync and publish engines to the command line — no GUI required.
+The Headless Go client for Obsidian is a CLI companion for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish). It brings the full power of Obsidian's sync and publish engines to the command line — no GUI required.
 
 Perfect for:
 
@@ -67,7 +67,7 @@ Perfect for:
 - **Automation:** Script sync and publish operations in your workflow
 
 ::: danger ⚠️ Third-Party Disclaimer
-**Obsidian Headless Go is a third-party, community-maintained tool.** It is NOT an official Obsidian product, and it is NOT supported by Obsidian.
+**The Headless Go client for Obsidian is a third-party, community-maintained tool.** It is NOT an official Obsidian product, and it is NOT supported by Obsidian.
 
 If you encounter any issues, do **NOT** contact Obsidian support. Instead, please [open an issue on GitHub](https://github.com/Belphemur/obsidian-headless/issues).
 :::
