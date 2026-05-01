@@ -15,7 +15,27 @@ func testLogger(t *testing.T) zerolog.Logger {
 	return zerolog.New(zerolog.NewConsoleWriter()).Level(zerolog.Disabled)
 }
 
+// waitForEvent reads from the watcher channel until the predicate matches or timeout expires.
+func waitForEvent(t *testing.T, ch <-chan ScanEvent, timeout time.Duration, desc string, pred func(ScanEvent) bool) ScanEvent {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				t.Fatal("channel closed")
+			}
+			if pred(ev) {
+				return ev
+			}
+		case <-deadline:
+			t.Fatalf("timed out after %v waiting for: %s", timeout, desc)
+		}
+	}
+}
+
 func TestWatcher_RenameDetection(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("inode tracking not available on Windows")
 	}
@@ -28,8 +48,7 @@ func TestWatcher_RenameDetection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go w.Run(ctx)
 
@@ -40,17 +59,9 @@ func TestWatcher_RenameDetection(t *testing.T) {
 	}
 
 	// Wait for the Create event
-	var gotCreate bool
-	for !gotCreate {
-		select {
-		case ev := <-w.Out:
-			if ev.Type == EventCreate && ev.Path == oldPath {
-				gotCreate = true
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for initial Create event")
-		}
-	}
+	_ = waitForEvent(t, w.Out, 10*time.Second, "initial Create event", func(ev ScanEvent) bool {
+		return ev.Type == EventCreate && ev.Path == oldPath
+	})
 
 	// Rename the file (atomic on same filesystem)
 	newPath := filepath.Join(root, "new.md")
@@ -59,23 +70,19 @@ func TestWatcher_RenameDetection(t *testing.T) {
 	}
 
 	// Wait for the rename event
-	select {
-	case ev := <-w.Out:
-		if ev.Type != EventRename {
-			t.Fatalf("expected EventRename, got %s", ev.Type)
-		}
-		if ev.Path != newPath {
-			t.Fatalf("expected new path %s, got %s", newPath, ev.Path)
-		}
-		if ev.OldPath != oldPath {
-			t.Fatalf("expected old path %s, got %s", oldPath, ev.OldPath)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for rename event")
+	ev := waitForEvent(t, w.Out, 10*time.Second, "rename event", func(ev ScanEvent) bool {
+		return ev.Type == EventRename
+	})
+	if ev.Path != newPath {
+		t.Fatalf("expected new path %s, got %s", newPath, ev.Path)
+	}
+	if ev.OldPath != oldPath {
+		t.Fatalf("expected old path %s, got %s", oldPath, ev.OldPath)
 	}
 }
 
 func TestWatcher_RealDeletion_NoMatchingCreate(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("inode tracking not available on Windows")
 	}
@@ -88,8 +95,7 @@ func TestWatcher_RealDeletion_NoMatchingCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go w.Run(ctx)
 
@@ -100,17 +106,9 @@ func TestWatcher_RealDeletion_NoMatchingCreate(t *testing.T) {
 	}
 
 	// Wait for Create
-	var gotCreate bool
-	for !gotCreate {
-		select {
-		case ev := <-w.Out:
-			if ev.Type == EventCreate && ev.Path == path {
-				gotCreate = true
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for Create event")
-		}
-	}
+	_ = waitForEvent(t, w.Out, 10*time.Second, "Create event", func(ev ScanEvent) bool {
+		return ev.Type == EventCreate && ev.Path == path
+	})
 
 	// Delete file
 	if err := os.Remove(path); err != nil {
@@ -118,20 +116,16 @@ func TestWatcher_RealDeletion_NoMatchingCreate(t *testing.T) {
 	}
 
 	// Wait for delete after window expiry (150ms + quiescence 2s)
-	select {
-	case ev := <-w.Out:
-		if ev.Type != EventRemove {
-			t.Fatalf("expected EventRemove, got %s", ev.Type)
-		}
-		if ev.Path != path {
-			t.Fatalf("expected path %s, got %s", path, ev.Path)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for Remove event")
+	ev := waitForEvent(t, w.Out, 10*time.Second, "Remove event", func(ev ScanEvent) bool {
+		return ev.Type == EventRemove
+	})
+	if ev.Path != path {
+		t.Fatalf("expected path %s, got %s", path, ev.Path)
 	}
 }
 
 func TestWatcher_Shutdown_FlushesPendingRenames(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("inode tracking not available on Windows")
 	}
@@ -155,17 +149,9 @@ func TestWatcher_Shutdown_FlushesPendingRenames(t *testing.T) {
 	}
 
 	// Wait for Create
-	var gotCreate bool
-	for !gotCreate {
-		select {
-		case ev := <-w.Out:
-			if ev.Type == EventCreate && ev.Path == path {
-				gotCreate = true
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("timeout waiting for Create event")
-		}
-	}
+	_ = waitForEvent(t, w.Out, 10*time.Second, "Create event", func(ev ScanEvent) bool {
+		return ev.Type == EventCreate && ev.Path == path
+	})
 
 	// Remove file (should trigger deferDeletion)
 	if err := os.Remove(path); err != nil {
@@ -179,25 +165,8 @@ func TestWatcher_Shutdown_FlushesPendingRenames(t *testing.T) {
 	cancel()
 
 	// Collect all remaining events
-	var foundRemove bool
-	timeout := time.After(3 * time.Second)
-loop:
-	for {
-		select {
-		case ev, ok := <-w.Out:
-			if !ok {
-				break loop
-			}
-			if ev.Type == EventRemove && ev.Path == path {
-				foundRemove = true
-				break loop
-			}
-		case <-timeout:
-			break loop
-		}
-	}
-
-	if !foundRemove {
-		t.Fatal("expected EventRemove for pending deletion during shutdown")
-	}
+	ev := waitForEvent(t, w.Out, 10*time.Second, "EventRemove for pending deletion during shutdown", func(ev ScanEvent) bool {
+		return ev.Type == EventRemove && ev.Path == path
+	})
+	_ = ev
 }
