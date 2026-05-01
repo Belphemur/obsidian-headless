@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/rs/zerolog"
 
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
@@ -28,7 +29,7 @@ const (
 // file renames detected by the watcher. Without this, a rename from oldPath→newPath
 // would appear as a delete of oldPath + create of newPath in buildPlan.
 // The record's PreviousPath field is set to preserve the rename chain.
-func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord, renames []watchpkg.ScanEvent) {
+func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord, renames []watchpkg.ScanEvent, logger zerolog.Logger) {
 	for _, ev := range renames {
 		if ev.Type != watchpkg.EventRename {
 			continue
@@ -38,12 +39,20 @@ func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord
 			oldLocal.Path = ev.Path
 			previousLocal[ev.Path] = oldLocal
 			delete(previousLocal, ev.OldPath)
+			logger.Info().
+				Str("oldPath", ev.OldPath).
+				Str("newPath", ev.Path).
+				Msg("continuous: local rename applied")
 		}
 		if oldRemote, ok := previousRemote[ev.OldPath]; ok {
 			oldRemote.PreviousPath = ev.OldPath
 			oldRemote.Path = ev.Path
 			previousRemote[ev.Path] = oldRemote
 			delete(previousRemote, ev.OldPath)
+			logger.Info().
+				Str("oldPath", ev.OldPath).
+				Str("newPath", ev.Path).
+				Msg("continuous: remote rename applied")
 		}
 	}
 }
@@ -329,7 +338,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		pendingRenames = pendingRenames[:0]
 		renamesMu.Unlock()
 
-		applyRenameFixups(previousLocal, previousRemote, snapshot)
+		applyRenameFixups(previousLocal, previousRemote, snapshot, e.Logger)
 
 		dbLocal := previousLocal
 		dbRemote := previousRemote
