@@ -132,7 +132,7 @@ Choose your platform from the [Installation Guide](./installation/README.md):
 
 - [macOS](./installation/macos.md) — `brew install --cask obsidian-headless`
 - [Linux](./installation/linux.md) — deb, rpm, pacman, apk
-- [Windows](./installation/windows.md) — `winget install obsidian-headless`
+- [Windows](./installation/windows.md) — Manual download from GitHub Releases
 - [From Source](./installation/from-source.md) — `go install`
 
 Verify installation:

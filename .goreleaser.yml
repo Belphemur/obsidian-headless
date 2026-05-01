@@ -203,36 +203,36 @@ aurs:
       name: goreleaserbot
       email: bot@goreleaser.com
 
-# Winget - Windows Package Manager
+# Winget - Windows Package Manager (disabled, pending fix)
 # https://goreleaser.com/customization/publish/winget/
-winget:
-  - name: obsidian-headless
-    publisher: Belphemur
-    short_description: "Headless Go client for Obsidian Sync and Publish"
-    license: GPL-3.0
-    package_identifier: Belphemur.ObsidianHeadless
-    homepage: "https://belphemur.github.io/obsidian-headless/"
-    description: |
-      Headless Go client for Obsidian Sync and Publish.
-    repository:
-      owner: Belphemur
-      name: winget-pkgs
-      branch: "obsidian-headless-{{.Version}}"
-      token: "{{ .Env.WINGET_TOKEN }}"
-      pull_request:
-        enabled: true
-        base:
-          owner: microsoft
-          name: winget-pkgs
-          branch: master
-    skip_upload: auto
-    commit_author:
-      name: goreleaserbot
-      email: bot@goreleaser.com
-    tags:
-      - obsidian
-      - sync
-      - publish
-      - cli
+# winget:
+#   - name: obsidian-headless
+#     publisher: Belphemur
+#     short_description: "Headless Go client for Obsidian Sync and Publish"
+#     license: GPL-3.0
+#     package_identifier: Belphemur.ObsidianHeadless
+#     homepage: "https://belphemur.github.io/obsidian-headless/"
+#     description: |
+#       Headless Go client for Obsidian Sync and Publish.
+#     repository:
+#       owner: Belphemur
+#       name: winget-pkgs
+#       branch: "obsidian-headless-{{.Version}}"
+#       token: "{{ .Env.WINGET_TOKEN }}"
+#       pull_request:
+#         enabled: true
+#         base:
+#           owner: microsoft
+#           name: winget-pkgs
+#           branch: master
+#     skip_upload: auto
+#     commit_author:
+#       name: goreleaserbot
+#       email: bot@goreleaser.com
+#     tags:
+#       - obsidian
+#       - sync
+#       - publish
+#       - cli
 
 # END: New Publishing Sections
