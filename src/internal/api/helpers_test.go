@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 func TestHostAPIURL_WithHTTP(t *testing.T) {
@@ -90,7 +92,7 @@ func TestPostJSON_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	var resp map[string]any
 	err := client.postJSON(context.Background(), server.URL+"/test", map[string]any{"key": "value"}, &resp)
 	if err != nil {
@@ -113,7 +115,7 @@ func TestPostJSON_APIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	err := client.postJSON(context.Background(), server.URL+"/test", map[string]any{}, nil)
 	if err == nil {
 		t.Fatal("expected error")
@@ -145,7 +147,7 @@ func TestPostJSON_CustomHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	err := client.postJSON(context.Background(), server.URL+"/test", map[string]any{}, nil, &RequestOptions{
 		Headers: map[string]string{"X-Custom": "val"},
 	})

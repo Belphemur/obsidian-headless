@@ -22,6 +22,7 @@ type App struct {
 	root          command
 	logger        zerolog.Logger
 	configManager *configpkg.ConfigManager
+	httpClient    *api.Client
 }
 
 type command interface {
@@ -62,7 +63,14 @@ func (a *App) Command() *cobra.Command {
 }
 
 func (a *App) client() *api.Client {
-	return api.New(viper.GetString("api-base"), time.Duration(viper.GetInt("timeout"))*time.Second)
+	if a.httpClient == nil {
+		a.httpClient = api.New(
+			viper.GetString("api-base"),
+			time.Duration(viper.GetInt("timeout"))*time.Second,
+			a.logger,
+		)
+	}
+	return a.httpClient
 }
 
 func (a *App) requireToken() (string, error) {

@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 func TestSignIn(t *testing.T) {
@@ -28,7 +30,7 @@ func TestSignIn(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	resp, err := client.SignIn(context.Background(), "test@example.com", "pass", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -50,7 +52,7 @@ func TestSignOut(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	if err := client.SignOut(context.Background(), "tok"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +70,7 @@ func TestUserInfo(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	info, err := client.UserInfo(context.Background(), "tok")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 	"github.com/cenkalti/backoff/v5"
+	"github.com/sony/gobreaker/v2"
+
+	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
+	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 )
 
 func (c *Client) listPublishSites(ctx context.Context, token string) ([]model.PublishSite, error) {
@@ -56,43 +60,53 @@ func (c *Client) listPublishedFiles(ctx context.Context, token string, site mode
 
 func (c *Client) uploadPublishedFile(ctx context.Context, token string, site model.PublishSite, path, hash string, content []byte) error {
 	operation := func() error {
-		endpoint := hostAPIURL(site.Host, "/api/upload")
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(content))
-		if err != nil {
-			return backoff.Permanent(err)
-		}
-		req.Header.Set("Content-Type", "application/octet-stream")
-		req.Header.Set("User-Agent", userAgent)
-		req.Header.Set("obs-token", token)
-		req.Header.Set("obs-id", site.ID)
-		req.Header.Set("obs-path", url.PathEscape(path))
-		req.Header.Set("obs-hash", hash)
-
-		resp, err := c.http.Do(req)
-		if err != nil {
-			return backoff.Permanent(err)
-		}
-		defer resp.Body.Close()
-
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return backoff.Permanent(err)
-		}
-
-		var result map[string]any
-		if err := json.Unmarshal(bodyBytes, &result); err != nil {
-			return backoff.Permanent(err)
-		}
-		if code, _ := result["code"].(string); code != "" {
-			if msg, _ := result["message"].(string); msg != "" {
-				apiErr := &APIError{StatusCode: resp.StatusCode, Message: msg, Code: code}
-				if isServerOverloaded(apiErr) {
-					return apiErr
-				}
-				return backoff.Permanent(apiErr)
+		_, cbErr := c.cb.Execute(func() (struct{}, error) {
+			endpoint := hostAPIURL(site.Host, "/api/upload")
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(content))
+			if err != nil {
+				return struct{}{}, backoff.Permanent(err)
 			}
+			req.Header.Set("Content-Type", "application/octet-stream")
+			req.Header.Set("User-Agent", userAgent)
+			req.Header.Set("obs-token", token)
+			req.Header.Set("obs-id", site.ID)
+			req.Header.Set("obs-path", url.PathEscape(path))
+			req.Header.Set("obs-hash", hash)
+
+			resp, err := c.http.Do(req)
+			if err != nil {
+				return struct{}{}, backoff.Permanent(err)
+			}
+			defer resp.Body.Close()
+
+			bodyBytes, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return struct{}{}, backoff.Permanent(err)
+			}
+
+			var result map[string]any
+			if err := json.Unmarshal(bodyBytes, &result); err != nil {
+				return struct{}{}, backoff.Permanent(err)
+			}
+			if code, _ := result["code"].(string); code != "" {
+				if msg, _ := result["message"].(string); msg != "" {
+					apiErr := &APIError{StatusCode: resp.StatusCode, Message: msg, Code: code}
+					if isServerOverloaded(apiErr) {
+						return struct{}{}, apiErr
+					}
+					return struct{}{}, backoff.Permanent(apiErr)
+				}
+			}
+			return struct{}{}, nil
+		})
+
+		if errors.Is(cbErr, gobreaker.ErrOpenState) || errors.Is(cbErr, gobreaker.ErrTooManyRequests) {
+			return backoff.Permanent(&circuitbreaker.BreakerError{
+				Message: "Obsidian API is temporarily unavailable (circuit open); retry in ~30s",
+				Err:     cbErr,
+			})
 		}
-		return nil
+		return cbErr
 	}
 
 	return c.withRetry(ctx, operation)

@@ -3,12 +3,15 @@ package sync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/sony/gobreaker/v2"
 
+	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/encryption"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
@@ -17,11 +20,11 @@ import (
 
 func (e *Engine) ensureConnected(ctx context.Context) error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	if e.conn != nil {
+		e.mu.Unlock()
 		return nil
 	}
+	e.mu.Unlock()
 
 	statePath, err := configpkg.StatePath(e.Config.VaultID, e.Config.StatePath)
 	if err != nil {
@@ -34,26 +37,43 @@ func (e *Engine) ensureConnected(ctx context.Context) error {
 	initial, _ := store.Initial()
 	_ = store.Close()
 
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
-	if err != nil {
-		return fmt.Errorf("failed to dial websocket: %w", err)
-	}
+	_, cbErr := e.executeWithBreaker(func() (struct{}, error) {
+		conn, _, err := websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
+		if err != nil {
+			return struct{}{}, fmt.Errorf("failed to dial websocket: %w", err)
+		}
 
-	e.stopClose = context.AfterFunc(ctx, func() {
-		_ = conn.Close()
+		stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+
+		e.mu.Lock()
+		currentVersion := e.version
+		e.mu.Unlock()
+
+		version, remote, err := e.handshake(ctx, conn, currentVersion, initial)
+		if err != nil {
+			stopClose()
+			_ = conn.Close()
+			return struct{}{}, err
+		}
+
+		e.mu.Lock()
+		e.conn = conn
+		e.stopClose = stopClose
+		e.version = version
+		e.remote = remote
+		e.mu.Unlock()
+		return struct{}{}, nil
 	})
 
-	version, remote, err := e.handshake(ctx, conn, e.version, initial)
-	if err != nil {
-		e.stopClose()
-		_ = conn.Close()
-		e.stopClose = nil
-		return err
+	if cbErr != nil {
+		if errors.Is(cbErr, gobreaker.ErrOpenState) || errors.Is(cbErr, gobreaker.ErrTooManyRequests) {
+			return &circuitbreaker.BreakerError{
+				Message: fmt.Sprintf("Vault %s sync is temporarily unavailable (circuit open); retry in ~60s", e.Config.VaultID),
+				Err:     cbErr,
+			}
+		}
+		return cbErr
 	}
-
-	e.version = version
-	e.remote = remote
-	e.conn = conn
 	return nil
 }
 
@@ -130,7 +150,7 @@ func (e *Engine) dialWorker(ctx context.Context) (*websocket.Conn, error) {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	var conn *websocket.Conn
-	var err error
+	var lastErr error
 
 	for attempt := range maxRetries {
 		if attempt > 0 {
@@ -144,75 +164,85 @@ func (e *Engine) dialWorker(ctx context.Context) (*websocket.Conn, error) {
 			}
 		}
 
-		conn, _, err = websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
-		if err == nil {
-			break
+		_, cbErr := e.executeWithBreaker(func() (struct{}, error) {
+			var err error
+			conn, _, err = websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
+			if err != nil {
+				return struct{}{}, fmt.Errorf("worker dial: %w", err)
+			}
+
+			keyHash := ""
+			if e.rawKey != nil {
+				derivedKeyHash, err := encryption.ComputeKeyHash(e.rawKey, e.Config.EncryptionSalt, encryption.EncryptionVersion(e.Config.EncryptionVersion))
+				if err != nil {
+					_ = conn.Close()
+					return struct{}{}, fmt.Errorf("worker key hash: %w", err)
+				}
+				keyHash = derivedKeyHash
+			}
+
+			e.mu.Lock()
+			version := e.version
+			vaultID := e.Config.VaultID
+			token := e.Token
+			encVersion := e.Config.EncryptionVersion
+			deviceName := e.deviceName()
+			e.mu.Unlock()
+
+			initMessage := map[string]any{
+				"op":                 "init",
+				"token":              token,
+				"id":                 vaultID,
+				"keyhash":            keyHash,
+				"version":            version,
+				"initial":            false,
+				"device":             deviceName,
+				"encryption_version": encVersion,
+			}
+
+			if err := writeJSONLogged(conn, initMessage, e.Logger); err != nil {
+				_ = conn.Close()
+				return struct{}{}, fmt.Errorf("worker init write: %w", err)
+			}
+
+			var initResponse map[string]any
+			if err := readJSONLogged(conn, &initResponse, e.Logger); err != nil {
+				_ = conn.Close()
+				return struct{}{}, fmt.Errorf("worker init read: %w", err)
+			}
+
+			if res, _ := initResponse["res"].(string); res == "err" || stringValue(initResponse["status"]) == "err" {
+				_ = conn.Close()
+				return struct{}{}, fmt.Errorf("worker init failed: %s", stringValue(initResponse["msg"]))
+			}
+
+			for {
+				var msg map[string]any
+				if err := readJSONLogged(conn, &msg, e.Logger); err != nil {
+					_ = conn.Close()
+					return struct{}{}, fmt.Errorf("worker ready: %w", err)
+				}
+				if op, _ := msg["op"].(string); op == "ready" {
+					break
+				}
+			}
+
+			return struct{}{}, nil
+		})
+
+		if errors.Is(cbErr, gobreaker.ErrOpenState) || errors.Is(cbErr, gobreaker.ErrTooManyRequests) {
+			return nil, &circuitbreaker.BreakerError{
+				Message: fmt.Sprintf("Vault %s sync is temporarily unavailable (circuit open); retry in ~60s", e.Config.VaultID),
+				Err:     cbErr,
+			}
 		}
-
-		if attempt == maxRetries-1 {
-			return nil, fmt.Errorf("worker dial: %w", err)
+		if cbErr == nil {
+			return conn, nil
 		}
-
-		e.Logger.Warn().Int("attempt", attempt+1).Err(err).Msg("dialWorker failed, will retry")
+		lastErr = cbErr
+		e.Logger.Warn().Int("attempt", attempt+1).Err(cbErr).Msg("dialWorker failed, will retry")
 	}
-
-	keyHash := ""
-	if e.rawKey != nil {
-		derivedKeyHash, err := encryption.ComputeKeyHash(e.rawKey, e.Config.EncryptionSalt, encryption.EncryptionVersion(e.Config.EncryptionVersion))
-		if err != nil {
-			_ = conn.Close()
-			return nil, fmt.Errorf("worker key hash: %w", err)
-		}
-		keyHash = derivedKeyHash
-	}
-
-	e.mu.Lock()
-	version := e.version
-	vaultID := e.Config.VaultID
-	token := e.Token
-	encVersion := e.Config.EncryptionVersion
-	deviceName := e.deviceName()
-	e.mu.Unlock()
-
-	initMessage := map[string]any{
-		"op":                 "init",
-		"token":              token,
-		"id":                 vaultID,
-		"keyhash":            keyHash,
-		"version":            version,
-		"initial":            false,
-		"device":             deviceName,
-		"encryption_version": encVersion,
-	}
-
-	if err := writeJSONLogged(conn, initMessage, e.Logger); err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("worker init write: %w", err)
-	}
-
-	var initResponse map[string]any
-	if err := readJSONLogged(conn, &initResponse, e.Logger); err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("worker init read: %w", err)
-	}
-
-	if res, _ := initResponse["res"].(string); res == "err" || stringValue(initResponse["status"]) == "err" {
-		_ = conn.Close()
-		return nil, fmt.Errorf("worker init failed: %s", stringValue(initResponse["msg"]))
-	}
-
-	for {
-		var msg map[string]any
-		if err := readJSONLogged(conn, &msg, e.Logger); err != nil {
-			_ = conn.Close()
-			return nil, fmt.Errorf("worker ready: %w", err)
-		}
-		if op, _ := msg["op"].(string); op == "ready" {
-			break
-		}
-	}
-
-	return conn, nil
+	return nil, fmt.Errorf("worker dial failed after %d attempts: %w", maxRetries, lastErr)
 }
 
 func decodeJSONMessage(data []byte) (map[string]any, error) {

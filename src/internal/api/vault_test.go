@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 )
 
@@ -23,7 +25,7 @@ func TestRegions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	regions, err := client.Regions(context.Background(), "tok")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -45,7 +47,7 @@ func TestListVaults(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	vaults, err := client.ListVaults(context.Background(), "tok", 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -75,7 +77,7 @@ func TestCreateVault(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	vault, err := client.CreateVault(context.Background(), "tok", "New", "hash", "salt", "us", 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -97,7 +99,7 @@ func TestValidateVaultAccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, 5*time.Second)
+	client := New(server.URL, 5*time.Second, zerolog.Nop())
 	if err := client.ValidateVaultAccess(context.Background(), "tok", "v1", "hash", "host", 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
