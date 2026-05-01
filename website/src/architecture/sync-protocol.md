@@ -6,7 +6,7 @@ title: Sync Protocol
 
 ## Overview
 
-The Headless Go client's sync engine communicates with Obsidian's cloud servers over a **WebSocket (WSS)** connection. The protocol enables bidirectional file synchronization between a local vault and the Obsidian cloud, supporting encrypted file uploads, downloads, and real-time change notifications.
+The Headless Go client for Obsidian sync engine communicates with Obsidian's cloud servers over a **WebSocket (WSS)** connection. The protocol enables bidirectional file synchronization between a local vault and the Obsidian cloud, supporting encrypted file uploads, downloads, and real-time change notifications.
 
 ::: tip Design Philosophy
 All control messages are JSON objects sent as **text** WebSocket frames. File content is streamed as **binary** WebSocket frames (`ArrayBuffer`). This separation keeps control logic simple while allowing efficient large-file transfers.
