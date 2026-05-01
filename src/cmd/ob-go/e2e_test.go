@@ -89,7 +89,7 @@ func TestE2E_LoginAndListRemote(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 	t.Setenv("OBSIDIAN_API_BASE", apiBase)
 
-	output := runCLI(t, "login", "--email", "test@example.com", "--password", "test")
+	output := runCLI(t, "login", "--email", "test@example.com", "--password", "test", "--accept-disclaimer")
 	assert.Contains(t, output, "Login successful")
 
 	output = runCLI(t, "sync-list-remote")

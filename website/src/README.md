@@ -57,7 +57,7 @@ See the full **[Getting Started guide](./getting-started.md)** for detailed step
 
 ## What is Obsidian Headless Go?
 
-Obsidian Headless Go is the official CLI companion for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish). It brings the full power of Obsidian's sync and publish engines to the command line — no GUI required.
+Obsidian Headless Go is a community-maintained CLI companion for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish). It brings the full power of Obsidian's sync and publish engines to the command line — no GUI required.
 
 Perfect for:
 
@@ -65,3 +65,9 @@ Perfect for:
 - **CI/CD:** Publish documentation sites automatically on push
 - **Docker:** Run sync as a container with environment variables
 - **Automation:** Script sync and publish operations in your workflow
+
+::: danger ⚠️ Third-Party Disclaimer
+**Obsidian Headless Go is a third-party, community-maintained tool.** It is NOT an official Obsidian product, and it is NOT supported by Obsidian.
+
+If you encounter any issues, do **NOT** contact Obsidian support. Instead, please [open an issue on GitHub](https://github.com/Belphemur/obsidian-headless/issues).
+:::

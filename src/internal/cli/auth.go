@@ -15,6 +15,7 @@ func newLoginCommand(app *App) *cobra.Command {
 	var email string
 	var password string
 	var mfa string
+	var acceptDisclaimer bool
 	command := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to an Obsidian account",
@@ -42,6 +43,29 @@ func newLoginCommand(app *App) *cobra.Command {
 			if existingToken != "" {
 				_ = app.client().SignOut(cmd.Context(), existingToken)
 				_ = app.configManager.ClearAuthToken()
+			}
+
+			// Show disclaimer and require acceptance
+			if !acceptDisclaimer {
+				_, _ = fmt.Fprint(app.stdout, `╔══════════════════════════════════════════════════════════════╗
+║                       ⚠️  DISCLAIMER  ⚠️                      ║
+║                                                              ║
+║  Obsidian Headless is a third-party, community-maintained    ║
+║  tool. It is NOT an official Obsidian product, and it is    ║
+║  NOT supported by Obsidian.                                  ║
+║                                                              ║
+║  If you encounter any issues, do NOT contact Obsidian        ║
+║  support. Instead, please open an issue on GitHub:           ║
+║  https://github.com/Belphemur/obsidian-headless/issues       ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+`)
+				_, _ = fmt.Fprint(app.stdout, "Do you understand and accept this disclaimer? (y/N): ")
+				var response string
+				_, _ = fmt.Fscanln(app.stdin, &response)
+				if !strings.HasPrefix(strings.ToLower(response), "y") {
+					return fmt.Errorf("Login cancelled. You must accept the disclaimer to proceed.")
+				}
 			}
 
 			// Get credentials from flags or prompt
@@ -100,6 +124,7 @@ func newLoginCommand(app *App) *cobra.Command {
 	command.Flags().StringVar(&email, "email", "", "account email")
 	command.Flags().StringVar(&password, "password", "", "account password")
 	command.Flags().StringVar(&mfa, "mfa", "", "MFA code")
+	command.Flags().BoolVar(&acceptDisclaimer, "accept-disclaimer", false, "accept the third-party disclaimer non-interactively")
 
 	return command
 }
