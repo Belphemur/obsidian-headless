@@ -33,4 +33,5 @@ type ScanEvent struct {
 	Path       string
 	Type       EventType
 	DetectedAt time.Time
+	OldPath    string // previous path; only valid when Type == EventRename
 }
