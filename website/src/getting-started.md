@@ -4,11 +4,17 @@ title: Getting Started
 
 # Getting Started
 
+::: danger ⚠️ Third-Party Disclaimer
+**Obsidian Headless Go is a third-party, community-maintained tool.** It is NOT an official Obsidian product, and it is NOT supported by Obsidian.
+
+If you encounter any issues, do **NOT** contact Obsidian support. Instead, please [open an issue on GitHub](https://github.com/Belphemur/obsidian-headless/issues).
+:::
+
 Choose your setup: run Obsidian Headless Go as a Docker container or install the CLI directly on your machine.
 
 ## Docker Quick Start
 
-The Docker image handles everything — just log in, configure, and start.
+The Docker image handles everything — just log in, configure, and start. This is a third-party tool; see the disclaimer above.
 
 ### Step 1 — Log in (one-time)
 
@@ -137,7 +143,7 @@ ob --version
 
 ### Step 2 — Log in to your Obsidian account
 
-The `ob login` command authenticates you with Obsidian Sync and Publish:
+The `ob login` command authenticates you with Obsidian Sync and Publish. When running login, you will be prompted to accept the third-party disclaimer first:
 
 ```bash
 ob login
