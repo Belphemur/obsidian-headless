@@ -17,7 +17,22 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// waitFor polls cond every 100ms until it returns true or timeout expires.
+// On timeout, t.Fatalf is called with a descriptive message.
+func waitFor(t *testing.T, timeout time.Duration, desc string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("timed out after %v waiting for: %s", timeout, desc)
+}
+
 func TestContinuousInitialSync(t *testing.T) {
+	t.Parallel()
 	mock := newMockSyncServer(t)
 	mock.addRecord("remote.md", 1, []byte("remote content"))
 
@@ -50,13 +65,13 @@ func TestContinuousInitialSync(t *testing.T) {
 	}()
 
 	// Wait for initial connection, handshake, debounce (500ms) and sync
-	time.Sleep(3 * time.Second)
+	waitFor(t, 10*time.Second, "remote.md downloaded", func() bool {
+		_, err := os.ReadFile(filepath.Join(vault, "remote.md"))
+		return err == nil
+	})
 
 	// Verify remote file was downloaded without any local changes
-	data, err := os.ReadFile(filepath.Join(vault, "remote.md"))
-	if err != nil {
-		t.Fatalf("remote file was not downloaded during initial sync: %v", err)
-	}
+	data, _ := os.ReadFile(filepath.Join(vault, "remote.md"))
 	if string(data) != "remote content" {
 		t.Fatalf("unexpected content: %q", string(data))
 	}
@@ -68,6 +83,7 @@ func TestContinuousInitialSync(t *testing.T) {
 }
 
 func TestContinuousWatcherSync(t *testing.T) {
+	t.Parallel()
 	mock := newMockSyncServer(t)
 
 	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
@@ -98,28 +114,23 @@ func TestContinuousWatcherSync(t *testing.T) {
 		errCh <- e.RunContinuous(ctx)
 	}()
 
-	// Wait for connection and initial handshake
-	time.Sleep(500 * time.Millisecond)
+	// Wait briefly for connection establishment (the server needs a moment to accept)
+	time.Sleep(200 * time.Millisecond)
 
-	// Create a local file to trigger the watcher
+	// Create local file
 	mustWriteFile(t, filepath.Join(vault, "new.md"), []byte("new content"))
 
-	// Wait for watcher quiescence (2s) + debounce (500ms) + sync
-	time.Sleep(4 * time.Second)
-
-	// Verify file was uploaded to mock server
-	found := false
-	mock.mu.Lock()
-	for _, content := range mock.contentByUID {
-		if string(content) == "new content" {
-			found = true
-			break
+	// Wait for watcher quiescence + debounce + sync
+	waitFor(t, 10*time.Second, "new.md uploaded to mock server", func() bool {
+		mock.mu.Lock()
+		defer mock.mu.Unlock()
+		for _, content := range mock.contentByUID {
+			if string(content) == "new content" {
+				return true
+			}
 		}
-	}
-	mock.mu.Unlock()
-	if !found {
-		t.Fatal("file was not uploaded by continuous sync")
-	}
+		return false
+	})
 
 	cancel()
 	if err := <-errCh; err != nil && err != context.Canceled {
@@ -128,6 +139,7 @@ func TestContinuousWatcherSync(t *testing.T) {
 }
 
 func TestContinuousPushSync(t *testing.T) {
+	t.Parallel()
 	mock := newMockSyncServer(t)
 	mock.addRecord("remote.md", 1, []byte("remote content"))
 
@@ -159,36 +171,29 @@ func TestContinuousPushSync(t *testing.T) {
 		errCh <- e.RunContinuous(ctx)
 	}()
 
-	// Wait for connection and initial handshake
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
-	// Create a local file to trigger a sync
 	mustWriteFile(t, filepath.Join(vault, "local.md"), []byte("local content"))
 
-	// Wait for watcher quiescence (2s) + debounce (500ms) + sync
-	time.Sleep(4 * time.Second)
+	waitFor(t, 10*time.Second, "local.md uploaded to mock server", func() bool {
+		mock.mu.Lock()
+		defer mock.mu.Unlock()
+		for _, content := range mock.contentByUID {
+			if string(content) == "local content" {
+				return true
+			}
+		}
+		return false
+	})
 
 	// Verify remote file was downloaded
-	data, err := os.ReadFile(filepath.Join(vault, "remote.md"))
-	if err != nil {
-		t.Fatalf("remote file was not downloaded: %v", err)
-	}
+	waitFor(t, 10*time.Second, "remote.md downloaded", func() bool {
+		_, err := os.ReadFile(filepath.Join(vault, "remote.md"))
+		return err == nil
+	})
+	data, _ := os.ReadFile(filepath.Join(vault, "remote.md"))
 	if string(data) != "remote content" {
 		t.Fatalf("unexpected content: %q", string(data))
-	}
-
-	// Verify local file was uploaded
-	found := false
-	mock.mu.Lock()
-	for _, content := range mock.contentByUID {
-		if string(content) == "local content" {
-			found = true
-			break
-		}
-	}
-	mock.mu.Unlock()
-	if !found {
-		t.Fatal("local file was not uploaded")
 	}
 
 	cancel()
@@ -198,6 +203,7 @@ func TestContinuousPushSync(t *testing.T) {
 }
 
 func TestContinuousReconnection(t *testing.T) {
+	t.Parallel()
 	mock := newMockSyncServer(t)
 
 	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
@@ -228,33 +234,27 @@ func TestContinuousReconnection(t *testing.T) {
 		errCh <- e.RunContinuous(ctx)
 	}()
 
-	// Wait for connection
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	// Force close all connections on the server side
 	server.CloseClientConnections()
 
-	// Wait for reconnection backoff (5s) + reconnect + sync
-	time.Sleep(7 * time.Second)
+	// Wait for reconnection - use waitFor to detect when reconnect happens
+	// by checking if we can upload a file successfully
+	time.Sleep(500 * time.Millisecond) // brief wait for disconnect to propagate
 
-	// Create a file and verify it syncs after reconnect
 	mustWriteFile(t, filepath.Join(vault, "after-reconnect.md"), []byte("after reconnect"))
 
-	// Wait for watcher quiescence + debounce + sync
-	time.Sleep(4 * time.Second)
-
-	found := false
-	mock.mu.Lock()
-	for _, content := range mock.contentByUID {
-		if string(content) == "after reconnect" {
-			found = true
-			break
+	waitFor(t, 15*time.Second, "after-reconnect.md uploaded after reconnection", func() bool {
+		mock.mu.Lock()
+		defer mock.mu.Unlock()
+		for _, content := range mock.contentByUID {
+			if string(content) == "after reconnect" {
+				return true
+			}
 		}
-	}
-	mock.mu.Unlock()
-	if !found {
-		t.Fatal("file was not uploaded after reconnection")
-	}
+		return false
+	})
 
 	cancel()
 	if err := <-errCh; err != nil && err != context.Canceled {
@@ -263,6 +263,7 @@ func TestContinuousReconnection(t *testing.T) {
 }
 
 func TestRunContinuousInvalidPeriodicScan(t *testing.T) {
+	t.Parallel()
 	e := &Engine{
 		Config: model.SyncConfig{
 			VaultID:      "test-invalid-periodic",
@@ -284,6 +285,7 @@ func TestRunContinuousInvalidPeriodicScan(t *testing.T) {
 }
 
 func TestRunContinuousPeriodicScanZero(t *testing.T) {
+	t.Parallel()
 	mock := newMockSyncServer(t)
 	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
 	defer server.Close()
@@ -314,7 +316,7 @@ func TestRunContinuousPeriodicScanZero(t *testing.T) {
 		errCh <- e.RunContinuous(ctx)
 	}()
 
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	cancel()
 
 	if err := <-errCh; err != nil && err != context.Canceled {
@@ -323,6 +325,7 @@ func TestRunContinuousPeriodicScanZero(t *testing.T) {
 }
 
 func TestRunContinuousPeriodicScanEmptyDefault(t *testing.T) {
+	t.Parallel()
 	mock := newMockSyncServer(t)
 	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
 	defer server.Close()
@@ -353,7 +356,7 @@ func TestRunContinuousPeriodicScanEmptyDefault(t *testing.T) {
 		errCh <- e.RunContinuous(ctx)
 	}()
 
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	cancel()
 
 	if err := <-errCh; err != nil && err != context.Canceled {
@@ -362,6 +365,7 @@ func TestRunContinuousPeriodicScanEmptyDefault(t *testing.T) {
 }
 
 func TestContinuousInitialSyncWithStaleState(t *testing.T) {
+	t.Parallel()
 	mock := newMockSyncServer(t)
 	mock.addRecord("remote.md", 1, []byte("remote content"))
 
@@ -417,13 +421,13 @@ func TestContinuousInitialSyncWithStaleState(t *testing.T) {
 	}()
 
 	// Wait for initial connection, handshake, debounce (500ms) and sync
-	time.Sleep(3 * time.Second)
+	waitFor(t, 10*time.Second, "remote.md downloaded (stale state)", func() bool {
+		_, err := os.ReadFile(filepath.Join(vault, "remote.md"))
+		return err == nil
+	})
 
 	// Verify remote file was downloaded (not deleted from remote)
-	data, err := os.ReadFile(filepath.Join(vault, "remote.md"))
-	if err != nil {
-		t.Fatalf("remote file was not downloaded during initial sync with stale state: %v", err)
-	}
+	data, _ := os.ReadFile(filepath.Join(vault, "remote.md"))
 	if string(data) != "remote content" {
 		t.Fatalf("unexpected content: %q", string(data))
 	}
@@ -443,6 +447,7 @@ func TestContinuousInitialSyncWithStaleState(t *testing.T) {
 }
 
 func TestContinuousHeartbeatAfterReconnect(t *testing.T) {
+	t.Parallel()
 	mock := newMockSyncServer(t)
 
 	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
@@ -477,39 +482,22 @@ func TestContinuousHeartbeatAfterReconnect(t *testing.T) {
 		errCh <- e.RunContinuous(ctx)
 	}()
 
-	// Wait for the first ping (server will close connection after pong)
+	// Wait for first ping (heartbeat ticker is 20s, first ping sent at ~20s)
 	var initialPings int
-	foundInitial := false
-	for range 60 {
-		time.Sleep(500 * time.Millisecond)
+	waitFor(t, 30*time.Second, "first ping received", func() bool {
 		mock.mu.Lock()
 		initialPings = mock.pingCount
 		mock.mu.Unlock()
-		if initialPings > 0 {
-			foundInitial = true
-			break
-		}
-	}
-	if !foundInitial {
-		t.Fatal("expected at least one ping on initial connection")
-	}
+		return initialPings > 0
+	})
 
-	// After the server closed the connection, the client should reconnect
-	// and the heartbeat should resume, sending another ping.
-	foundAfterReconnect := false
-	for range 60 {
-		time.Sleep(500 * time.Millisecond)
+	// Wait for ping after reconnect (server closes after first pong, client reconnects)
+	waitFor(t, 30*time.Second, "ping after reconnect", func() bool {
 		mock.mu.Lock()
-		finalPings := mock.pingCount
+		pings := mock.pingCount
 		mock.mu.Unlock()
-		if finalPings > initialPings {
-			foundAfterReconnect = true
-			break
-		}
-	}
-	if !foundAfterReconnect {
-		t.Fatalf("expected ping after reconnect")
-	}
+		return pings > initialPings
+	})
 
 	cancel()
 	if err := <-errCh; err != nil && err != context.Canceled {
@@ -518,10 +506,12 @@ func TestContinuousHeartbeatAfterReconnect(t *testing.T) {
 }
 
 func TestApplyRenameFixups(t *testing.T) {
+	t.Parallel()
 	oldPath := "old/file.md"
 	newPath := "new/file.md"
 
 	t.Run("local rename fixup", func(t *testing.T) {
+		t.Parallel()
 		local := map[string]model.FileRecord{
 			oldPath: {Path: oldPath, Hash: "abcdef", Size: 100, MTime: 1000},
 		}
@@ -553,6 +543,7 @@ func TestApplyRenameFixups(t *testing.T) {
 	})
 
 	t.Run("remote rename fixup", func(t *testing.T) {
+		t.Parallel()
 		local := map[string]model.FileRecord{}
 		remote := map[string]model.FileRecord{
 			oldPath: {Path: oldPath, Hash: "fedcba", Size: 200, MTime: 2000},
@@ -576,6 +567,7 @@ func TestApplyRenameFixups(t *testing.T) {
 	})
 
 	t.Run("no matching record", func(t *testing.T) {
+		t.Parallel()
 		local := map[string]model.FileRecord{}
 		remote := map[string]model.FileRecord{}
 
@@ -591,6 +583,7 @@ func TestApplyRenameFixups(t *testing.T) {
 	})
 
 	t.Run("non-rename event ignored", func(t *testing.T) {
+		t.Parallel()
 		local := map[string]model.FileRecord{
 			oldPath: {Path: oldPath, Hash: "abc", Size: 100, MTime: 1000},
 		}
