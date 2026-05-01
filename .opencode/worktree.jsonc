@@ -6,7 +6,7 @@
 
   // Custom base path for worktree storage (supports ~)
   // Default: ~/.local/share/opencode/worktree
-  "worktreePath": "~/repo/worktrees",
+  "worktreePath": "~/repos/worktrees",
 
   "sync": {
     // Files to copy from main worktree to new worktrees
