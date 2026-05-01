@@ -6,6 +6,7 @@ import (
 )
 
 func TestCredentialStoreRoundTrip(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "creds.db")
 	masterKey := make([]byte, 32)
 	for i := range masterKey {
@@ -47,6 +48,7 @@ func TestCredentialStoreRoundTrip(t *testing.T) {
 }
 
 func TestCredentialStoreGetMissing(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "creds.db")
 	masterKey := make([]byte, 32)
 
@@ -66,6 +68,7 @@ func TestCredentialStoreGetMissing(t *testing.T) {
 }
 
 func TestCredentialStoreWrongKey(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "creds.db")
 	masterKey := make([]byte, 32)
 	for i := range masterKey {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,6 +26,7 @@ func testLogger() zerolog.Logger {
 }
 
 func TestLoadState(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	statePath := filepath.Join(tmp, "state.db")
 	store, err := storage.Open(statePath)
@@ -60,6 +62,7 @@ func TestLoadState(t *testing.T) {
 }
 
 func TestScanLocal(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	mustWriteFile(t, filepath.Join(tmp, "a.md"), []byte("hello"))
 	mustWriteFile(t, filepath.Join(tmp, "b.md"), []byte("world"))
@@ -84,6 +87,7 @@ func TestScanLocal(t *testing.T) {
 }
 
 func TestSaveState(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	statePath := filepath.Join(tmp, "state.db")
 	store, err := storage.Open(statePath)
@@ -138,6 +142,7 @@ func TestSaveState(t *testing.T) {
 }
 
 func TestSaveStateIncremental(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	statePath := filepath.Join(tmp, "state.db")
 	store, err := storage.Open(statePath)
@@ -265,9 +270,7 @@ func (s *mockSyncServer) cloneRecordsByPath() map[string]model.FileRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	result := make(map[string]model.FileRecord, len(s.recordsByPath))
-	for k, v := range s.recordsByPath {
-		result[k] = v
-	}
+	maps.Copy(result, s.recordsByPath)
 	return result
 }
 
@@ -440,6 +443,7 @@ func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestExecutePlan(t *testing.T) {
+	t.Parallel()
 	mock := newMockSyncServer(t)
 	mock.addRecord("remote.md", 1, []byte("remote content"))
 
@@ -527,12 +531,13 @@ func TestExecutePlan(t *testing.T) {
 }
 
 func TestExecutePlanParallelDownloads(t *testing.T) {
+	t.Parallel()
 	const numFiles = 200
 
 	mock := newMockSyncServer(t)
 	for i := range numFiles {
 		path := fmt.Sprintf("file-%04d.md", i)
-		content := []byte(fmt.Sprintf("content for file %d\n", i))
+		content := fmt.Appendf(nil, "content for file %d\n", i)
 		mock.addRecord(path, int64(i+1), content)
 	}
 
@@ -600,6 +605,7 @@ func TestExecutePlanParallelDownloads(t *testing.T) {
 }
 
 func TestExecutePlanParallelSmallSync(t *testing.T) {
+	t.Parallel()
 	mock := newMockSyncServer(t)
 	mock.addRecord("a.md", 1, []byte("file a"))
 	mock.addRecord("b.md", 2, []byte("file b"))

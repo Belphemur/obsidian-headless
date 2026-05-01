@@ -10,6 +10,7 @@ import (
 )
 
 func TestWithRetry_SuccessFirstTry(t *testing.T) {
+	t.Parallel()
 	client := New("", 5*time.Second)
 	calls := 0
 	op := func() error {
@@ -25,6 +26,7 @@ func TestWithRetry_SuccessFirstTry(t *testing.T) {
 }
 
 func TestWithRetry_PermanentError(t *testing.T) {
+	t.Parallel()
 	client := New("", 5*time.Second)
 	calls := 0
 	op := func() error {
@@ -40,6 +42,7 @@ func TestWithRetry_PermanentError(t *testing.T) {
 }
 
 func TestWithRetry_ContextCancelled(t *testing.T) {
+	t.Parallel()
 	client := New("", 5*time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0

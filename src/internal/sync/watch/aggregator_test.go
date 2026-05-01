@@ -7,6 +7,7 @@ import (
 )
 
 func TestAggregator_PushRename(t *testing.T) {
+	t.Parallel()
 	out := make(chan ScanEvent, 10)
 	agg := NewAggregator(out)
 
@@ -59,6 +60,7 @@ func TestAggregator_PushRename_Overwrites(t *testing.T) {
 }
 
 func TestAggregator_Shutdown_PreservesOldPath(t *testing.T) {
+	t.Parallel()
 	out := make(chan ScanEvent, 10)
 	agg := NewAggregator(out)
 

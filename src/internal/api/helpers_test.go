@@ -11,6 +11,7 @@ import (
 )
 
 func TestHostAPIURL_WithHTTP(t *testing.T) {
+	t.Parallel()
 	got := hostAPIURL("http://example.com", "/api")
 	want := "http://example.com/api"
 	if got != want {
@@ -19,6 +20,7 @@ func TestHostAPIURL_WithHTTP(t *testing.T) {
 }
 
 func TestHostAPIURL_WithHTTPS(t *testing.T) {
+	t.Parallel()
 	got := hostAPIURL("https://example.com", "/api")
 	want := "https://example.com/api"
 	if got != want {
@@ -27,6 +29,7 @@ func TestHostAPIURL_WithHTTPS(t *testing.T) {
 }
 
 func TestHostAPIURL_Localhost(t *testing.T) {
+	t.Parallel()
 	got := hostAPIURL("localhost:8080", "/api")
 	want := "http://localhost:8080/api"
 	if got != want {
@@ -35,6 +38,7 @@ func TestHostAPIURL_Localhost(t *testing.T) {
 }
 
 func TestHostAPIURL_127_0_0_1(t *testing.T) {
+	t.Parallel()
 	got := hostAPIURL("127.0.0.1:3000", "/api")
 	want := "http://127.0.0.1:3000/api"
 	if got != want {
@@ -43,6 +47,7 @@ func TestHostAPIURL_127_0_0_1(t *testing.T) {
 }
 
 func TestHostAPIURL_NoProtocol(t *testing.T) {
+	t.Parallel()
 	got := hostAPIURL("example.com", "/api")
 	want := "https://example.com/api"
 	if got != want {
@@ -51,6 +56,7 @@ func TestHostAPIURL_NoProtocol(t *testing.T) {
 }
 
 func TestHostAPIURL_TrailingSlash(t *testing.T) {
+	t.Parallel()
 	got := hostAPIURL("https://example.com/", "/api")
 	want := "https://example.com/api"
 	if got != want {
@@ -59,6 +65,7 @@ func TestHostAPIURL_TrailingSlash(t *testing.T) {
 }
 
 func TestPostJSON_Success(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -95,6 +102,7 @@ func TestPostJSON_Success(t *testing.T) {
 }
 
 func TestPostJSON_APIError(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -123,6 +131,7 @@ func TestPostJSON_APIError(t *testing.T) {
 }
 
 func TestPostJSON_CustomHeaders(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
