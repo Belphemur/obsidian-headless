@@ -6,7 +6,7 @@ title: Encryption
 
 ## Overview
 
-Obsidian Headless uses the same end-to-end encryption protocol as Obsidian Sync to protect file content and paths before they are transmitted to the server. The encryption key is derived from a user-provided password and a vault-specific salt; the server never sees the plaintext key.
+The Headless Go client for Obsidian uses the same end-to-end encryption protocol as Obsidian Sync to protect file content and paths before they are transmitted to the server. The encryption key is derived from a user-provided password and a vault-specific salt; the server never sees the plaintext key.
 
 Three encryption versions exist:
 

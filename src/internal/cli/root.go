@@ -37,7 +37,7 @@ func newRootCommand(app *App) *rootCommand {
 
 	root := &cobra.Command{
 		Use:           "ob",
-		Short:         "Go implementation of the Obsidian headless client",
+		Short:         "Headless Go client for Obsidian Sync and Publish",
 		Version:       buildinfo.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,

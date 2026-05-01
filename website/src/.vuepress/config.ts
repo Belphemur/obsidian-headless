@@ -16,8 +16,8 @@ export default defineUserConfig({
       },
     },
   }),
-  title: 'Obsidian Headless Go',
-  description: 'Headless Go CLI client for Obsidian Sync and Obsidian Publish — run sync and publish from the command line, in Docker, or on servers',
+  title: 'Headless Go client for Obsidian',
+  description: 'Headless Go CLI client for Obsidian Sync and Obsidian Publish — sync and publish your vaults from the command line, in Docker, or on servers',
   base: '/obsidian-headless/',
   lang: 'en-US',
 
@@ -35,7 +35,7 @@ export default defineUserConfig({
     ['link', { rel: 'manifest', href: '/site.webmanifest' }],
     // Meta
     ['meta', { name: 'theme-color', content: '#A88BFA' }],
-    ['meta', { property: 'og:title', content: 'Obsidian Headless Go' }],
+    ['meta', { property: 'og:title', content: 'Headless Go client for Obsidian' }],
     ['meta', { property: 'og:description', content: 'Headless Go CLI client for Obsidian Sync and Obsidian Publish' }],
   ],
 

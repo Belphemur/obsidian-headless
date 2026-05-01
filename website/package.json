@@ -1,7 +1,7 @@
 {
   "name": "obsidian-headless-docs",
   "version": "1.0.0",
-  "description": "Documentation for Obsidian Headless — CLI client for Obsidian Sync and Publish",
+  "description": "Documentation for the Headless Go client for Obsidian — CLI client for Obsidian Sync and Publish",
   "private": true,
   "scripts": {
     "docs:dev": "vuepress-vite dev src",

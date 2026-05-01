@@ -4,7 +4,7 @@ title: Architecture
 
 # Architecture
 
-This page provides a high-level overview of how Obsidian Headless is structured, how data moves through the system, and where configuration lives.
+This page provides a high-level overview of how the Headless Go client for Obsidian is structured, how data moves through the system, and where configuration lives.
 
 For deeper dives into specific areas, see the [architecture subpages](#further-reading).
 

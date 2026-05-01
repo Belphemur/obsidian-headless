@@ -4,7 +4,7 @@ title: Usage
 
 # Usage Guide
 
-New to Obsidian Headless Go? Start with the **[Getting Started guide](/getting-started)** for a step-by-step walkthrough.
+New to the Headless Go client for Obsidian? Start with the **[Getting Started guide](/getting-started)** for a step-by-step walkthrough.
 
 ## Command Reference
 
