@@ -132,13 +132,10 @@ func (e *Engine) dialWorker(ctx context.Context) (*websocket.Conn, error) {
 	var conn *websocket.Conn
 	var err error
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	for attempt := range maxRetries {
 		if attempt > 0 {
 			jitter := time.Duration(rng.Int63n(int64(baseDelay)))
-			delay := baseDelay*time.Duration(1<<uint(attempt-1)) + jitter
-			if delay > maxDelay {
-				delay = maxDelay
-			}
+			delay := min(baseDelay*time.Duration(1<<uint(attempt-1))+jitter, maxDelay)
 			e.Logger.Debug().Int("attempt", attempt+1).Dur("delay", delay).Msg("dialWorker retrying")
 			select {
 			case <-ctx.Done():

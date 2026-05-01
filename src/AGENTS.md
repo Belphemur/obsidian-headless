@@ -200,6 +200,39 @@ This is already in place for:
 - `src/internal/config` package tests
 - `src-go` integration tests
 
+## Testing
+
+### Parallel by Default
+
+All test functions **must** call `t.Parallel()` unless there is a clear, documented reason not to. This keeps the test suite fast as it grows.
+
+```go
+func TestMyFeature(t *testing.T) {
+    t.Parallel()
+    // ...
+}
+```
+
+### When NOT to Parallelize
+
+Skipping `t.Parallel()` is only acceptable when:
+
+- **`t.Setenv()` is used** — Go's testing package panics at runtime if `t.Parallel()` is combined with `t.Setenv()`. Tests in packages that need environment variables should use `TestMain` + `os.Setenv` instead.
+- **Global mutable state is mutated** — If a test modifies a package-level variable (e.g., reducing a timing constant for test speed), it must run serially to avoid data races.
+- **Shared external resources** — Tests that depend on a single external process or fixed port must either obtain a unique port per test or run serially.
+
+### CI Flags
+
+The test suite runs with these flags for maximum catch:
+
+```
+go test -race -count=1 -timeout=10m -shuffle=on ./...
+```
+
+- `-race` — catches data races
+- `-count=1` — disables caching (prevents cache-based flakiness)
+- `-shuffle=on` — randomizes test order to catch hidden inter-test dependencies
+
 ## Code Quality
 
 Run the following commands before committing:

@@ -3,6 +3,7 @@ package util
 import "testing"
 
 func TestIsLegalPath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path string
 		want bool
@@ -29,6 +30,7 @@ func TestIsLegalPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
 			got := IsLegalPath(tt.path)
 			if got != tt.want {
 				t.Errorf("IsLegalPath(%q) = %v, want %v", tt.path, got, tt.want)

@@ -5,6 +5,7 @@ import (
 )
 
 func TestThreeWayMerge(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		base    string
@@ -61,6 +62,7 @@ func TestThreeWayMerge(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := threeWayMerge(tt.base, tt.local, tt.remote)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("threeWayMerge() error = %v, wantErr %v", err, tt.wantErr)
@@ -74,6 +76,7 @@ func TestThreeWayMerge(t *testing.T) {
 }
 
 func TestJSONMerge(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		localJSON  string
@@ -115,6 +118,7 @@ func TestJSONMerge(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := jsonMerge(tt.localJSON, tt.remoteJSON)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("jsonMerge() error = %v, wantErr %v", err, tt.wantErr)
@@ -128,6 +132,7 @@ func TestJSONMerge(t *testing.T) {
 }
 
 func TestIsMergeablePath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path string
 		want bool
@@ -140,6 +145,7 @@ func TestIsMergeablePath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
 			if got := isMergeablePath(tt.path); got != tt.want {
 				t.Errorf("isMergeablePath(%q) = %v, want %v", tt.path, got, tt.want)
 			}
@@ -148,6 +154,7 @@ func TestIsMergeablePath(t *testing.T) {
 }
 
 func TestIsJSONConfigPath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path      string
 		configDir string
@@ -166,6 +173,7 @@ func TestIsJSONConfigPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
 			if got := isJSONConfigPath(tt.path, tt.configDir); got != tt.want {
 				t.Errorf("isJSONConfigPath(%q, %q) = %v, want %v", tt.path, tt.configDir, got, tt.want)
 			}

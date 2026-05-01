@@ -6,6 +6,7 @@ import (
 )
 
 func TestAPIError_Error(t *testing.T) {
+	t.Parallel()
 	err := &APIError{StatusCode: 500, Message: "internal error", Code: "ERR"}
 	if got := err.Error(); got != "internal error" {
 		t.Errorf("Error() = %q, want %q", got, "internal error")
@@ -13,6 +14,7 @@ func TestAPIError_Error(t *testing.T) {
 }
 
 func TestMakeAPIError_ErrorField(t *testing.T) {
+	t.Parallel()
 	appErr := apiError{Error: "something went wrong", Code: "CODE"}
 	err := makeAPIError(400, "Bad Request", appErr, nil)
 	if err == nil {
@@ -34,6 +36,7 @@ func TestMakeAPIError_ErrorField(t *testing.T) {
 }
 
 func TestMakeAPIError_StatusCode400(t *testing.T) {
+	t.Parallel()
 	appErr := apiError{Message: "msg", Code: "C"}
 	err := makeAPIError(400, "Bad Request", appErr, &struct{}{})
 	if err == nil {
@@ -46,6 +49,7 @@ func TestMakeAPIError_StatusCode400(t *testing.T) {
 }
 
 func TestMakeAPIError_StatusCode400NoMessage(t *testing.T) {
+	t.Parallel()
 	appErr := apiError{}
 	err := makeAPIError(404, "Not Found", appErr, &struct{}{})
 	if err == nil {
@@ -58,6 +62,7 @@ func TestMakeAPIError_StatusCode400NoMessage(t *testing.T) {
 }
 
 func TestMakeAPIError_TargetNilWithMessage(t *testing.T) {
+	t.Parallel()
 	appErr := apiError{Message: "m", Code: "c"}
 	err := makeAPIError(200, "OK", appErr, nil)
 	if err == nil {
@@ -70,6 +75,7 @@ func TestMakeAPIError_TargetNilWithMessage(t *testing.T) {
 }
 
 func TestMakeAPIError_TargetNilNoMessage(t *testing.T) {
+	t.Parallel()
 	appErr := apiError{}
 	err := makeAPIError(200, "OK", appErr, nil)
 	if err != nil {
@@ -78,6 +84,7 @@ func TestMakeAPIError_TargetNilNoMessage(t *testing.T) {
 }
 
 func TestMakeAPIError_TargetNotNilMessageAndCode(t *testing.T) {
+	t.Parallel()
 	appErr := apiError{Message: "m", Code: "c"}
 	err := makeAPIError(200, "OK", appErr, &struct{}{})
 	if err == nil {
@@ -86,6 +93,7 @@ func TestMakeAPIError_TargetNotNilMessageAndCode(t *testing.T) {
 }
 
 func TestMakeAPIError_TargetNotNilNoMessageOrCode(t *testing.T) {
+	t.Parallel()
 	appErr := apiError{}
 	err := makeAPIError(200, "OK", appErr, &struct{}{})
 	if err != nil {
@@ -94,6 +102,7 @@ func TestMakeAPIError_TargetNotNilNoMessageOrCode(t *testing.T) {
 }
 
 func TestIsServerOverloaded_True(t *testing.T) {
+	t.Parallel()
 	err := &APIError{Message: "Server is overloaded, please retry"}
 	if !isServerOverloaded(err) {
 		t.Error("expected true")
@@ -101,6 +110,7 @@ func TestIsServerOverloaded_True(t *testing.T) {
 }
 
 func TestIsServerOverloaded_False(t *testing.T) {
+	t.Parallel()
 	err := &APIError{Message: "Not found"}
 	if isServerOverloaded(err) {
 		t.Error("expected false")
@@ -108,6 +118,7 @@ func TestIsServerOverloaded_False(t *testing.T) {
 }
 
 func TestIsServerOverloaded_NonAPIError(t *testing.T) {
+	t.Parallel()
 	if isServerOverloaded(errors.New("some error")) {
 		t.Error("expected false")
 	}

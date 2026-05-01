@@ -8,6 +8,7 @@ import (
 )
 
 func TestGetInode_Unix(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("inode not available on Windows")
 	}
@@ -27,12 +28,14 @@ func TestGetInode_Unix(t *testing.T) {
 }
 
 func TestGetInode_Nil(t *testing.T) {
+	t.Parallel()
 	if ino := getInode(nil); ino != 0 {
 		t.Fatalf("expected 0 for nil FileInfo, got %d", ino)
 	}
 }
 
 func TestGetInode_Windows(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "windows" {
 		t.Skip("test only valid on Windows")
 	}
@@ -52,6 +55,7 @@ func TestGetInode_Windows(t *testing.T) {
 }
 
 func TestScanner_HasChanged_InodeDetection(t *testing.T) {
+	t.Parallel()
 	s := NewScanner()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
@@ -88,6 +92,7 @@ func TestScanner_HasChanged_InodeDetection(t *testing.T) {
 }
 
 func TestScanner_GetInode(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("inode not available on Windows")
 	}
@@ -115,6 +120,7 @@ func TestScanner_GetInode(t *testing.T) {
 }
 
 func TestScanner_GetInode_Missing(t *testing.T) {
+	t.Parallel()
 	s := NewScanner()
 	_, ok := s.GetInode("/nonexistent")
 	if ok {
@@ -123,6 +129,7 @@ func TestScanner_GetInode_Missing(t *testing.T) {
 }
 
 func TestScanner_UpdateInfo(t *testing.T) {
+	t.Parallel()
 	s := NewScanner()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
@@ -142,6 +149,7 @@ func TestScanner_UpdateInfo(t *testing.T) {
 }
 
 func TestScanner_Remove(t *testing.T) {
+	t.Parallel()
 	s := NewScanner()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")

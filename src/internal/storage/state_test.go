@@ -12,6 +12,7 @@ import (
 )
 
 func TestMigrationFromV1WithExistingData(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "state.db")
 

@@ -12,6 +12,7 @@ import (
 )
 
 func TestListPublishSites(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -33,6 +34,7 @@ func TestListPublishSites(t *testing.T) {
 }
 
 func TestCreatePublishSite(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -54,6 +56,7 @@ func TestCreatePublishSite(t *testing.T) {
 }
 
 func TestSetPublishSlug(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -71,6 +74,7 @@ func TestSetPublishSlug(t *testing.T) {
 }
 
 func TestGetPublishSlugs(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -92,6 +96,7 @@ func TestGetPublishSlugs(t *testing.T) {
 }
 
 func TestListPublishedFiles(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -113,6 +118,7 @@ func TestListPublishedFiles(t *testing.T) {
 }
 
 func TestDeletePublishedFile(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
