@@ -13,6 +13,8 @@ import (
 
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
+	watchpkg "github.com/Belphemur/obsidian-headless/src-go/internal/sync/watch"
+	"github.com/rs/zerolog"
 )
 
 func TestContinuousInitialSync(t *testing.T) {
@@ -513,4 +515,100 @@ func TestContinuousHeartbeatAfterReconnect(t *testing.T) {
 	if err := <-errCh; err != nil && err != context.Canceled {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
+}
+
+func TestApplyRenameFixups(t *testing.T) {
+	oldPath := "old/file.md"
+	newPath := "new/file.md"
+
+	t.Run("local rename fixup", func(t *testing.T) {
+		local := map[string]model.FileRecord{
+			oldPath: {Path: oldPath, Hash: "abcdef", Size: 100, MTime: 1000},
+		}
+		remote := map[string]model.FileRecord{}
+
+		renames := []watchpkg.ScanEvent{
+			{Path: newPath, OldPath: oldPath, Type: watchpkg.EventRename},
+		}
+		applyRenameFixups(local, remote, renames, zerolog.Nop())
+
+		// Old path should be gone
+		if _, ok := local[oldPath]; ok {
+			t.Fatal("expected old path to be deleted from local")
+		}
+		// New path should have the record
+		rec, ok := local[newPath]
+		if !ok {
+			t.Fatal("expected new path to exist in local")
+		}
+		if rec.Hash != "abcdef" {
+			t.Fatalf("expected hash 'abcdef', got %s", rec.Hash)
+		}
+		if rec.Path != newPath {
+			t.Fatalf("expected Path %s, got %s", newPath, rec.Path)
+		}
+		if rec.PreviousPath != oldPath {
+			t.Fatalf("expected PreviousPath %s, got %s", oldPath, rec.PreviousPath)
+		}
+	})
+
+	t.Run("remote rename fixup", func(t *testing.T) {
+		local := map[string]model.FileRecord{}
+		remote := map[string]model.FileRecord{
+			oldPath: {Path: oldPath, Hash: "fedcba", Size: 200, MTime: 2000},
+		}
+
+		renames := []watchpkg.ScanEvent{
+			{Path: newPath, OldPath: oldPath, Type: watchpkg.EventRename},
+		}
+		applyRenameFixups(local, remote, renames, zerolog.Nop())
+
+		rec, ok := remote[newPath]
+		if !ok {
+			t.Fatal("expected new path to exist in remote")
+		}
+		if rec.Hash != "fedcba" {
+			t.Fatalf("expected hash 'fedcba', got %s", rec.Hash)
+		}
+		if rec.PreviousPath != oldPath {
+			t.Fatalf("expected PreviousPath %s, got %s", oldPath, rec.PreviousPath)
+		}
+	})
+
+	t.Run("no matching record", func(t *testing.T) {
+		local := map[string]model.FileRecord{}
+		remote := map[string]model.FileRecord{}
+
+		renames := []watchpkg.ScanEvent{
+			{Path: newPath, OldPath: "nonexistent.md", Type: watchpkg.EventRename},
+		}
+		applyRenameFixups(local, remote, renames, zerolog.Nop())
+
+		// Should not panic, no records added
+		if len(local) != 0 || len(remote) != 0 {
+			t.Fatal("expected no side effects for unmatched rename")
+		}
+	})
+
+	t.Run("non-rename event ignored", func(t *testing.T) {
+		local := map[string]model.FileRecord{
+			oldPath: {Path: oldPath, Hash: "abc", Size: 100, MTime: 1000},
+		}
+		remote := map[string]model.FileRecord{}
+
+		renames := []watchpkg.ScanEvent{
+			{Path: oldPath, Type: watchpkg.EventRemove},
+			{Path: newPath, OldPath: oldPath, Type: watchpkg.EventRename},
+		}
+		applyRenameFixups(local, remote, renames, zerolog.Nop())
+
+		// Only the rename should be applied, not the remove
+		rec, ok := local[newPath]
+		if !ok {
+			t.Fatal("expected rename to be applied")
+		}
+		if rec.PreviousPath != oldPath {
+			t.Fatalf("expected PreviousPath %s, got %s", oldPath, rec.PreviousPath)
+		}
+	})
 }

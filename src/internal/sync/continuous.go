@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/rs/zerolog"
 
 	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
 	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
@@ -23,6 +24,38 @@ const (
 	heartbeatSendThreshold = 10 * time.Second
 	heartbeatTimeout       = 120 * time.Second
 )
+
+// applyRenameFixups mutates previousLocal and previousRemote in-place to reflect
+// file renames detected by the watcher. Without this, a rename from oldPath→newPath
+// would appear as a delete of oldPath + create of newPath in buildPlan.
+// The record's PreviousPath field is set to preserve the rename chain.
+func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord, renames []watchpkg.ScanEvent, logger zerolog.Logger) {
+	for _, ev := range renames {
+		if ev.Type != watchpkg.EventRename {
+			continue
+		}
+		if oldLocal, ok := previousLocal[ev.OldPath]; ok {
+			oldLocal.PreviousPath = ev.OldPath
+			oldLocal.Path = ev.Path
+			previousLocal[ev.Path] = oldLocal
+			delete(previousLocal, ev.OldPath)
+			logger.Info().
+				Str("oldPath", ev.OldPath).
+				Str("newPath", ev.Path).
+				Msg("continuous: local rename applied")
+		}
+		if oldRemote, ok := previousRemote[ev.OldPath]; ok {
+			oldRemote.PreviousPath = ev.OldPath
+			oldRemote.Path = ev.Path
+			previousRemote[ev.Path] = oldRemote
+			delete(previousRemote, ev.OldPath)
+			logger.Info().
+				Str("oldPath", ev.OldPath).
+				Str("newPath", ev.Path).
+				Msg("continuous: remote rename applied")
+		}
+	}
+}
 
 type continuousState struct {
 	mu            sync.Mutex
@@ -260,6 +293,11 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 
 	var debounceTimer *time.Timer
 	var debounceMu sync.Mutex
+
+	// Rename event collection for inode-based rename detection
+	var pendingRenames []watchpkg.ScanEvent
+	var renamesMu sync.Mutex
+
 	var doSync func()
 
 	scheduleSync := func() {
@@ -293,6 +331,14 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			e.Logger.Error().Err(err).Msg("continuous: failed to load state")
 			return
 		}
+
+		renamesMu.Lock()
+		snapshot := make([]watchpkg.ScanEvent, len(pendingRenames))
+		copy(snapshot, pendingRenames)
+		pendingRenames = pendingRenames[:0]
+		renamesMu.Unlock()
+
+		applyRenameFixups(previousLocal, previousRemote, snapshot, e.Logger)
 
 		dbLocal := previousLocal
 		dbRemote := previousRemote
@@ -399,7 +445,15 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			return nil
 		case <-trigger:
 			scheduleSync()
-		case <-watcher.Out:
+		case ev, ok := <-watcher.Out:
+			if !ok {
+				return nil
+			}
+			if ev.Type == watchpkg.EventRename {
+				renamesMu.Lock()
+				pendingRenames = append(pendingRenames, ev)
+				renamesMu.Unlock()
+			}
 			scheduleSync()
 		case <-readPumpDone:
 			e.Logger.Info().Msg("continuous: readPump exited, reconnecting...")
