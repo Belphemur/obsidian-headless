@@ -39,20 +39,14 @@ func newLoginCommand(app *App) *cobra.Command {
 				// Token may be invalid, proceed with login
 			}
 
-			// If already logged in, sign out old session
-			if existingToken != "" {
-				_ = app.client().SignOut(cmd.Context(), existingToken)
-				_ = app.configManager.ClearAuthToken()
-			}
-
 			// Show disclaimer and require acceptance
 			if !acceptDisclaimer {
 				_, _ = fmt.Fprint(app.stdout, `╔══════════════════════════════════════════════════════════════╗
-║                       ⚠️  DISCLAIMER  ⚠️                      ║
+║                       !! DISCLAIMER !!                       ║
 ║                                                              ║
-║  Obsidian Headless is a third-party, community-maintained    ║
-║  tool. It is NOT an official Obsidian product, and it is    ║
-║  NOT supported by Obsidian.                                  ║
+║  Obsidian Headless Go is a third-party, community-           ║
+║  maintained tool. It is NOT an official Obsidian product,    ║
+║  and it is NOT supported by Obsidian.                        ║
 ║                                                              ║
 ║  If you encounter any issues, do NOT contact Obsidian        ║
 ║  support. Instead, please open an issue on GitHub:           ║
@@ -64,8 +58,14 @@ func newLoginCommand(app *App) *cobra.Command {
 				var response string
 				_, _ = fmt.Fscanln(app.stdin, &response)
 				if !strings.HasPrefix(strings.ToLower(response), "y") {
-					return fmt.Errorf("Login cancelled. You must accept the disclaimer to proceed.")
+					return fmt.Errorf("login cancelled: you must accept the disclaimer to proceed")
 				}
+			}
+
+			// If already logged in, sign out old session
+			if existingToken != "" {
+				_ = app.client().SignOut(cmd.Context(), existingToken)
+				_ = app.configManager.ClearAuthToken()
 			}
 
 			// Get credentials from flags or prompt
