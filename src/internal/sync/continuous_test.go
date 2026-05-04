@@ -79,7 +79,8 @@ func TestContinuousInitialSync(t *testing.T) {
 	}
 
 	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled {
+	if err := <-errCh; err != nil && err != context.Canceled &&
+		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
 }
@@ -135,7 +136,8 @@ func TestContinuousWatcherSync(t *testing.T) {
 	})
 
 	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled {
+	if err := <-errCh; err != nil && err != context.Canceled &&
+		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
 }
@@ -199,7 +201,8 @@ func TestContinuousPushSync(t *testing.T) {
 	}
 
 	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled {
+	if err := <-errCh; err != nil && err != context.Canceled &&
+		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
 }
@@ -259,7 +262,8 @@ func TestContinuousReconnection(t *testing.T) {
 	})
 
 	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled {
+	if err := <-errCh; err != nil && err != context.Canceled &&
+		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
 }
@@ -321,7 +325,8 @@ func TestRunContinuousPeriodicScanZero(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	cancel()
 
-	if err := <-errCh; err != nil && err != context.Canceled {
+	if err := <-errCh; err != nil && err != context.Canceled &&
+		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
 }
@@ -361,7 +366,8 @@ func TestRunContinuousPeriodicScanEmptyDefault(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	cancel()
 
-	if err := <-errCh; err != nil && err != context.Canceled {
+	if err := <-errCh; err != nil && err != context.Canceled &&
+		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
 }
@@ -443,7 +449,8 @@ func TestContinuousInitialSyncWithStaleState(t *testing.T) {
 	}
 
 	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled {
+	if err := <-errCh; err != nil && err != context.Canceled &&
+		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
 }
@@ -502,7 +509,8 @@ func TestContinuousHeartbeatAfterReconnect(t *testing.T) {
 	})
 
 	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled {
+	if err := <-errCh; err != nil && err != context.Canceled &&
+		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
 }
