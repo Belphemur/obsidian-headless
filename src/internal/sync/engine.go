@@ -341,12 +341,13 @@ func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLoca
 			if err := session.push(record, data); err != nil {
 				return err
 			}
-			// Clear the rename source only in currentLocal, not previousLocal.
-			// previousLocal is loaded once at the top of RunOnce/doSync and is
-			// not reused within the same sync cycle. Updating currentLocal is
-			// sufficient because the next cycle will reload previousLocal fresh
-			// from storage. This prevents re-sending relatedpath on subsequent
-			// pushes within the same cycle.
+			// Clear PreviousPath as a safety net so the record doesn't
+			// carry rename state into later processing within this cycle.
+			// currentLocal is re-scanned from disk after executePlan returns
+			// (RunOnce and RunContinuous both call scanLocal() post-execution),
+			// which creates fresh FileRecords without PreviousPath. The real
+			// prevention of re-sending relatedpath comes from that re-scan;
+			// this in-memory clear is a belt-and-suspenders measure.
 			record.PreviousPath = ""
 			currentLocal[action.Path] = record
 			e.Logger.Info().Str("path", action.Path).Msg("uploaded local file")

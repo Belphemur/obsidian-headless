@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,29 +34,41 @@ const (
 // file renames detected by the watcher. Without this, a rename from oldPath→newPath
 // would appear as a delete of oldPath + create of newPath in buildPlan.
 // The record's PreviousPath field is set to preserve the rename chain.
-func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord, renames []watchpkg.ScanEvent, logger zerolog.Logger) {
+func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord, renames []watchpkg.ScanEvent, vaultPath string, logger zerolog.Logger) {
 	for _, ev := range renames {
 		if ev.Type != watchpkg.EventRename {
 			continue
 		}
-		if oldLocal, ok := previousLocal[ev.OldPath]; ok {
-			oldLocal.PreviousPath = ev.OldPath
-			oldLocal.Path = ev.Path
-			previousLocal[ev.Path] = oldLocal
-			delete(previousLocal, ev.OldPath)
+		// Convert absolute watcher paths to vault-relative
+		relOldPath, err := filepath.Rel(vaultPath, ev.OldPath)
+		if err != nil {
+			continue
+		}
+		relNewPath, err := filepath.Rel(vaultPath, ev.Path)
+		if err != nil {
+			continue
+		}
+		relOldPath = filepath.ToSlash(relOldPath)
+		relNewPath = filepath.ToSlash(relNewPath)
+
+		if oldLocal, ok := previousLocal[relOldPath]; ok {
+			oldLocal.PreviousPath = relOldPath
+			oldLocal.Path = relNewPath
+			previousLocal[relNewPath] = oldLocal
+			delete(previousLocal, relOldPath)
 			logger.Info().
-				Str("oldPath", ev.OldPath).
-				Str("newPath", ev.Path).
+				Str("oldPath", relOldPath).
+				Str("newPath", relNewPath).
 				Msg("continuous: local rename applied")
 		}
-		if oldRemote, ok := previousRemote[ev.OldPath]; ok {
-			oldRemote.PreviousPath = ev.OldPath
-			oldRemote.Path = ev.Path
-			previousRemote[ev.Path] = oldRemote
-			delete(previousRemote, ev.OldPath)
+		if oldRemote, ok := previousRemote[relOldPath]; ok {
+			oldRemote.PreviousPath = relOldPath
+			oldRemote.Path = relNewPath
+			previousRemote[relNewPath] = oldRemote
+			delete(previousRemote, relOldPath)
 			logger.Info().
-				Str("oldPath", ev.OldPath).
-				Str("newPath", ev.Path).
+				Str("oldPath", relOldPath).
+				Str("newPath", relNewPath).
 				Msg("continuous: remote rename applied")
 		}
 	}
@@ -374,7 +387,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		pendingRenames = pendingRenames[:0]
 		renamesMu.Unlock()
 
-		applyRenameFixups(previousLocal, previousRemote, snapshot, e.Logger)
+		applyRenameFixups(previousLocal, previousRemote, snapshot, e.Config.VaultPath, e.Logger)
 
 		// Flush stale ignorations from the previous sync cycle
 		watcher.FlushIgnored()
