@@ -7,7 +7,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/Belphemur/obsidian-headless/internal/model"
-	watchpkg "github.com/Belphemur/obsidian-headless/internal/sync/watch"
 )
 
 // RemoteRenameResult holds the outcome of applyRemoteRenameFixups.
@@ -15,7 +14,7 @@ import (
 // Enacted lists the rename operations that were successfully performed on disk.
 type RemoteRenameResult struct {
 	Conflicts []string
-	Enacted   []watchpkg.RenamePair
+	Enacted   []model.RenamePair
 }
 
 // applyRemoteRenameFixups detects remote renames by correlating deleted and active
@@ -24,7 +23,7 @@ type RemoteRenameResult struct {
 //  2. The local file at oldPath is os.Rename'd to newPath if it exists and is unmodified
 //  3. The deleted entry is removed from currentRemote
 //
-// Returns (*RemoteRenameResult, nil) — the function never returns an error.
+// Returns *RemoteRenameResult — the function never returns an error.
 // Rename failures are recorded as Conflicts in the result rather than returned as errors.
 func applyRemoteRenameFixups(
 	currentRemote map[string]model.FileRecord,
@@ -33,7 +32,7 @@ func applyRemoteRenameFixups(
 	currentLocal map[string]model.FileRecord,
 	vaultPath string,
 	logger zerolog.Logger,
-) (*RemoteRenameResult, error) {
+) *RemoteRenameResult {
 	result := &RemoteRenameResult{}
 
 	// Step 1: In a single pass, collect deleted UIDs and active UID→newPath mappings.
@@ -52,7 +51,7 @@ func applyRemoteRenameFixups(
 
 	// Guard: nothing to correlate.
 	if len(deletedUIDs) == 0 {
-		return result, nil
+		return result
 	}
 
 	// Step 2: Correlate deleted UIDs with active UIDs to find renames.
@@ -131,7 +130,7 @@ func applyRemoteRenameFixups(
 					currentLocal[newPath] = oldLocal
 					delete(currentLocal, oldPath)
 
-					result.Enacted = append(result.Enacted, watchpkg.RenamePair{OldPath: oldPath, NewPath: newPath})
+					result.Enacted = append(result.Enacted, model.RenamePair{OldPath: oldPath, NewPath: newPath})
 					renameEnacted = true
 					logger.Info().
 						Str("oldPath", oldPath).
@@ -163,5 +162,5 @@ func applyRemoteRenameFixups(
 		// independently.
 	}
 
-	return result, nil
+	return result
 }

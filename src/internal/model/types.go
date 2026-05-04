@@ -101,6 +101,12 @@ func (r FileRecord) Equal(other FileRecord) bool {
 		r.User == other.User
 }
 
+// RenamePair represents an old→new path pair for a rename operation.
+type RenamePair struct {
+	OldPath string
+	NewPath string
+}
+
 type PublishCacheEntry struct {
 	Hash    string `json:"hash"`
 	MTime   int64  `json:"mtime"`

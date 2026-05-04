@@ -148,15 +148,8 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	e.mu.Unlock()
 
 	// Detect and apply remote renames before building the plan
-	remoteRenameResult, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger)
-	if err != nil {
-		return fmt.Errorf("remote rename fixup failed: %w", err)
-	}
-	if len(remoteRenameResult.Conflicts) > 0 {
-		for _, conflictPath := range remoteRenameResult.Conflicts {
-			e.Logger.Warn().Str("path", conflictPath).Msg("RunOnce: local file modified, preserving during remote rename")
-		}
-	}
+	remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger)
+	e.logRemoteRenameConflicts(remoteRenameResult, "once")
 
 	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir())
 	e.Logger.Info().
@@ -208,6 +201,17 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 
 	e.Logger.Info().Str("vault", e.Config.VaultID).Msg("sync complete")
 	return nil
+}
+
+// logRemoteRenameConflicts logs any paths that were preserved as conflicts
+// during remote rename detection (locally modified files, destination collisions, etc.).
+func (e *Engine) logRemoteRenameConflicts(result *RemoteRenameResult, mode string) {
+	for _, path := range result.Conflicts {
+		e.Logger.Warn().
+			Str("path", path).
+			Str("mode", mode).
+			Msg("local file modified during remote rename, preserving")
+	}
 }
 
 func (e *Engine) Close() error {

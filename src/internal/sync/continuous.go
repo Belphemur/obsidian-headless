@@ -397,16 +397,8 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		cs.mu.Unlock()
 
 		// Detect and apply remote renames before building the plan
-		remoteRenameResult, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger)
-		if err != nil {
-			e.Logger.Error().Err(err).Msg("continuous: remote rename fixup failed")
-			return
-		}
-		if len(remoteRenameResult.Conflicts) > 0 {
-			for _, conflictPath := range remoteRenameResult.Conflicts {
-				e.Logger.Warn().Str("path", conflictPath).Msg("continuous: local file modified, preserving during remote rename")
-			}
-		}
+		remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger)
+		e.logRemoteRenameConflicts(remoteRenameResult, "continuous")
 		if len(remoteRenameResult.Enacted) > 0 {
 			// Suppress watcher events for paths affected by remote rename
 			watcher.AddIgnorePaths(remoteRenameResult.Enacted)

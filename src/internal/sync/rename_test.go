@@ -44,10 +44,7 @@ func TestApplyRemoteRenameFixups_BasicRename(t *testing.T) {
 	}
 
 	logger := zerolog.Nop()
-	result, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	result := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
 
 	// Check result
 	if len(result.Enacted) != 1 {
@@ -113,10 +110,7 @@ func TestApplyRemoteRenameFixups_NoRename_DifferentUIDs(t *testing.T) {
 	}
 
 	logger := zerolog.Nop()
-	result, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	result := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
 	if len(result.Enacted) != 0 {
 		t.Fatalf("expected no enacted renames, got %d", len(result.Enacted))
 	}
@@ -135,7 +129,7 @@ func TestApplyRemoteRenameFixups_EmptyMaps(t *testing.T) {
 	defer cleanup()
 
 	logger := zerolog.Nop()
-	result, err := applyRemoteRenameFixups(
+	result := applyRemoteRenameFixups(
 		map[string]model.FileRecord{},
 		map[string]model.FileRecord{},
 		map[string]model.FileRecord{},
@@ -143,9 +137,6 @@ func TestApplyRemoteRenameFixups_EmptyMaps(t *testing.T) {
 		vaultPath,
 		logger,
 	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
 	if len(result.Enacted) != 0 {
 		t.Fatalf("expected no enacted renames from empty maps")
 	}
@@ -183,10 +174,7 @@ func TestApplyRemoteRenameFixups_LocalModified(t *testing.T) {
 	}
 
 	logger := zerolog.Nop()
-	result, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	result := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
 
 	// Should NOT enact rename (local modified)
 	if len(result.Enacted) != 0 {
@@ -224,10 +212,7 @@ func TestApplyRemoteRenameFixups_FolderRecordsExcluded(t *testing.T) {
 	currentLocal := map[string]model.FileRecord{}
 
 	logger := zerolog.Nop()
-	result, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	result := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
 	if len(result.Enacted) != 0 {
 		t.Fatalf("expected 0 enacted renames (folders excluded), got %d", len(result.Enacted))
 	}
@@ -250,10 +235,7 @@ func TestApplyRemoteRenameFixups_NoUID(t *testing.T) {
 	currentLocal := map[string]model.FileRecord{}
 
 	logger := zerolog.Nop()
-	result, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	result := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
 	if len(result.Enacted) != 0 {
 		t.Fatalf("expected 0 enacted renames (UID=0 skipped)")
 	}
@@ -271,15 +253,12 @@ func TestApplyRemoteRenameFixups_SamePath(t *testing.T) {
 	}
 	// No deleted entry → should be no-op
 	logger := zerolog.Nop()
-	result, err := applyRemoteRenameFixups(currentRemote,
+	result := applyRemoteRenameFixups(currentRemote,
 		map[string]model.FileRecord{},
 		map[string]model.FileRecord{},
 		map[string]model.FileRecord{},
 		vaultPath, logger,
 	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
 	if len(result.Enacted) != 0 {
 		t.Fatalf("expected no enacted renames")
 	}
@@ -320,10 +299,7 @@ func TestApplyRemoteRenameFixups_DestinationExists(t *testing.T) {
 	}
 
 	logger := zerolog.Nop()
-	result, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	result := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
 
 	// Should NOT enact rename (destination exists)
 	if len(result.Enacted) != 0 {
@@ -390,10 +366,7 @@ func TestApplyRemoteRenameFixups_RenameError(t *testing.T) {
 	}()
 
 	logger := zerolog.Nop()
-	result, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
-	if err != nil {
-		t.Fatalf("expected nil error on rename failure, got: %v", err)
-	}
+	result := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)
 	if len(result.Enacted) != 0 {
 		t.Fatalf("expected 0 enacted renames, got %d", len(result.Enacted))
 	}

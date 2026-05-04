@@ -12,6 +12,8 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/rs/zerolog"
+
+	"github.com/Belphemur/obsidian-headless/internal/model"
 )
 
 const eventBufSize = 1024
@@ -395,7 +397,7 @@ func (w *Watcher) isIgnored(path string) bool {
 // Paths are normalized to the same relative-slash form used by isIgnored,
 // ensuring that equivalent paths (e.g., "./a/b.md", "a/b.md") match the
 // suppression lookup regardless of caller format.
-func (w *Watcher) AddIgnorePaths(pairs []RenamePair) {
+func (w *Watcher) AddIgnorePaths(pairs []model.RenamePair) {
 	w.ignoreMu.Lock()
 	defer w.ignoreMu.Unlock()
 	for _, p := range pairs {
@@ -409,12 +411,11 @@ func (w *Watcher) AddIgnorePaths(pairs []RenamePair) {
 }
 
 // normalizeIgnoreKey converts a relative path to the normalized form used
-// by isIgnored for consistent map lookups: forward slashes, no leading "./"
-// or "/", cleaned relative form.
+// by isIgnored for consistent map lookups. Uses stdlib filepath.Clean
+// (which resolves ".", "./", "//", etc.) + filepath.ToSlash for cross-
+// platform forward-slash keys matching isIgnored's filepath.Rel output.
 func normalizeIgnoreKey(path string) string {
 	path = filepath.ToSlash(filepath.Clean(path))
-	path = strings.TrimPrefix(path, "./")
-	path = strings.TrimPrefix(path, "/")
 	if path == "." {
 		return ""
 	}

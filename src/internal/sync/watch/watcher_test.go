@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+
+	"github.com/Belphemur/obsidian-headless/internal/model"
 )
 
 func testLogger(t *testing.T) zerolog.Logger {
@@ -195,7 +197,7 @@ func TestWatcher_IgnorePaths_SuppressesRemove(t *testing.T) {
 	})
 
 	// Now add old path to ignored set
-	w.AddIgnorePaths([]RenamePair{{OldPath: "old.md", NewPath: "new.md"}})
+	w.AddIgnorePaths([]model.RenamePair{{OldPath: "old.md", NewPath: "new.md"}})
 
 	// Now simulate a remove by the remote rename fixup
 	if err := os.Remove(filePath); err != nil {
@@ -222,7 +224,7 @@ func TestWatcher_IgnorePaths_SuppressesCreate(t *testing.T) {
 	go w.Run(ctx)
 
 	// Add new path to ignored set
-	w.AddIgnorePaths([]RenamePair{{OldPath: "old.md", NewPath: "new.md"}})
+	w.AddIgnorePaths([]model.RenamePair{{OldPath: "old.md", NewPath: "new.md"}})
 
 	// Create file at new path (simulating remote rename creating new.md)
 	filePath := filepath.Join(dir, "new.md")
@@ -250,7 +252,7 @@ func TestWatcher_IgnorePaths_NotSuppressedWhenUnrelated(t *testing.T) {
 	go w.Run(ctx)
 
 	// Add some paths to ignored set
-	w.AddIgnorePaths([]RenamePair{{OldPath: "ignored-old.md", NewPath: "ignored-new.md"}})
+	w.AddIgnorePaths([]model.RenamePair{{OldPath: "ignored-old.md", NewPath: "ignored-new.md"}})
 
 	// Create an UNRELATED file
 	filePath := filepath.Join(dir, "normal.md")
@@ -280,7 +282,7 @@ func TestWatcher_IgnorePaths_FlushIgnored(t *testing.T) {
 	go w.Run(ctx)
 
 	// Add path to ignored set, then flush
-	w.AddIgnorePaths([]RenamePair{{OldPath: "old.md", NewPath: "new.md"}})
+	w.AddIgnorePaths([]model.RenamePair{{OldPath: "old.md", NewPath: "new.md"}})
 	w.FlushIgnored()
 
 	// Now create file at new path — should NOT be suppressed (flush cleared it)
