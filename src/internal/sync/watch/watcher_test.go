@@ -54,6 +54,7 @@ func TestWatcher_RenameDetection(t *testing.T) {
 	ctx := t.Context()
 
 	go w.Run(ctx)
+	time.Sleep(50 * time.Millisecond) // let watcher goroutine enter event loop
 
 	// Create initial file
 	oldPath := filepath.Join(root, "old.md")
@@ -101,6 +102,7 @@ func TestWatcher_RealDeletion_NoMatchingCreate(t *testing.T) {
 	ctx := t.Context()
 
 	go w.Run(ctx)
+	time.Sleep(50 * time.Millisecond) // let watcher goroutine enter event loop
 
 	// Create file
 	path := filepath.Join(root, "temp.md")
@@ -145,6 +147,7 @@ func TestWatcher_Shutdown_FlushesPendingRenames(t *testing.T) {
 	defer cancel()
 
 	go w.Run(ctx)
+	time.Sleep(50 * time.Millisecond) // let watcher goroutine enter event loop
 
 	// Create file so scanner knows about it
 	path := filepath.Join(root, "temp.md")
