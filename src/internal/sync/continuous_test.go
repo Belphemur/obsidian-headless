@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
-	watchpkg "github.com/Belphemur/obsidian-headless/src-go/internal/sync/watch"
+	"github.com/Belphemur/obsidian-headless/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/storage"
+	watchpkg "github.com/Belphemur/obsidian-headless/internal/sync/watch"
 	"github.com/rs/zerolog"
 )
 

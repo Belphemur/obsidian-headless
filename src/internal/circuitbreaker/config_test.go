@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
+	"github.com/Belphemur/obsidian-headless/internal/circuitbreaker"
 	"github.com/rs/zerolog"
 	"github.com/sony/gobreaker/v2"
 	"github.com/stretchr/testify/assert"

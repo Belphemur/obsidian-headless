@@ -57,9 +57,9 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/Belphemur/obsidian-headless/src-go/internal/buildinfo.Version={{.Version}}
-      - -X github.com/Belphemur/obsidian-headless/src-go/internal/buildinfo.Commit={{.Commit}}
-      - -X github.com/Belphemur/obsidian-headless/src-go/internal/buildinfo.Date={{ .CommitDate }}
+      - -X github.com/Belphemur/obsidian-headless/internal/buildinfo.Version={{.Version}}
+      - -X github.com/Belphemur/obsidian-headless/internal/buildinfo.Commit={{.Commit}}
+      - -X github.com/Belphemur/obsidian-headless/internal/buildinfo.Date={{ .CommitDate }}
     env:
       - CGO_ENABLED=0
 

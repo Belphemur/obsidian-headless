@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/api"
-	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/logging"
+	"github.com/Belphemur/obsidian-headless/internal/api"
+	configpkg "github.com/Belphemur/obsidian-headless/internal/config"
+	"github.com/Belphemur/obsidian-headless/internal/logging"
 )
 
 type App struct {

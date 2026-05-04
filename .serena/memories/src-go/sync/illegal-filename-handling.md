@@ -16,7 +16,7 @@
 - `sync.isValidPath` now delegates to `util.IsLegalPath`, so remote records with illegal chars are also filtered from sync plans and state.
 
 **Files changed:**
-- `src-go/internal/util/files.go` — `IsLegalPath`, `ScanVault`
-- `src-go/internal/sync/engine.go` — `scanLocal`
-- `src-go/internal/sync/plan.go` — `isValidPath`
-- `src-go/internal/util/files_test.go` — new tests
+- `src/internal/util/files.go` — `IsLegalPath`, `ScanVault`
+- `src/internal/sync/engine.go` — `scanLocal`
+- `src/internal/sync/plan.go` — `isValidPath`
+- `src/internal/util/files_test.go` — new tests

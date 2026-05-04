@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	apipkg "github.com/Belphemur/obsidian-headless/src-go/internal/api"
+	apipkg "github.com/Belphemur/obsidian-headless/internal/api"
 )
 
 func newLoginCommand(app *App) *cobra.Command {

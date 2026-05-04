@@ -12,8 +12,8 @@ import (
 	"github.com/cenkalti/backoff/v5"
 	"github.com/sony/gobreaker/v2"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/circuitbreaker"
+	"github.com/Belphemur/obsidian-headless/internal/model"
 )
 
 func (c *Client) listPublishSites(ctx context.Context, token string) ([]model.PublishSite, error) {

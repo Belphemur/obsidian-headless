@@ -20,7 +20,7 @@ Publish services.
 
 ```bash
 # Build and run the Go CLI
-cd src-go
+cd src
 go build -o ob ./cmd/ob-go
 ./ob --help
 

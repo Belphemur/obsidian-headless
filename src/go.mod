@@ -1,4 +1,4 @@
-module github.com/Belphemur/obsidian-headless/src-go
+module github.com/Belphemur/obsidian-headless
 
 go 1.26
 

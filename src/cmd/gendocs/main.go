@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/cli"
+	"github.com/Belphemur/obsidian-headless/internal/cli"
 	"github.com/spf13/cobra/doc"
 )
 

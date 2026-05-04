@@ -31,7 +31,7 @@ replace github.com/1password/onepassword-sdk-go => ./internal/1passwordstub
 The patch removes an intentional compile-error symbol in `client_builder_no_cgo.go`. See `docs/onepassword-cgo-workaround.md` for full details.
 
 ## Build Info Injection
-Version info is injected via ldflags into `src-go/internal/buildinfo`:
+Version info is injected via ldflags into `src/internal/buildinfo`:
 - `Version` — from `{{.Version}}`
 - `Commit` — from `{{.Commit}}`
 - `Date` — from `{{.CommitDate}}`

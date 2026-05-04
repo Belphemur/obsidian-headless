@@ -1,7 +1,7 @@
 # Go Port Progress
 
 - [x] Review the existing TypeScript architecture, CLI docs, REST API docs, sync protocol docs, and mock-server docs
-- [x] Scaffold a dedicated `src-go/` Go module with package boundaries aligned to the TypeScript modules
+- [x] Scaffold a dedicated `src/` Go module with package boundaries aligned to the TypeScript modules
 - [x] Split the new Go CLI into focused packages and command files instead of a single root implementation
 - [x] Finish the Go REST client, config management, SQLite state store, and zerolog-based logging
 - [x] Finish the sync engine, including the Syncthing-style watcher, continuous mode, and mock-server compatibility
@@ -12,7 +12,7 @@
 
 ## Current status
 
-- The Go module scaffold exists under `src-go/`.
+- The Go module scaffold exists under `src/`.
 - Package structure now mirrors the TypeScript app at a high level: CLI, API, config, storage, sync, publish, utils, and logging.
 - The module now targets Go `1.26.0` and uses Cobra/Viper, `modernc.org/sqlite`, `zerolog`, `fsnotify`, `gorilla/websocket`, `doublestar`, and `yaml.v3`.
 - The Go CLI now has working login/logout, sync configuration and execution, publish configuration and execution, a SQLite-backed sync state store, and a Syncthing-style watcher pipeline for continuous sync.

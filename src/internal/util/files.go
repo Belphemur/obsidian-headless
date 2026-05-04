@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/model"
 	"github.com/djherbis/times"
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/scrypt"

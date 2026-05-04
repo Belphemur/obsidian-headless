@@ -6,7 +6,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["sync"],
             "env": {}
         },
@@ -15,7 +15,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["sync-status"],
             "env": {}
         },
@@ -24,7 +24,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["sync-config"],
             "env": {}
         },
@@ -33,7 +33,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["sync-list-local"],
             "env": {}
         },
@@ -42,7 +42,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["sync-list-remote"],
             "env": {}
         },
@@ -51,7 +51,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["sync-create-remote"],
             "env": {}
         },
@@ -60,7 +60,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["sync-setup"],
             "env": {}
         },
@@ -69,7 +69,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["sync-unlink"],
             "env": {}
         },
@@ -78,7 +78,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["publish"],
             "env": {}
         },
@@ -87,7 +87,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["publish-config"],
             "env": {}
         },
@@ -96,7 +96,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["publish-list-sites"],
             "env": {}
         },
@@ -105,7 +105,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["publish-create-site"],
             "env": {}
         },
@@ -114,7 +114,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["publish-setup"],
             "env": {}
         },
@@ -123,7 +123,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["publish-unlink"],
             "env": {}
         },
@@ -132,7 +132,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["login"],
             "env": {}
         },
@@ -141,7 +141,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["logout"],
             "env": {}
         },
@@ -150,7 +150,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/src-go/cmd/ob-go",
+            "program": "${workspaceFolder}/src/cmd/ob-go",
             "args": ["completion"],
             "env": {}
         }

@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/model"
 )
 
 func (c *Client) signIn(ctx context.Context, email, password, mfa string) (*model.SignInResponse, error) {
