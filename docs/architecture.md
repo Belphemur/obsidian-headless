@@ -108,6 +108,34 @@ single `"renamed"` event (with both old and new paths) instead of separate
 `"file-removed"` + `"file-created"` events. This lets the sync engine move the
 metadata record without re-hashing or re-uploading the unchanged content.
 
+### Remote rename detection (UID-based)
+
+When a file is renamed on another device, the Obsidian Sync server does not
+have a native "rename" protocol message. Instead it sends **two separate push
+notifications** that share the same UID:
+
+1. A push for `newPath` with the file content (`deleted: false`)
+2. A push for `oldPath` with `deleted: true`
+
+The client detects remote renames by correlating these two pushes via UID
+matching in `applyRemoteRenameFixups()` (see `src/internal/sync/rename.go`):
+
+- If the local file at `oldPath` is **unmodified** (hash matches previous
+  state), it is renamed in-place on disk via `os.Rename` to `newPath`. The
+  sync state metadata moves with it — `PreviousPath` is set to preserve the
+  rename chain. No re-download is needed.
+- If the local file at `oldPath` was **modified** locally, it is preserved
+  at its original path and the conflict is logged. The remote version at
+  `newPath` is downloaded normally, and `buildPlan` handles the two files
+  independently.
+
+After renaming, the watcher is notified of the affected paths via
+`AddIgnorePaths()` so that the resulting filesystem events (from `os.Rename`)
+are suppressed and not misinterpreted as user-initiated renames.
+
+This detection runs in both `RunOnce` and continuous sync modes, before
+`buildPlan` is called.
+
 ### Watch disabled for read-only modes
 
 In `pull-only` and `mirror-remote` sync modes, local file changes are never

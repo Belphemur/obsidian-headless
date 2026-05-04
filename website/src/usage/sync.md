@@ -116,3 +116,12 @@ ob sync [--path <path>] [--continuous]
 |------|---------|-------------|
 | `--path` | `.` | Local vault path |
 | `--continuous` | `false` | Run continuously (watch for changes) |
+
+### Remote rename handling
+
+When files are renamed on another device (e.g., via the Obsidian desktop app), the sync engine detects the rename automatically via UID matching:
+
+- **Unmodified local files** are renamed in-place — no re-download is needed.
+- **Modified local files** are preserved at their original path. The remote version is downloaded to the new path as a separate file, and the conflict is logged.
+
+This works in both one-shot (`ob sync`) and continuous (`ob sync --continuous`) modes without any configuration.

@@ -223,6 +223,39 @@ When any device pushes a change, the server broadcasts a push notification to **
 The server echoes push notifications back to the sender. The client must detect and ignore these self-echoes. A common approach is to compare the `device` and `mtime` fields with the most recently pushed file.
 :::
 
+### Rename Semantics
+
+::: info Renames are NOT communicated natively
+The Obsidian Sync server does not have a dedicated "rename" protocol message.
+:::
+
+When a file is renamed on another device, the server sends **two independent push notifications** that share the same UID:
+
+| Push | Path | `deleted` | Content |
+|------|------|-----------|---------|
+| 1 | New path (e.g., `new.md`) | `false` | Full file content |
+| 2 | Old path (e.g., `old.md`) | `true` | Empty |
+
+The client **detects remote renames** by correlating these two pushes via UID matching:
+
+1. Scans `currentRemote` for deleted entries with a known UID
+2. Finds active entries with the same UID
+3. If the UIDs match and the paths differ → it's a rename
+
+```mermaid
+flowchart TD
+    A[Server sends two pushes: delete old, create new] --> B{Client: same UID?}
+    B -->|Yes, different paths| C[Rename detected]
+    B -->|No| D[Treat as separate delete + download]
+    C --> E{Local file at old path modified?}
+    E -->|No| F[Rename local file in-place, no download]
+    E -->|Yes| G[Preserve local file, download new path as copy]
+```
+
+The rename detection runs before `buildPlan` in both `RunOnce` and continuous sync modes. When a rename is enacted locally, the filesystem watcher's `AddIgnorePaths` mechanism suppresses the resulting fsnotify events to prevent them from being misinterpreted as new user changes.
+
+See `src/internal/sync/rename.go` for the implementation.
+
 ### Pull
 
 #### Pull Request (Client → Server)

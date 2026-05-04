@@ -198,6 +198,21 @@ client must detect and ignore these self-echoes to avoid infinite sync loops.
 A common approach is to compare the `device` and `mtime` fields with the most
 recently pushed file.
 
+### Rename Semantics
+
+The server does **not** communicate renames natively. When a file is renamed
+on the remote, the server sends two independent push notifications:
+
+1. A push for the **new path** with the file content (`deleted: false`)
+2. A push for the **old path** with `deleted: true`
+
+Both pushes share the **same `uid`** value, corresponding to the file's
+identity on the server. The client detects the rename by correlating
+deleted and active entries in the push map that share the same UID.
+
+This client-side UID correlation is implemented in
+`applyRemoteRenameFixups()` (see `src/internal/sync/rename.go`).
+
 ### Ready Notification (Server → Client)
 
 Sent after all pending pushes have been delivered:
