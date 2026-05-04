@@ -40,6 +40,9 @@ type Watcher struct {
 	inodeTrackingEnabled bool
 	pendingRenames       map[uint64]*pendingRename
 	pendingRenamePaths   map[string]uint64
+	ignoreMu             sync.Mutex
+	ignoredOld           map[string]bool // old paths to suppress events for
+	ignoredNew           map[string]bool // new paths to suppress events for
 }
 
 func New(root string, excludes []string, logger zerolog.Logger, rescanInterval time.Duration) (*Watcher, error) {
@@ -61,6 +64,8 @@ func New(root string, excludes []string, logger zerolog.Logger, rescanInterval t
 	watcher.inodeTrackingEnabled = runtime.GOOS != "windows"
 	watcher.pendingRenames = make(map[uint64]*pendingRename)
 	watcher.pendingRenamePaths = make(map[string]uint64)
+	watcher.ignoredOld = make(map[string]bool)
+	watcher.ignoredNew = make(map[string]bool)
 	if err := watcher.addDirsRecursive(root); err != nil {
 		_ = fw.Close()
 		return nil, err
@@ -102,6 +107,12 @@ func (w *Watcher) Run(ctx context.Context) {
 func (w *Watcher) handle(event fsnotify.Event) {
 	w.logger.Debug().Str("path", event.Name).Str("ops", event.Op.String()).Msg("fs event")
 	if w.isExcluded(event.Name) {
+		return
+	}
+
+	// Suppress events for paths added via AddIgnorePaths (remote rename aftermath)
+	if w.isIgnored(event.Name) {
+		w.logger.Debug().Str("path", event.Name).Msg("suppressing event for ignored path")
 		return
 	}
 
@@ -354,6 +365,48 @@ func (w *Watcher) shutdown(ctx context.Context) {
 		w.logger.Warn().Msg("skipping final watcher flush during shutdown because cancellation fired first")
 	}
 	close(w.Out)
+}
+
+// isIgnored checks whether events for the given path should be suppressed.
+// Must be called with ignoreMu NOT held (it acquires the lock internally).
+func (w *Watcher) isIgnored(path string) bool {
+	rel, err := filepath.Rel(w.root, path)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." {
+		return false
+	}
+	w.ignoreMu.Lock()
+	defer w.ignoreMu.Unlock()
+	// Check both old and new ignore sets
+	if w.ignoredOld[rel] || w.ignoredNew[rel] {
+		return true
+	}
+	return false
+}
+
+// AddIgnorePaths suppresses fsnotify events for the given rename pairs.
+// After a remote rename is enacted on disk, the resulting filesystem events
+// must be suppressed to prevent the watcher from interpreting them as new
+// user-initiated renames in the next sync cycle.
+func (w *Watcher) AddIgnorePaths(pairs []RenamePair) {
+	w.ignoreMu.Lock()
+	defer w.ignoreMu.Unlock()
+	for _, p := range pairs {
+		w.ignoredOld[p.OldPath] = true
+		w.ignoredNew[p.NewPath] = true
+	}
+}
+
+// FlushIgnored clears all ignored paths. Called at the start of each
+// doSync cycle so ignorations don't persist across sync cycles.
+func (w *Watcher) FlushIgnored() {
+	w.ignoreMu.Lock()
+	defer w.ignoreMu.Unlock()
+	clear(w.ignoredOld)
+	clear(w.ignoredNew)
 }
 
 func (w *Watcher) isExcluded(path string) bool {

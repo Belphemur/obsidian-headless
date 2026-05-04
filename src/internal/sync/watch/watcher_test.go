@@ -172,3 +172,131 @@ func TestWatcher_Shutdown_FlushesPendingRenames(t *testing.T) {
 	})
 	_ = ev
 }
+
+func TestWatcher_IgnorePaths_SuppressesRemove(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	w, err := New(dir, nil, zerolog.Nop(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	go w.Run(ctx)
+
+	// Create a file first (before adding to ignore set)
+	filePath := filepath.Join(dir, "old.md")
+	if err := os.WriteFile(filePath, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Drain initial create event
+	select {
+	case <-w.Out:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for initial create event")
+	}
+
+	// Now add old path to ignored set
+	w.AddIgnorePaths([]RenamePair{{OldPath: "old.md", NewPath: "new.md"}})
+
+	// Now simulate a remove by the remote rename fixup
+	if err := os.Remove(filePath); err != nil {
+		t.Fatal(err)
+	}
+
+	// The remove should be SUPPRESSED
+	select {
+	case ev := <-w.Out:
+		t.Fatalf("received unexpected event for suppressed path: %v", ev)
+	case <-time.After(500 * time.Millisecond):
+		// Expected: no event
+	}
+}
+
+func TestWatcher_IgnorePaths_SuppressesCreate(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	w, err := New(dir, nil, zerolog.Nop(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	go w.Run(ctx)
+
+	// Add new path to ignored set
+	w.AddIgnorePaths([]RenamePair{{OldPath: "old.md", NewPath: "new.md"}})
+
+	// Create file at new path (simulating remote rename creating new.md)
+	filePath := filepath.Join(dir, "new.md")
+	if err := os.WriteFile(filePath, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The create should be SUPPRESSED
+	select {
+	case ev := <-w.Out:
+		t.Fatalf("received unexpected event for suppressed path: %v", ev)
+	case <-time.After(2 * time.Second):
+		// Expected: no event
+	}
+}
+
+func TestWatcher_IgnorePaths_NotSuppressedWhenUnrelated(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	w, err := New(dir, nil, zerolog.Nop(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	go w.Run(ctx)
+
+	// Add some paths to ignored set
+	w.AddIgnorePaths([]RenamePair{{OldPath: "ignored-old.md", NewPath: "ignored-new.md"}})
+
+	// Create an UNRELATED file
+	filePath := filepath.Join(dir, "normal.md")
+	if err := os.WriteFile(filePath, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The create should NOT be suppressed
+	select {
+	case ev := <-w.Out:
+		if ev.Type != EventCreate {
+			t.Fatalf("expected EventCreate, got %v", ev.Type)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for expected event")
+	}
+}
+
+func TestWatcher_IgnorePaths_FlushIgnored(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	w, err := New(dir, nil, zerolog.Nop(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	go w.Run(ctx)
+
+	// Add path to ignored set, then flush
+	w.AddIgnorePaths([]RenamePair{{OldPath: "old.md", NewPath: "new.md"}})
+	w.FlushIgnored()
+
+	// Now create file at new path — should NOT be suppressed (flush cleared it)
+	filePath := filepath.Join(dir, "new.md")
+	if err := os.WriteFile(filePath, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case ev := <-w.Out:
+		if ev.Type != EventCreate {
+			t.Fatalf("expected EventCreate after flush, got %v", ev.Type)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for expected event after flush")
+	}
+}

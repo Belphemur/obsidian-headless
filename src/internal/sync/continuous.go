@@ -6,17 +6,18 @@ import (
 	"fmt"
 	"maps"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 	"github.com/sony/gobreaker/v2"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
-	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
-	watchpkg "github.com/Belphemur/obsidian-headless/src-go/internal/sync/watch"
+	"github.com/Belphemur/obsidian-headless/internal/circuitbreaker"
+	configpkg "github.com/Belphemur/obsidian-headless/internal/config"
+	"github.com/Belphemur/obsidian-headless/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/storage"
+	watchpkg "github.com/Belphemur/obsidian-headless/internal/sync/watch"
 )
 
 const (
@@ -61,12 +62,13 @@ func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord
 }
 
 type continuousState struct {
-	mu            sync.Mutex
-	conn          *websocket.Conn
-	remote        map[string]model.FileRecord
-	version       int64
-	stopClose     func() bool
-	lastMessageTs time.Time
+	mu             sync.Mutex
+	syncInProgress atomic.Bool
+	conn           *websocket.Conn
+	remote         map[string]model.FileRecord
+	version        int64
+	stopClose      func() bool
+	lastMessageTs  time.Time
 }
 
 func (e *Engine) RunContinuous(ctx context.Context) error {
@@ -326,6 +328,12 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 	}
 
 	doSync = func() {
+		if cs.syncInProgress.Swap(true) {
+			e.Logger.Debug().Msg("continuous: sync already in progress, skipping")
+			return
+		}
+		defer cs.syncInProgress.Store(false)
+
 		lock, err := e.acquireLock()
 		if err != nil {
 			e.Logger.Error().Err(err).Msg("continuous: failed to acquire lock")
@@ -353,6 +361,9 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		renamesMu.Unlock()
 
 		applyRenameFixups(previousLocal, previousRemote, snapshot, e.Logger)
+
+		// Flush stale ignorations from the previous sync cycle
+		watcher.FlushIgnored()
 
 		dbLocal := previousLocal
 		dbRemote := previousRemote
@@ -382,6 +393,22 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		}
 		version := cs.version
 		cs.mu.Unlock()
+
+		// Detect and apply remote renames before building the plan
+		remoteRenameResult, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger)
+		if err != nil {
+			e.Logger.Error().Err(err).Msg("continuous: remote rename fixup failed")
+			return
+		}
+		if len(remoteRenameResult.Conflicts) > 0 {
+			for _, conflictPath := range remoteRenameResult.Conflicts {
+				e.Logger.Warn().Str("path", conflictPath).Msg("continuous: local file modified, preserving during remote rename")
+			}
+		}
+		if len(remoteRenameResult.Enacted) > 0 {
+			// Suppress watcher events for paths affected by remote rename
+			watcher.AddIgnorePaths(remoteRenameResult.Enacted)
+		}
 
 		plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir())
 		e.Logger.Info().Int("planned_actions", len(plan)).Msg("continuous: sync plan created")

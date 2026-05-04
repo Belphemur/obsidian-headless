@@ -35,3 +35,11 @@ type ScanEvent struct {
 	DetectedAt time.Time
 	OldPath    string // previous path; only valid when Type == EventRename
 }
+
+// RenamePair represents an old→new path pair for a rename operation.
+// Used between sync/ and watch/ packages to communicate rename paths
+// without circular imports (sync imports watch, not vice versa).
+type RenamePair struct {
+	OldPath string
+	NewPath string
+}

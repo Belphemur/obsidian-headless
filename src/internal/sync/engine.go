@@ -13,12 +13,12 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/sony/gobreaker/v2"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
-	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/encryption"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/util"
+	"github.com/Belphemur/obsidian-headless/internal/circuitbreaker"
+	configpkg "github.com/Belphemur/obsidian-headless/internal/config"
+	"github.com/Belphemur/obsidian-headless/internal/encryption"
+	"github.com/Belphemur/obsidian-headless/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/storage"
+	"github.com/Belphemur/obsidian-headless/internal/util"
 )
 
 const (
@@ -146,6 +146,17 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	}
 	version := e.version
 	e.mu.Unlock()
+
+	// Detect and apply remote renames before building the plan
+	remoteRenameResult, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger)
+	if err != nil {
+		return fmt.Errorf("remote rename fixup failed: %w", err)
+	}
+	if len(remoteRenameResult.Conflicts) > 0 {
+		for _, conflictPath := range remoteRenameResult.Conflicts {
+			e.Logger.Warn().Str("path", conflictPath).Msg("RunOnce: local file modified, preserving during remote rename")
+		}
+	}
 
 	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir())
 	e.Logger.Info().
