@@ -416,6 +416,26 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		}
 
 		cs.mu.Lock()
+		// Remove old rename paths from cs.remote to prevent them from
+		// appearing as new remote files and triggering spurious downloads.
+		// applyRenameFixups already moved the entries in previousRemote,
+		// so this stale entry would otherwise be treated as a new remote file.
+		for _, ev := range snapshot {
+			if ev.Type != watchpkg.EventRename {
+				continue
+			}
+			relOldPath, err := filepath.Rel(e.Config.VaultPath, ev.OldPath)
+			if err != nil {
+				continue
+			}
+			relOldPath = filepath.ToSlash(relOldPath)
+			if _, ok := cs.remote[relOldPath]; ok {
+				e.Logger.Debug().
+					Str("oldPath", relOldPath).
+					Msg("continuous: removing stale remote entry after local rename")
+				delete(cs.remote, relOldPath)
+			}
+		}
 		currentRemote := make(map[string]model.FileRecord)
 		maps.Copy(currentRemote, previousRemote)
 		for path, record := range cs.remote {

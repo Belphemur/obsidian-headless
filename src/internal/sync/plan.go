@@ -134,7 +134,7 @@ func recordChanged(hadBefore bool, before model.FileRecord, hasNow bool, now mod
 	if !hadBefore && !hasNow {
 		return false
 	}
-	return before.Hash != now.Hash || before.MTime != now.MTime || before.Size != now.Size || before.Deleted != now.Deleted
+	return before.Hash != now.Hash || before.MTime != now.MTime || before.Size != now.Size || before.Deleted != now.Deleted || before.PreviousPath != now.PreviousPath
 }
 
 func chooseRemote(hasCurrentL bool, currentL model.FileRecord, hasCurrentR bool, currentR model.FileRecord, hasPreviousL bool, previousL model.FileRecord, hasPreviousR bool, previousR model.FileRecord) bool {
