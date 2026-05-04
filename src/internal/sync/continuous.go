@@ -424,9 +424,14 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			if ev.Type != watchpkg.EventRename {
 				continue
 			}
-			if relOldPath, err := filepath.Rel(e.Config.VaultPath, ev.OldPath); err == nil {
-				delete(cs.remote, filepath.ToSlash(relOldPath))
-			}
+		relOldPath, err := filepath.Rel(e.Config.VaultPath, ev.OldPath)
+		if err != nil {
+			e.Logger.Warn().Err(err).
+				Str("oldPath", ev.OldPath).
+				Msg("continuous: failed to compute relative path for rename cleanup, skipping")
+			continue
+		}
+		delete(cs.remote, filepath.ToSlash(relOldPath))
 		}
 		currentRemote := make(map[string]model.FileRecord)
 		maps.Copy(currentRemote, previousRemote)
