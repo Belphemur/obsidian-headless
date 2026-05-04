@@ -71,9 +71,14 @@ func buildPlan(
 	}
 
 	for _, path := range paths {
-		// Skip paths that were renamed away — they are not deletes
-		if _, wasRenamedAway := localRenames[path]; wasRenamedAway {
-			continue
+		// Skip paths that were renamed away — they are not deletes,
+		// but only when the rename target still exists locally.
+		// If the target was deleted before this sync cycle, fall through
+		// so the planner can issue a delete-remote for the orphaned path.
+		if newPath, wasRenamedAway := localRenames[path]; wasRenamedAway {
+			if _, exists := currentLocal[newPath]; exists {
+				continue
+			}
 		}
 
 		currentL, hasCurrentL := currentLocal[path]
