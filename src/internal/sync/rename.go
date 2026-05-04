@@ -19,9 +19,11 @@ type RemoteRenameResult struct {
 
 // applyRemoteRenameFixups detects remote renames by correlating deleted and active
 // entries in currentRemote that share the same UID. When a rename is found:
-//  1. previousRemote is mutated to reflect the rename (PreviousPath set, record moved)
-//  2. The local file at oldPath is os.Rename'd to newPath if it exists and is unmodified
-//  3. The deleted entry is removed from currentRemote
+//  1. onBeforeRename is called (if non-nil) to allow the caller to suppress watcher
+//     events for oldPath and newPath before the filesystem rename occurs.
+//  2. previousRemote is mutated to reflect the rename (PreviousPath set, record moved)
+//  3. The local file at oldPath is os.Rename'd to newPath if it exists and is unmodified
+//  4. The deleted entry is removed from currentRemote
 //
 // Returns *RemoteRenameResult — the function never returns an error.
 // Rename failures are recorded as Conflicts in the result rather than returned as errors.
@@ -32,6 +34,7 @@ func applyRemoteRenameFixups(
 	currentLocal map[string]model.FileRecord,
 	vaultPath string,
 	logger zerolog.Logger,
+	onBeforeRename func(model.RenamePair),
 ) *RemoteRenameResult {
 	result := &RemoteRenameResult{}
 
@@ -110,33 +113,39 @@ func applyRemoteRenameFixups(
 					Msg("remote rename: destination exists locally, preserving")
 				result.Conflicts = append(result.Conflicts, oldPath)
 			} else {
-				// Local file is unmodified and destination is clear → rename it on disk
-				if err := os.MkdirAll(filepath.Dir(newLocalPath), 0o755); err != nil {
-					logger.Error().
-						Err(err).
-						Str("newPath", newPath).
-						Msg("remote rename: os.MkdirAll failed, treating as conflict")
-					result.Conflicts = append(result.Conflicts, oldPath)
-				} else if err := os.Rename(localPath, newLocalPath); err != nil {
-					logger.Error().
-						Err(err).
-						Str("oldPath", oldPath).
-						Str("newPath", newPath).
-						Msg("remote rename: os.Rename failed, treating as conflict")
-					result.Conflicts = append(result.Conflicts, oldPath)
-				} else {
-					// Rename succeeded on disk
-					oldLocal.Path = newPath
-					currentLocal[newPath] = oldLocal
-					delete(currentLocal, oldPath)
+			// Local file is unmodified and destination is clear → rename it on disk.
+			// Register the ignore pair before the filesystem rename to prevent
+			// the watcher from seeing our own rename as a user-initiated change.
+			pair := model.RenamePair{OldPath: oldPath, NewPath: newPath}
+			if onBeforeRename != nil {
+				onBeforeRename(pair)
+			}
+			if err := os.MkdirAll(filepath.Dir(newLocalPath), 0o755); err != nil {
+				logger.Error().
+					Err(err).
+					Str("newPath", newPath).
+					Msg("remote rename: os.MkdirAll failed, treating as conflict")
+				result.Conflicts = append(result.Conflicts, oldPath)
+			} else if err := os.Rename(localPath, newLocalPath); err != nil {
+				logger.Error().
+					Err(err).
+					Str("oldPath", oldPath).
+					Str("newPath", newPath).
+					Msg("remote rename: os.Rename failed, treating as conflict")
+				result.Conflicts = append(result.Conflicts, oldPath)
+			} else {
+				// Rename succeeded on disk
+				oldLocal.Path = newPath
+				currentLocal[newPath] = oldLocal
+				delete(currentLocal, oldPath)
 
-					result.Enacted = append(result.Enacted, model.RenamePair{OldPath: oldPath, NewPath: newPath})
-					renameEnacted = true
-					logger.Info().
-						Str("oldPath", oldPath).
-						Str("newPath", newPath).
-						Msg("remote rename: local file renamed on disk")
-				}
+				result.Enacted = append(result.Enacted, pair)
+				renameEnacted = true
+				logger.Info().
+					Str("oldPath", oldPath).
+					Str("newPath", newPath).
+					Msg("remote rename: local file renamed on disk")
+			}
 			}
 		}
 		// else: local file already absent → nothing to rename on disk

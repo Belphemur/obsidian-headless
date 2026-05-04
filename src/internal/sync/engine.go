@@ -153,8 +153,9 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	version := e.version
 	e.mu.Unlock()
 
-	// Detect and apply remote renames before building the plan
-	remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger)
+	// Detect and apply remote renames before building the plan.
+	// No watcher in RunOnce mode, so no pre-rename callback needed.
+	remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger, nil)
 	e.logRemoteRenameConflicts(remoteRenameResult, "once")
 
 	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir())

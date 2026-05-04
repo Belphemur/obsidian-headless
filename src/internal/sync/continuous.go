@@ -410,13 +410,14 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		version := cs.version
 		cs.mu.Unlock()
 
-		// Detect and apply remote renames before building the plan
-		remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger)
+		// Detect and apply remote renames before building the plan.
+		// Pass a callback to register watcher ignore paths before os.Rename
+		// so fsnotify events for our own rename are suppressed.
+		remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger,
+			func(pair model.RenamePair) {
+				watcher.AddIgnorePaths([]model.RenamePair{pair})
+			})
 		e.logRemoteRenameConflicts(remoteRenameResult, "continuous")
-		if len(remoteRenameResult.Enacted) > 0 {
-			// Suppress watcher events for paths affected by remote rename
-			watcher.AddIgnorePaths(remoteRenameResult.Enacted)
-		}
 
 		plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir())
 		e.Logger.Info().Int("planned_actions", len(plan)).Msg("continuous: sync plan created")
