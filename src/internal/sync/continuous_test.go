@@ -533,7 +533,7 @@ func TestApplyRenameFixups(t *testing.T) {
 		renames := []watchpkg.ScanEvent{
 			{Path: absNewPath, OldPath: absOldPath, Type: watchpkg.EventRename},
 		}
-		applyRenameFixups(local, remote, renames, vaultPath, zerolog.Nop())
+		applyRenameFixups(local, remote, nil, renames, vaultPath, zerolog.Nop())
 
 		// Old path should be gone
 		if _, ok := local[oldPath]; ok {
@@ -565,7 +565,7 @@ func TestApplyRenameFixups(t *testing.T) {
 		renames := []watchpkg.ScanEvent{
 			{Path: absNewPath, OldPath: absOldPath, Type: watchpkg.EventRename},
 		}
-		applyRenameFixups(local, remote, renames, vaultPath, zerolog.Nop())
+		applyRenameFixups(local, remote, nil, renames, vaultPath, zerolog.Nop())
 
 		rec, ok := remote[newPath]
 		if !ok {
@@ -587,7 +587,7 @@ func TestApplyRenameFixups(t *testing.T) {
 		renames := []watchpkg.ScanEvent{
 			{Path: absNewPath, OldPath: filepath.Join(vaultPath, "nonexistent.md"), Type: watchpkg.EventRename},
 		}
-		applyRenameFixups(local, remote, renames, vaultPath, zerolog.Nop())
+		applyRenameFixups(local, remote, nil, renames, vaultPath, zerolog.Nop())
 
 		// Should not panic, no records added
 		if len(local) != 0 || len(remote) != 0 {
@@ -606,7 +606,7 @@ func TestApplyRenameFixups(t *testing.T) {
 			{Path: absOldPath, Type: watchpkg.EventRemove},
 			{Path: absNewPath, OldPath: absOldPath, Type: watchpkg.EventRename},
 		}
-		applyRenameFixups(local, remote, renames, vaultPath, zerolog.Nop())
+		applyRenameFixups(local, remote, nil, renames, vaultPath, zerolog.Nop())
 
 		// Only the rename should be applied, not the remove
 		rec, ok := local[newPath]

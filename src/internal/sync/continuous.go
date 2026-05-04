@@ -30,26 +30,42 @@ const (
 	heartbeatTimeout       = 120 * time.Second
 )
 
+// relPath converts an absolute watcher path to a vault-relative, slash-normalized path.
+func relPath(vaultPath, absPath string) (string, error) {
+	rel, err := filepath.Rel(vaultPath, absPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
+}
+
 // applyRenameFixups mutates previousLocal and previousRemote in-place to reflect
 // file renames detected by the watcher. Without this, a rename from oldPath→newPath
 // would appear as a delete of oldPath + create of newPath in buildPlan.
 // The record's PreviousPath field is set to preserve the rename chain.
-func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord, renames []watchpkg.ScanEvent, vaultPath string, logger zerolog.Logger) {
+// csRemote is also mutated to remove stale old paths so they don't resurface
+// as new remote files when previousRemote and cs.remote are merged.
+func applyRenameFixups(
+	previousLocal, previousRemote map[string]model.FileRecord,
+	csRemote map[string]model.FileRecord,
+	renames []watchpkg.ScanEvent,
+	vaultPath string,
+	logger zerolog.Logger,
+) {
 	for _, ev := range renames {
 		if ev.Type != watchpkg.EventRename {
 			continue
 		}
-		// Convert absolute watcher paths to vault-relative
-		relOldPath, err := filepath.Rel(vaultPath, ev.OldPath)
+		relOldPath, err := relPath(vaultPath, ev.OldPath)
 		if err != nil {
+			logger.Warn().Err(err).Str("oldPath", ev.OldPath).Msg("rename fixup: failed to compute relative old path")
 			continue
 		}
-		relNewPath, err := filepath.Rel(vaultPath, ev.Path)
+		relNewPath, err := relPath(vaultPath, ev.Path)
 		if err != nil {
+			logger.Warn().Err(err).Str("newPath", ev.Path).Msg("rename fixup: failed to compute relative new path")
 			continue
 		}
-		relOldPath = filepath.ToSlash(relOldPath)
-		relNewPath = filepath.ToSlash(relNewPath)
 
 		if oldLocal, ok := previousLocal[relOldPath]; ok {
 			oldLocal.PreviousPath = relOldPath
@@ -71,6 +87,12 @@ func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord
 				Str("newPath", relNewPath).
 				Msg("continuous: remote rename applied")
 		}
+
+		// Remove the old path from cs.remote to prevent it from reappearing
+		// as a new remote file in currentRemote (which merges previousRemote + cs.remote).
+		// applyRenameFixups already moved the entry in previousRemote, so the old path
+		// in cs.remote is now stale.
+		delete(csRemote, relOldPath)
 	}
 }
 
@@ -387,7 +409,9 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		pendingRenames = pendingRenames[:0]
 		renamesMu.Unlock()
 
-		applyRenameFixups(previousLocal, previousRemote, snapshot, e.Config.VaultPath, e.Logger)
+		cs.mu.Lock()
+		applyRenameFixups(previousLocal, previousRemote, cs.remote, snapshot, e.Config.VaultPath, e.Logger)
+		cs.mu.Unlock()
 
 		// Flush stale ignorations from the previous sync cycle
 		watcher.FlushIgnored()
@@ -416,23 +440,6 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		}
 
 		cs.mu.Lock()
-		// Remove old rename paths from cs.remote to prevent them from
-		// appearing as new remote files and triggering spurious downloads.
-		// applyRenameFixups already moved the entries in previousRemote,
-		// so without this the old path would reappear in currentRemote.
-		for _, ev := range snapshot {
-			if ev.Type != watchpkg.EventRename {
-				continue
-			}
-		relOldPath, err := filepath.Rel(e.Config.VaultPath, ev.OldPath)
-		if err != nil {
-			e.Logger.Warn().Err(err).
-				Str("oldPath", ev.OldPath).
-				Msg("continuous: failed to compute relative path for rename cleanup, skipping")
-			continue
-		}
-		delete(cs.remote, filepath.ToSlash(relOldPath))
-		}
 		currentRemote := make(map[string]model.FileRecord)
 		maps.Copy(currentRemote, previousRemote)
 		for path, record := range cs.remote {
