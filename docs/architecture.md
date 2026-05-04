@@ -152,6 +152,40 @@ are suppressed and not misinterpreted as user-initiated renames.
 This detection runs in both `RunOnce` and continuous sync modes, before
 `buildPlan` is called.
 
+### Local rename propagation to remote
+
+When a local file rename is detected by the filesystem watcher, the rename
+source path must be communicated to the server via the `relatedpath` field
+in the WebSocket push message. This propagation flows through three stages:
+
+1. **Watcher detection** — The `FileSystemAdapter` detects renames via
+   inode tracking (Linux/macOS) and emits a `ScanEvent` with both old and
+   new paths.
+
+2. **`applyRenameFixups()`** (`continuous.go`) — Runs before plan
+   construction. It moves the renamed file's record from its old path to its
+   new path in `previousLocal` and sets `PreviousPath` to preserve the
+   rename chain. This ensures that when `scanLocal()` later creates a fresh
+   `FileRecord` for the new path (without `PreviousPath`), the pipeline can
+   recover the rename source from the previous state.
+
+3. **`executePlan()`** (`engine.go`) — Accepts `previousLocal` as an
+   additional parameter (alongside the standard `currentLocal`,
+   `previousRemote` maps). In the `syncActionUpload` case, it enriches
+   the upload record with `PreviousPath` from the previous local state
+   before calling `session.push()`. After a successful push,
+   `PreviousPath` is cleared on the record in `currentLocal` to prevent
+   re-sending `relatedpath` on subsequent sync cycles.
+
+4. **`session.push()`** (`session.go`) — When `record.PreviousPath` is
+   non-empty, it encrypts the value via `s.encryptPath()` and includes it
+   as `relatedpath` in the WebSocket push message.
+
+The `previousLocal` map is loaded once per sync cycle from the state store
+and reused across plan building and execution. Each new cycle reloads it
+fresh, so clearing `PreviousPath` in `currentLocal` after push is sufficient
+to prevent retransmission.
+
 ### Watch disabled for read-only modes
 
 In `pull-only` and `mirror-remote` sync modes, local file changes are never
