@@ -108,7 +108,7 @@ single `"renamed"` event (with both old and new paths) instead of separate
 `"file-removed"` + `"file-created"` events. This lets the sync engine move the
 metadata record without re-hashing or re-uploading the unchanged content.
 
-### Remote rename detection (UID-based)
+### Remote rename detection (UID + hash-based fallback)
 
 When a file is renamed on another device, the Obsidian Sync server does not
 have a native "rename" protocol message. Instead it sends **two separate push
@@ -125,12 +125,25 @@ matching in `applyRemoteRenameFixups()` (see `src/internal/sync/rename.go`):
   disk via `os.Rename` to `newPath`. The sync state metadata moves with it —
   `PreviousPath` is set to preserve the rename chain. No re-download is needed.
 - If the local file at `oldPath` was **modified** locally, or if there is no
-  previous state for `oldPath` in either `previousLocal` or `previousRemote`,
-  it is preserved at its original path and the conflict is logged. The remote
+  previous state for `oldPath` (missing from both `previousLocal` and
+  `previousRemote`), it is preserved at its original path and the conflict is
+  logged. The remote
   version at `newPath` is downloaded normally, and `buildPlan` handles the two
   files independently.
 - Rename or directory-creation failures are recorded as conflicts rather than
   returned as errors.
+
+When the Obsidian desktop app performs a rename, it sometimes executes a
+**delete + upload** as separate operations, causing the server to assign a
+**new UID** to the uploaded file. In these cases UID matching fails. The
+client falls back to **hash-based detection**: for deleted records that were
+not matched by UID, it compares file hashes between the deleted and active
+entries. If the deleted record's hash is empty, it falls back to
+`previousRemote[path].Hash`. When exactly one active entry shares the same
+hash, the rename is detected. If multiple candidates match (ambiguous hash),
+the fallback is skipped with a warning and the entries are treated as
+independent operations. This ensures pure renames — where content is unchanged
+— are detected even when UIDs differ.
 
 After renaming, the watcher is notified of the affected paths via
 `AddIgnorePaths()` so that the resulting filesystem events (from `os.Rename`)

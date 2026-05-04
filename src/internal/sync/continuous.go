@@ -231,7 +231,11 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 						cs.mu.Lock()
 						cs.remote[record.Path] = record
 						cs.mu.Unlock()
-						e.Logger.Debug().Str("path", record.Path).Msg("continuous: received push")
+						e.Logger.Debug().
+							Str("path", record.Path).
+							Int64("uid", record.UID).
+							Bool("deleted", record.Deleted).
+							Msg("continuous: received push")
 					}
 
 					select {

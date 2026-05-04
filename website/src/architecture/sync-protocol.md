@@ -229,28 +229,30 @@ The server echoes push notifications back to the sender. The client must detect 
 The Obsidian Sync server does not have a dedicated "rename" protocol message.
 :::
 
-When a file is renamed on another device, the server sends **two independent push notifications** that share the same UID:
+When a file is renamed on another device, the server sends **two independent push notifications**. In the ideal case they share the same UID:
 
 | Push | Path | `deleted` | Content |
 |------|------|-----------|---------|
 | 1 | New path (e.g., `new.md`) | `false` | Full file content |
 | 2 | Old path (e.g., `old.md`) | `true` | Empty |
 
-The client **detects remote renames** by correlating these two pushes via UID matching in a single pass over `currentRemote`:
+In practice, UIDs may differ. When the Obsidian desktop client performs a rename as separate delete and upload operations, the server assigns a **new UID** to the uploaded file. The client handles this with a two-step detection in `applyRemoteRenameFixups()`:
 
-1. Collects deleted entries with a known UID and active entries with the same UID
-2. If the UIDs match and the paths differ → it's a rename
+1. **UID matching**: collect deleted and active entries with the same UID. If the UIDs match and the paths differ → it's a rename.
+2. **Hash-based fallback**: for deleted entries not matched by UID, compare file hashes between deleted and active entries. If the deleted record's hash is empty, it falls back to `previousRemote[path].Hash`. When exactly one active entry shares the same hash, the rename is detected. Ambiguous matches (multiple candidates with the same hash) are skipped with a warning.
 
 ```mermaid
 flowchart TD
     A[Server sends two pushes: delete old, create new] --> B{Client: same UID?}
     B -->|Yes, different paths| C[Rename detected]
-    B -->|No| D[Treat as separate delete + download]
-    C --> E{Local file at old path modified?}
+    B -->|No| H{Same hash?}
+    H -->|Yes, unambiguous| C
+    H -->|No or ambiguous| D[Treat as separate delete + download]
+    C --> I{No previous state for old path?}
+    I -->|Yes| G[Preserve local file, download new path as copy]
+    I -->|No| E{Local file at old path modified?}
+    E -->|Yes| G
     E -->|No| F[Create parent dirs, rename local file in-place, no download]
-    E -->|Yes| G[Preserve local file, download new path as copy]
-    C --> H{No previous state for old path?}
-    H -->|Yes| G
 ```
 
 The rename detection runs before `buildPlan` in both `RunOnce` and continuous sync modes. When a rename is enacted locally, the filesystem watcher's `AddIgnorePaths` mechanism suppresses the resulting fsnotify events to prevent them from being misinterpreted as new user changes.
