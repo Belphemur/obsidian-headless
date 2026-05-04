@@ -32,7 +32,11 @@ Pre-built packages are available on the [GitHub Releases](https://github.com/Bel
 
 ### Windows
 
-Download the `.zip` from [GitHub Releases](https://github.com/Belphemur/obsidian-headless/releases/latest).
+```powershell
+winget install Belphemur.ObsidianHeadless
+```
+
+Or download the `.zip` from [GitHub Releases](https://github.com/Belphemur/obsidian-headless/releases/latest).
 
 ### Go Install
 
@@ -281,7 +285,7 @@ ob publish-unlink [--path <local-path>]
 
 Full documentation is available at **[belphemur.github.io/obsidian-headless](https://belphemur.github.io/obsidian-headless)**:
 
-- [Installation Guide](https://belphemur.github.io/obsidian-headless/installation) — Install via brew, apt, rpm, apk, pacman, go install, or Docker
+- [Installation Guide](https://belphemur.github.io/obsidian-headless/installation) — Install via brew, apt, rpm, apk, pacman, winget, go install, or Docker
 - [Usage Guide](https://belphemur.github.io/obsidian-headless/usage) — Complete CLI command reference for Sync and Publish
 - [Architecture](https://belphemur.github.io/obsidian-headless/architecture/) — Sync protocol, encryption, and REST API deep-dive
 

@@ -25,7 +25,7 @@ features:
     details: End-to-end encrypted vaults with V2/V3 encryption. Your data is encrypted before it leaves your device — zero-knowledge.
   - title: Cross-Platform
     icon: fa-solid:computer
-    details: Available on Linux, macOS, and Windows. Native packages for apt, dnf, pacman, apk; Homebrew Cask for macOS; manual download for Windows.
+    details: Available on Linux, macOS, and Windows. Native packages for apt, dnf, pacman, apk; Homebrew Cask for macOS; Winget for Windows.
   - title: Docker Native
     icon: fa-brands:docker
     details: Official Docker images on ghcr.io with s6-overlay process supervision. Run sync as a container with environment-based configuration.

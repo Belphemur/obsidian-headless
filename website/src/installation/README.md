@@ -8,7 +8,7 @@ Choose your platform:
 
 - [macOS](macos.md) — Homebrew Cask
 - [Linux](linux.md) — deb, rpm, pacman, apk, systemd
-- [Windows](windows.md) — GitHub Releases
+- [Windows](windows.md) — Winget
 - [Docker](docker.md) — Docker and Docker Compose
 - [From Source](from-source.md) — Go install and build from source
 

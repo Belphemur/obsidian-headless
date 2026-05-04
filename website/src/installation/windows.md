@@ -4,6 +4,8 @@ title: Windows Installation
 
 # Windows
 
-## Download
+## Winget
 
-Download the latest `.zip` from [GitHub Releases](https://github.com/Belphemur/obsidian-headless/releases/latest) and extract the binary to a directory in your `PATH`.
+```powershell
+winget install Belphemur.ObsidianHeadless
+```
