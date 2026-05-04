@@ -434,6 +434,24 @@ func TestApplyRemoteRenameFixups_DifferentUIDsSameHash(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(vaultPath, "new.md")); err != nil {
 		t.Error("new.md should exist on disk after rename")
 	}
+
+	// Verify previousRemote state: new.md should exist with updated metadata
+	if prev, ok := previousRemote["new.md"]; !ok {
+		t.Error("previousRemote should have new.md after rename")
+	} else {
+		if prev.Path != "new.md" {
+			t.Errorf("previousRemote new.md path = %s, want new.md", prev.Path)
+		}
+		if prev.PreviousPath != "old.md" {
+			t.Errorf("previousRemote new.md PreviousPath = %s, want old.md", prev.PreviousPath)
+		}
+		if prev.UID != 99 {
+			t.Errorf("previousRemote new.md UID = %d, want 99 (server-assigned)", prev.UID)
+		}
+	}
+	if _, ok := previousRemote["old.md"]; ok {
+		t.Error("previousRemote should not have old.md after rename")
+	}
 }
 
 func TestApplyRemoteRenameFixups_UIDZeroSameHash(t *testing.T) {
@@ -475,6 +493,24 @@ func TestApplyRemoteRenameFixups_UIDZeroSameHash(t *testing.T) {
 	}
 	if _, exists := currentRemote["old.md"]; exists {
 		t.Error("old.md should have been removed from currentRemote")
+	}
+
+	// Verify previousRemote state: new.md should exist with UID from currentRemote
+	if prev, ok := previousRemote["new.md"]; !ok {
+		t.Error("previousRemote should have new.md after rename")
+	} else {
+		if prev.Path != "new.md" {
+			t.Errorf("previousRemote new.md path = %s, want new.md", prev.Path)
+		}
+		if prev.PreviousPath != "old.md" {
+			t.Errorf("previousRemote new.md PreviousPath = %s, want old.md", prev.PreviousPath)
+		}
+		if prev.UID != 99 {
+			t.Errorf("previousRemote new.md UID = %d, want 99 (from currentRemote)", prev.UID)
+		}
+	}
+	if _, ok := previousRemote["old.md"]; ok {
+		t.Error("previousRemote should not have old.md after rename")
 	}
 }
 

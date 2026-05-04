@@ -64,11 +64,19 @@ func applyRemoteRenameFixups(
 		return result
 	}
 
-	// Step 1: In a single pass, collect deleted UIDs and active UID→newPath mappings.
+	// Step 1: In a single pass, collect deleted UIDs, active UID→newPath
+	// mappings, and a list of deleted paths for the hash fallback.
 	deletedUIDs := make(map[int64]string)  // uid → oldPath
 	uidToNewPath := make(map[int64]string) // uid → newPath
+	var deletedPaths []string
 	for path, record := range currentRemote {
-		if record.Folder || record.UID == 0 {
+		if record.Folder {
+			continue
+		}
+		if record.Deleted {
+			deletedPaths = append(deletedPaths, path)
+		}
+		if record.UID == 0 {
 			continue
 		}
 		if record.Deleted {
@@ -82,8 +90,8 @@ func applyRemoteRenameFixups(
 	// so the hash fallback can skip them.
 	processedPaths := make(map[string]struct{})
 
-	// uidMatchedActivePaths tracks active paths that were targets of successful
-	// UID-based renames, preventing the hash fallback from reusing them.
+	// uidMatchedActivePaths tracks active paths that were targeted by
+	// UID-based or hash-based renames, preventing them from being reused.
 	uidMatchedActivePaths := make(map[string]struct{})
 
 	// Step 2: Correlate deleted UIDs with active UIDs to find renames.
@@ -100,6 +108,7 @@ func applyRemoteRenameFixups(
 			Int64("uid", uid).
 			Msg("remote rename detected via UID match")
 
+		uidMatchedActivePaths[newPath] = struct{}{}
 		enacted, conflict := handleRemoteRename(oldPath, newPath, currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger, onBeforeRename)
 		if conflict != "" {
 			result.Conflicts = append(result.Conflicts, conflict)
@@ -108,7 +117,6 @@ func applyRemoteRenameFixups(
 		if enacted {
 			result.Enacted = append(result.Enacted, model.RenamePair{OldPath: oldPath, NewPath: newPath})
 		}
-		uidMatchedActivePaths[newPath] = struct{}{}
 	}
 
 	// Step 3: Hash-based fallback for deleted records not matched by UID.
@@ -121,13 +129,11 @@ func applyRemoteRenameFixups(
 		hashToActivePaths[record.Hash] = append(hashToActivePaths[record.Hash], path)
 	}
 
-	for path, record := range currentRemote {
-		if record.Folder || !record.Deleted {
-			continue
-		}
+	for _, path := range deletedPaths {
 		if _, processed := processedPaths[path]; processed {
 			continue
 		}
+		record := currentRemote[path]
 
 		deletedHash := record.Hash
 		if deletedHash == "" {
@@ -175,6 +181,7 @@ func applyRemoteRenameFixups(
 			Str("hash", deletedHash).
 			Msg("remote rename detected via hash match")
 
+		uidMatchedActivePaths[newPath] = struct{}{}
 		enacted, conflict := handleRemoteRename(path, newPath, currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger, onBeforeRename)
 		if conflict != "" {
 			result.Conflicts = append(result.Conflicts, conflict)
@@ -183,7 +190,6 @@ func applyRemoteRenameFixups(
 		if enacted {
 			result.Enacted = append(result.Enacted, model.RenamePair{OldPath: path, NewPath: newPath})
 		}
-		uidMatchedActivePaths[newPath] = struct{}{}
 	}
 
 	return result
@@ -278,6 +284,16 @@ func handleRemoteRename(
 			oldRemote.Path = newPath
 			previousRemote[newPath] = oldRemote
 			delete(previousRemote, oldPath)
+		}
+
+		// When the server assigned a new UID (hash-fallback renames),
+		// sync it into previousRemote so three-way merges can pull
+		// base content by the correct UID.
+		if newRecord, ok := currentRemote[newPath]; ok && newRecord.UID != 0 {
+			if prev, ok := previousRemote[newPath]; ok && prev.UID != newRecord.UID {
+				prev.UID = newRecord.UID
+				previousRemote[newPath] = prev
+			}
 		}
 
 		delete(currentRemote, oldPath)
