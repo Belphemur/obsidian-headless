@@ -495,7 +495,7 @@ func TestExecutePlan(t *testing.T) {
 	currentRemote := remote
 	previousRemote := map[string]model.FileRecord{}
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian")
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian", nil)
 	if len(plan) != 2 {
 		t.Fatalf("expected 2 actions, got %d: %+v", len(plan), plan)
 	}
@@ -556,7 +556,7 @@ func TestExecutePlanParallelDownloads(t *testing.T) {
 	currentRemote := mock.cloneRecordsByPath()
 	previousRemote := map[string]model.FileRecord{}
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian")
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian", nil)
 	if len(plan) != numFiles {
 		t.Fatalf("expected %d actions, got %d", numFiles, len(plan))
 	}
@@ -626,7 +626,7 @@ func TestExecutePlanParallelSmallSync(t *testing.T) {
 	currentRemote := mock.cloneRecordsByPath()
 	previousRemote := map[string]model.FileRecord{}
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian")
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian", nil)
 	if len(plan) != 3 {
 		t.Fatalf("expected 3 actions, got %d", len(plan))
 	}

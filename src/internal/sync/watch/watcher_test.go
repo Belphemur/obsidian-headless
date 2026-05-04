@@ -244,7 +244,6 @@ func TestWatcher_IgnorePaths_SuppressesCreate(t *testing.T) {
 	}
 }
 
-
 func TestWatcher_IgnorePaths_FlushIgnored(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
