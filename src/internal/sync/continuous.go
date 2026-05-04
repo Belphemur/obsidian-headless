@@ -458,7 +458,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		}
 
 		session := newRemoteSession(connB, currentRemote, execVersion, ctx, e.enc, e.Logger, e.rawKey)
-		if err := e.executePlan(ctx, plan, currentLocal, previousRemote, session); err != nil {
+		if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session); err != nil {
 			e.Logger.Error().Err(err).Msg("continuous: failed to execute plan")
 			return
 		}
