@@ -121,13 +121,16 @@ The client detects remote renames by correlating these two pushes via UID
 matching in `applyRemoteRenameFixups()` (see `src/internal/sync/rename.go`):
 
 - If the local file at `oldPath` is **unmodified** (hash matches previous
-  state), it is renamed in-place on disk via `os.Rename` to `newPath`. The
-  sync state metadata moves with it — `PreviousPath` is set to preserve the
-  rename chain. No re-download is needed.
-- If the local file at `oldPath` was **modified** locally, it is preserved
-  at its original path and the conflict is logged. The remote version at
-  `newPath` is downloaded normally, and `buildPlan` handles the two files
-  independently.
+  state), parent directories are created and the file is renamed in-place on
+  disk via `os.Rename` to `newPath`. The sync state metadata moves with it —
+  `PreviousPath` is set to preserve the rename chain. No re-download is needed.
+- If the local file at `oldPath` was **modified** locally, or if there is no
+  previous state for `oldPath` in either `previousLocal` or `previousRemote`,
+  it is preserved at its original path and the conflict is logged. The remote
+  version at `newPath` is downloaded normally, and `buildPlan` handles the two
+  files independently.
+- Rename or directory-creation failures are recorded as conflicts rather than
+  returned as errors.
 
 After renaming, the watcher is notified of the affected paths via
 `AddIgnorePaths()` so that the resulting filesystem events (from `os.Rename`)

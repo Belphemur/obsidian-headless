@@ -236,11 +236,10 @@ When a file is renamed on another device, the server sends **two independent pus
 | 1 | New path (e.g., `new.md`) | `false` | Full file content |
 | 2 | Old path (e.g., `old.md`) | `true` | Empty |
 
-The client **detects remote renames** by correlating these two pushes via UID matching:
+The client **detects remote renames** by correlating these two pushes via UID matching in a single pass over `currentRemote`:
 
-1. Scans `currentRemote` for deleted entries with a known UID
-2. Finds active entries with the same UID
-3. If the UIDs match and the paths differ → it's a rename
+1. Collects deleted entries with a known UID and active entries with the same UID
+2. If the UIDs match and the paths differ → it's a rename
 
 ```mermaid
 flowchart TD
@@ -248,8 +247,10 @@ flowchart TD
     B -->|Yes, different paths| C[Rename detected]
     B -->|No| D[Treat as separate delete + download]
     C --> E{Local file at old path modified?}
-    E -->|No| F[Rename local file in-place, no download]
+    E -->|No| F[Create parent dirs, rename local file in-place, no download]
     E -->|Yes| G[Preserve local file, download new path as copy]
+    C --> H{No previous state for old path?}
+    H -->|Yes| G
 ```
 
 The rename detection runs before `buildPlan` in both `RunOnce` and continuous sync modes. When a rename is enacted locally, the filesystem watcher's `AddIgnorePaths` mechanism suppresses the resulting fsnotify events to prevent them from being misinterpreted as new user changes.
