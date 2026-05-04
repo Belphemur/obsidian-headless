@@ -24,8 +24,8 @@ type RemoteRenameResult struct {
 //  2. The local file at oldPath is os.Rename'd to newPath if it exists and is unmodified
 //  3. The deleted entry is removed from currentRemote
 //
-// Returns (nil, error) only on fatal error (e.g. os.Rename failure).
-// Returns (*RemoteRenameResult, nil) on success with possible Conflicts.
+// Returns (*RemoteRenameResult, nil) — the function never returns an error.
+// Rename failures are recorded as Conflicts in the result rather than returned as errors.
 func applyRemoteRenameFixups(
 	currentRemote map[string]model.FileRecord,
 	previousRemote map[string]model.FileRecord,
@@ -36,36 +36,26 @@ func applyRemoteRenameFixups(
 ) (*RemoteRenameResult, error) {
 	result := &RemoteRenameResult{}
 
-	// Step 1: Scan for deleted entries with UIDs in currentRemote
-	deletedUIDs := make(map[int64]string) // uid → oldPath
+	// Step 1: In a single pass, collect deleted UIDs and active UID→newPath mappings.
+	deletedUIDs := make(map[int64]string)  // uid → oldPath
+	uidToNewPath := make(map[int64]string) // uid → newPath
 	for path, record := range currentRemote {
-		if !record.Deleted || record.Folder {
+		if record.Folder || record.UID == 0 {
 			continue
 		}
-		if record.UID == 0 {
-			continue
+		if record.Deleted {
+			deletedUIDs[record.UID] = path
+		} else {
+			uidToNewPath[record.UID] = path
 		}
-		deletedUIDs[record.UID] = path
 	}
 
-	// Guard: no deleted entries to correlate
+	// Guard: nothing to correlate.
 	if len(deletedUIDs) == 0 {
 		return result, nil
 	}
 
-	// Step 2: Build UID→newPath map from active entries in currentRemote
-	uidToNewPath := make(map[int64]string) // uid → newPath
-	for path, record := range currentRemote {
-		if record.Deleted || record.Folder {
-			continue
-		}
-		if record.UID == 0 {
-			continue
-		}
-		uidToNewPath[record.UID] = path
-	}
-
-	// Step 3: Correlate deleted UIDs with active UIDs to find renames
+	// Step 2: Correlate deleted UIDs with active UIDs to find renames.
 	for uid, oldPath := range deletedUIDs {
 		newPath, ok := uidToNewPath[uid]
 		if !ok || newPath == oldPath {
@@ -79,7 +69,7 @@ func applyRemoteRenameFixups(
 			Int64("uid", uid).
 			Msg("remote rename detected via UID match")
 
-		// Step 3a: Handle local file at oldPath
+		// Step 2a: Handle local file at oldPath
 		oldLocal, hasOldLocal := currentLocal[oldPath]
 		renameEnacted := false
 		if hasOldLocal {
@@ -88,8 +78,21 @@ func applyRemoteRenameFixups(
 
 			// Check if local file was modified
 			localModified := false
-			if prevLocal, hasPrevLocal := previousLocal[oldPath]; hasPrevLocal {
-				localModified = oldLocal.Hash != prevLocal.Hash
+			_, hasPrevLocal := previousLocal[oldPath]
+			if hasPrevLocal {
+				localModified = oldLocal.Hash != previousLocal[oldPath].Hash
+			}
+
+			// If neither previousLocal nor previousRemote has oldPath, can't verify
+			// the local file corresponds to the remote file — treat as conflict.
+			if !hasPrevLocal {
+				if _, hasPrevRemote := previousRemote[oldPath]; !hasPrevRemote {
+					logger.Warn().
+						Str("oldPath", oldPath).
+						Msg("remote rename: no previous state for oldPath, preserving local file")
+					result.Conflicts = append(result.Conflicts, oldPath)
+					continue
+				}
 			}
 
 			if localModified {
@@ -109,7 +112,13 @@ func applyRemoteRenameFixups(
 				result.Conflicts = append(result.Conflicts, oldPath)
 			} else {
 				// Local file is unmodified and destination is clear → rename it on disk
-				if err := os.Rename(localPath, newLocalPath); err != nil {
+				if err := os.MkdirAll(filepath.Dir(newLocalPath), 0o755); err != nil {
+					logger.Error().
+						Err(err).
+						Str("newPath", newPath).
+						Msg("remote rename: os.MkdirAll failed, treating as conflict")
+					result.Conflicts = append(result.Conflicts, oldPath)
+				} else if err := os.Rename(localPath, newLocalPath); err != nil {
 					logger.Error().
 						Err(err).
 						Str("oldPath", oldPath).
@@ -133,7 +142,7 @@ func applyRemoteRenameFixups(
 		}
 		// else: local file already absent → nothing to rename on disk
 
-		// Step 3b: Update metadata state — only if the rename was enacted on disk
+		// Step 2b: Update metadata state — only if the rename was enacted on disk
 		// or the local file was already absent (rename happened on another device).
 		if renameEnacted || !hasOldLocal {
 			// Update previousRemote to reflect the rename

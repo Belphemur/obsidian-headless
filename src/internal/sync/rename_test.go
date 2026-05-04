@@ -383,7 +383,11 @@ func TestApplyRemoteRenameFixups_RenameError(t *testing.T) {
 	if err := os.Chmod(vaultPath, 0500); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(vaultPath, 0700) // restore for cleanup
+	defer func() {
+		if err := os.Chmod(vaultPath, 0700); err != nil {
+			t.Errorf("failed to restore permissions: %v", err)
+		}
+	}()
 
 	logger := zerolog.Nop()
 	result, err := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger)

@@ -64,6 +64,7 @@ func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord
 type continuousState struct {
 	mu             sync.Mutex
 	syncInProgress atomic.Bool
+	syncPending    atomic.Bool
 	conn           *websocket.Conn
 	remote         map[string]model.FileRecord
 	version        int64
@@ -330,6 +331,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 	doSync = func() {
 		if cs.syncInProgress.Swap(true) {
 			e.Logger.Debug().Msg("continuous: sync already in progress, skipping")
+			cs.syncPending.Store(true)
 			return
 		}
 		defer cs.syncInProgress.Store(false)
@@ -480,6 +482,12 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		}
 
 		e.Logger.Info().Msg("continuous: sync complete")
+
+		// If another sync was requested while this one was running, re-trigger
+		if cs.syncPending.Swap(false) {
+			e.Logger.Debug().Msg("continuous: re-triggering sync for pending changes")
+			scheduleSync()
+		}
 	}
 
 	// Always run a full sync on startup to catch local changes made
