@@ -533,7 +533,7 @@ func TestApplyRenameFixups(t *testing.T) {
 		renames := []watchpkg.ScanEvent{
 			{Path: absNewPath, OldPath: absOldPath, Type: watchpkg.EventRename},
 		}
-		applyRenameFixups(local, remote, renames, vaultPath, zerolog.Nop())
+		applyRenameFixups(local, remote, nil, renames, vaultPath, zerolog.Nop())
 
 		// Old path should be gone
 		if _, ok := local[oldPath]; ok {
@@ -565,7 +565,7 @@ func TestApplyRenameFixups(t *testing.T) {
 		renames := []watchpkg.ScanEvent{
 			{Path: absNewPath, OldPath: absOldPath, Type: watchpkg.EventRename},
 		}
-		applyRenameFixups(local, remote, renames, vaultPath, zerolog.Nop())
+		applyRenameFixups(local, remote, nil, renames, vaultPath, zerolog.Nop())
 
 		rec, ok := remote[newPath]
 		if !ok {
@@ -587,7 +587,7 @@ func TestApplyRenameFixups(t *testing.T) {
 		renames := []watchpkg.ScanEvent{
 			{Path: absNewPath, OldPath: filepath.Join(vaultPath, "nonexistent.md"), Type: watchpkg.EventRename},
 		}
-		applyRenameFixups(local, remote, renames, vaultPath, zerolog.Nop())
+		applyRenameFixups(local, remote, nil, renames, vaultPath, zerolog.Nop())
 
 		// Should not panic, no records added
 		if len(local) != 0 || len(remote) != 0 {
@@ -606,7 +606,7 @@ func TestApplyRenameFixups(t *testing.T) {
 			{Path: absOldPath, Type: watchpkg.EventRemove},
 			{Path: absNewPath, OldPath: absOldPath, Type: watchpkg.EventRename},
 		}
-		applyRenameFixups(local, remote, renames, vaultPath, zerolog.Nop())
+		applyRenameFixups(local, remote, nil, renames, vaultPath, zerolog.Nop())
 
 		// Only the rename should be applied, not the remove
 		rec, ok := local[newPath]
@@ -616,5 +616,59 @@ func TestApplyRenameFixups(t *testing.T) {
 		if rec.PreviousPath != oldPath {
 			t.Fatalf("expected PreviousPath %s, got %s", oldPath, rec.PreviousPath)
 		}
+	})
+}
+
+func TestApplyRenameFixupsCsRemote(t *testing.T) {
+	t.Parallel()
+	vaultPath := "/tmp/vault"
+	oldPath := "old/file.md"
+	newPath := "new/file.md"
+	absOldPath := filepath.Join(vaultPath, oldPath)
+	absNewPath := filepath.Join(vaultPath, newPath)
+
+	t.Run("removes stale old path from csRemote", func(t *testing.T) {
+		t.Parallel()
+		local := map[string]model.FileRecord{}
+		remote := map[string]model.FileRecord{
+			oldPath: {Path: oldPath, Hash: "abc", Size: 100, MTime: 1000},
+		}
+		csRemote := map[string]model.FileRecord{
+			oldPath: {Path: oldPath, Hash: "abc", Size: 100, MTime: 1000},
+		}
+
+		renames := []watchpkg.ScanEvent{
+			{Path: absNewPath, OldPath: absOldPath, Type: watchpkg.EventRename},
+		}
+		applyRenameFixups(local, remote, csRemote, renames, vaultPath, zerolog.Nop())
+
+		if _, ok := csRemote[oldPath]; ok {
+			t.Fatal("expected csRemote old path to be deleted")
+		}
+		rec, ok := remote[newPath]
+		if !ok {
+			t.Fatal("expected new path to exist in remote")
+		}
+		if rec.Hash != "abc" {
+			t.Fatalf("expected hash 'abc', got %s", rec.Hash)
+		}
+		if rec.PreviousPath != oldPath {
+			t.Fatalf("expected PreviousPath %s, got %s", oldPath, rec.PreviousPath)
+		}
+		if _, ok := remote[oldPath]; ok {
+			t.Fatal("expected old path to be deleted from remote")
+		}
+	})
+
+	t.Run("nil csRemote does not panic", func(t *testing.T) {
+		t.Parallel()
+		local := map[string]model.FileRecord{}
+		remote := map[string]model.FileRecord{}
+
+		renames := []watchpkg.ScanEvent{
+			{Path: absNewPath, OldPath: absOldPath, Type: watchpkg.EventRename},
+		}
+		// Should not panic when csRemote is nil
+		applyRenameFixups(local, remote, nil, renames, vaultPath, zerolog.Nop())
 	})
 }

@@ -38,11 +38,17 @@ func (k syncActionKind) String() string {
 }
 
 type syncAction struct {
-	Path string
-	Kind syncActionKind
+	Path        string
+	Kind        syncActionKind
+	RelatedPath string // old path for rename uploads; empty for other actions
 }
 
-func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[string]model.FileRecord, configDir string) []syncAction {
+func buildPlan(
+	currentLocal, previousLocal,
+	currentRemote, previousRemote map[string]model.FileRecord,
+	configDir string,
+	localRenames map[string]string, // oldPath → newPath from watcher snapshot
+) []syncAction {
 	pathsSet := map[string]struct{}{}
 	for _, collection := range []map[string]model.FileRecord{currentLocal, previousLocal, currentRemote, previousRemote} {
 		for path := range collection {
@@ -57,11 +63,39 @@ func buildPlan(currentLocal, previousLocal, currentRemote, previousRemote map[st
 	}
 	sort.Strings(paths)
 	actions := make([]syncAction, 0, len(paths))
+
+	// Build reverse lookup: newPath → oldPath for O(1) checks
+	renameTargets := make(map[string]string, len(localRenames))
+	for oldPath, newPath := range localRenames {
+		renameTargets[newPath] = oldPath
+	}
+
 	for _, path := range paths {
+		// Skip paths that were renamed away — they are not deletes,
+		// but only when the rename target still exists locally.
+		// If the target was deleted before this sync cycle, fall through
+		// so the planner can issue a delete-remote for the orphaned path.
+		if newPath, wasRenamedAway := localRenames[path]; wasRenamedAway {
+			if _, exists := currentLocal[newPath]; exists {
+				continue
+			}
+		}
+
 		currentL, hasCurrentL := currentLocal[path]
 		previousL, hasPreviousL := previousLocal[path]
 		currentR, hasCurrentR := currentRemote[path]
 		previousR, hasPreviousR := previousRemote[path]
+
+		// If this path is a rename target, force an upload with relatedpath
+		// so the server receives the rename as a single operation.
+		if oldPath, isRenameTarget := renameTargets[path]; isRenameTarget && hasCurrentL {
+			actions = append(actions, syncAction{
+				Path:        path,
+				Kind:        syncActionUpload,
+				RelatedPath: oldPath,
+			})
+			continue
+		}
 
 		// Hash match: no changes needed
 		if hasCurrentL && hasCurrentR && !currentL.Folder && currentL.Hash == currentR.Hash {

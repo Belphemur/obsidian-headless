@@ -158,7 +158,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger, nil)
 	e.logRemoteRenameConflicts(remoteRenameResult, "once")
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir())
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir(), nil)
 	e.Logger.Info().
 		Int("planned_actions", len(plan)).
 		Int("local_files", len(currentLocal)).
@@ -322,10 +322,10 @@ func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLoca
 		switch action.Kind {
 		case syncActionUpload:
 			record := currentLocal[action.Path]
-			// Propagate rename source from previous state so session.push()
-			// can include relatedpath in the WebSocket message.
-			if prev, ok := previousLocal[action.Path]; ok && prev.PreviousPath != "" {
-				record.PreviousPath = prev.PreviousPath
+			// If this action carries a RelatedPath (rename), propagate it to the push
+			// so session.push() includes the relatedpath field in the WebSocket message.
+			if action.RelatedPath != "" {
+				record.PreviousPath = action.RelatedPath
 			}
 			if !filepath.IsLocal(filepath.FromSlash(action.Path)) {
 				return fmt.Errorf("invalid local file path %q", action.Path)

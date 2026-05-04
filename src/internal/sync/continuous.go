@@ -30,26 +30,65 @@ const (
 	heartbeatTimeout       = 120 * time.Second
 )
 
+// convertRenameSnapshot converts watcher rename events to a vault-relative
+// oldPath → newPath map for use by buildPlan.
+func convertRenameSnapshot(snapshot []watchpkg.ScanEvent, vaultPath string, logger zerolog.Logger) map[string]string {
+	renameMap := make(map[string]string)
+	for _, ev := range snapshot {
+		if ev.Type != watchpkg.EventRename {
+			continue
+		}
+		relOldPath, err := relPath(vaultPath, ev.OldPath)
+		if err != nil {
+			logger.Warn().Err(err).Str("oldPath", ev.OldPath).Msg("convertRenameSnapshot: bad old path")
+			continue
+		}
+		relNewPath, err := relPath(vaultPath, ev.Path)
+		if err != nil {
+			logger.Warn().Err(err).Str("newPath", ev.Path).Msg("convertRenameSnapshot: bad new path")
+			continue
+		}
+		renameMap[relOldPath] = relNewPath
+	}
+	return renameMap
+}
+
+// relPath converts an absolute watcher path to a vault-relative, slash-normalized path.
+func relPath(vaultPath, absPath string) (string, error) {
+	rel, err := filepath.Rel(vaultPath, absPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
+}
+
 // applyRenameFixups mutates previousLocal and previousRemote in-place to reflect
 // file renames detected by the watcher. Without this, a rename from oldPath→newPath
 // would appear as a delete of oldPath + create of newPath in buildPlan.
 // The record's PreviousPath field is set to preserve the rename chain.
-func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord, renames []watchpkg.ScanEvent, vaultPath string, logger zerolog.Logger) {
+// csRemote is also mutated to remove stale old paths so they don't resurface
+// as new remote files when previousRemote and cs.remote are merged.
+func applyRenameFixups(
+	previousLocal, previousRemote map[string]model.FileRecord,
+	csRemote map[string]model.FileRecord,
+	renames []watchpkg.ScanEvent,
+	vaultPath string,
+	logger zerolog.Logger,
+) {
 	for _, ev := range renames {
 		if ev.Type != watchpkg.EventRename {
 			continue
 		}
-		// Convert absolute watcher paths to vault-relative
-		relOldPath, err := filepath.Rel(vaultPath, ev.OldPath)
+		relOldPath, err := relPath(vaultPath, ev.OldPath)
 		if err != nil {
+			logger.Warn().Err(err).Str("oldPath", ev.OldPath).Msg("rename fixup: failed to compute relative old path")
 			continue
 		}
-		relNewPath, err := filepath.Rel(vaultPath, ev.Path)
+		relNewPath, err := relPath(vaultPath, ev.Path)
 		if err != nil {
+			logger.Warn().Err(err).Str("newPath", ev.Path).Msg("rename fixup: failed to compute relative new path")
 			continue
 		}
-		relOldPath = filepath.ToSlash(relOldPath)
-		relNewPath = filepath.ToSlash(relNewPath)
 
 		if oldLocal, ok := previousLocal[relOldPath]; ok {
 			oldLocal.PreviousPath = relOldPath
@@ -71,6 +110,12 @@ func applyRenameFixups(previousLocal, previousRemote map[string]model.FileRecord
 				Str("newPath", relNewPath).
 				Msg("continuous: remote rename applied")
 		}
+
+		// Remove the old path from cs.remote to prevent it from reappearing
+		// as a new remote file in currentRemote (which merges previousRemote + cs.remote).
+		// applyRenameFixups already moved the entry in previousRemote, so the old path
+		// in cs.remote is now stale.
+		delete(csRemote, relOldPath)
 	}
 }
 
@@ -387,7 +432,9 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		pendingRenames = pendingRenames[:0]
 		renamesMu.Unlock()
 
-		applyRenameFixups(previousLocal, previousRemote, snapshot, e.Config.VaultPath, e.Logger)
+		cs.mu.Lock()
+		applyRenameFixups(previousLocal, previousRemote, cs.remote, snapshot, e.Config.VaultPath, e.Logger)
+		cs.mu.Unlock()
 
 		// Flush stale ignorations from the previous sync cycle
 		watcher.FlushIgnored()
@@ -436,7 +483,11 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			})
 		e.logRemoteRenameConflicts(remoteRenameResult, "continuous")
 
-		plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir())
+		// Build a local rename map from the watcher snapshot for buildPlan.
+		// convertRenameSnapshot converts watcher events to a vault-relative oldPath→newPath map.
+		localRenames := convertRenameSnapshot(snapshot, e.Config.VaultPath, e.Logger)
+
+		plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir(), localRenames)
 		e.Logger.Info().Int("planned_actions", len(plan)).Msg("continuous: sync plan created")
 		logPlanActions(e.Logger, plan)
 

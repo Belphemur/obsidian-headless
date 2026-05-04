@@ -495,7 +495,7 @@ func TestExecutePlan(t *testing.T) {
 	currentRemote := remote
 	previousRemote := map[string]model.FileRecord{}
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian")
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian", nil)
 	if len(plan) != 2 {
 		t.Fatalf("expected 2 actions, got %d: %+v", len(plan), plan)
 	}
@@ -556,7 +556,7 @@ func TestExecutePlanParallelDownloads(t *testing.T) {
 	currentRemote := mock.cloneRecordsByPath()
 	previousRemote := map[string]model.FileRecord{}
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian")
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian", nil)
 	if len(plan) != numFiles {
 		t.Fatalf("expected %d actions, got %d", numFiles, len(plan))
 	}
@@ -626,7 +626,7 @@ func TestExecutePlanParallelSmallSync(t *testing.T) {
 	currentRemote := mock.cloneRecordsByPath()
 	previousRemote := map[string]model.FileRecord{}
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian")
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian", nil)
 	if len(plan) != 3 {
 		t.Fatalf("expected 3 actions, got %d", len(plan))
 	}
@@ -806,6 +806,96 @@ func TestPushRelatedPath(t *testing.T) {
 	if _, exists := msg4["relatedpath"]; exists {
 		t.Fatal("expected no relatedpath in push message when PreviousPath contains ..")
 	}
+}
+
+func TestBuildPlanWithLocalRenames(t *testing.T) {
+	t.Parallel()
+
+	t.Run("basic rename same content", func(t *testing.T) {
+		t.Parallel()
+		previousLocal := map[string]model.FileRecord{
+			"x.md": {Path: "x.md", Hash: "abc", Size: 10, MTime: 1000},
+		}
+		currentLocal := map[string]model.FileRecord{
+			"y.md": {Path: "y.md", Hash: "abc", Size: 10, MTime: 1000},
+		}
+		previousRemote := map[string]model.FileRecord{}
+		currentRemote := map[string]model.FileRecord{}
+		localRenames := map[string]string{"x.md": "y.md"}
+
+		plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian", localRenames)
+		if len(plan) != 1 {
+			t.Fatalf("expected 1 action, got %d: %+v", len(plan), plan)
+		}
+		action := plan[0]
+		if action.Kind != syncActionUpload {
+			t.Fatalf("expected upload, got %s", action.Kind.String())
+		}
+		if action.Path != "y.md" {
+			t.Fatalf("expected path y.md, got %s", action.Path)
+		}
+		if action.RelatedPath != "x.md" {
+			t.Fatalf("expected relatedpath x.md, got %s", action.RelatedPath)
+		}
+	})
+
+	t.Run("rename with changed content", func(t *testing.T) {
+		t.Parallel()
+		previousLocal := map[string]model.FileRecord{
+			"x.md": {Path: "x.md", Hash: "abc", Size: 10, MTime: 1000},
+		}
+		currentLocal := map[string]model.FileRecord{
+			"y.md": {Path: "y.md", Hash: "def", Size: 12, MTime: 2000},
+		}
+		previousRemote := map[string]model.FileRecord{}
+		currentRemote := map[string]model.FileRecord{}
+		localRenames := map[string]string{"x.md": "y.md"}
+
+		plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian", localRenames)
+		if len(plan) != 1 {
+			t.Fatalf("expected 1 action, got %d: %+v", len(plan), plan)
+		}
+		action := plan[0]
+		if action.Kind != syncActionUpload {
+			t.Fatalf("expected upload, got %s", action.Kind.String())
+		}
+		if action.Path != "y.md" {
+			t.Fatalf("expected path y.md, got %s", action.Path)
+		}
+		if action.RelatedPath != "x.md" {
+			t.Fatalf("expected relatedpath x.md, got %s", action.RelatedPath)
+		}
+	})
+
+	t.Run("rename target exists in remote with matching hash", func(t *testing.T) {
+		t.Parallel()
+		previousLocal := map[string]model.FileRecord{
+			"x.md": {Path: "x.md", Hash: "abc", Size: 10, MTime: 1000},
+		}
+		currentLocal := map[string]model.FileRecord{
+			"y.md": {Path: "y.md", Hash: "abc", Size: 10, MTime: 1000},
+		}
+		previousRemote := map[string]model.FileRecord{}
+		currentRemote := map[string]model.FileRecord{
+			"y.md": {Path: "y.md", Hash: "abc", Size: 10, MTime: 1000},
+		}
+		localRenames := map[string]string{"x.md": "y.md"}
+
+		plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian", localRenames)
+		if len(plan) != 1 {
+			t.Fatalf("expected 1 action, got %d: %+v", len(plan), plan)
+		}
+		action := plan[0]
+		if action.Kind != syncActionUpload {
+			t.Fatalf("expected upload, got %s", action.Kind.String())
+		}
+		if action.Path != "y.md" {
+			t.Fatalf("expected path y.md, got %s", action.Path)
+		}
+		if action.RelatedPath != "x.md" {
+			t.Fatalf("expected relatedpath x.md, got %s", action.RelatedPath)
+		}
+	})
 }
 
 func mustWriteFile(t *testing.T, path string, data []byte) {
