@@ -189,12 +189,10 @@ func TestWatcher_IgnorePaths_SuppressesRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Drain initial create event
-	select {
-	case <-w.Out:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for initial create event")
-	}
+	// Drain initial create event — verify both event type and path (watcher emits absolute paths)
+	_ = waitForEvent(t, w.Out, 5*time.Second, "initial create for old.md", func(ev ScanEvent) bool {
+		return ev.Type == EventCreate && ev.Path == filePath
+	})
 
 	// Now add old path to ignored set
 	w.AddIgnorePaths([]RenamePair{{OldPath: "old.md", NewPath: "new.md"}})

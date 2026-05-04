@@ -391,13 +391,34 @@ func (w *Watcher) isIgnored(path string) bool {
 // After a remote rename is enacted on disk, the resulting filesystem events
 // must be suppressed to prevent the watcher from interpreting them as new
 // user-initiated renames in the next sync cycle.
+//
+// Paths are normalized to the same relative-slash form used by isIgnored,
+// ensuring that equivalent paths (e.g., "./a/b.md", "a/b.md") match the
+// suppression lookup regardless of caller format.
 func (w *Watcher) AddIgnorePaths(pairs []RenamePair) {
 	w.ignoreMu.Lock()
 	defer w.ignoreMu.Unlock()
 	for _, p := range pairs {
-		w.ignoredOld[p.OldPath] = true
-		w.ignoredNew[p.NewPath] = true
+		if old := normalizeIgnoreKey(p.OldPath); old != "" {
+			w.ignoredOld[old] = true
+		}
+		if newPath := normalizeIgnoreKey(p.NewPath); newPath != "" {
+			w.ignoredNew[newPath] = true
+		}
 	}
+}
+
+// normalizeIgnoreKey converts a relative path to the normalized form used
+// by isIgnored for consistent map lookups: forward slashes, no leading "./"
+// or "/", cleaned relative form.
+func normalizeIgnoreKey(path string) string {
+	path = filepath.ToSlash(filepath.Clean(path))
+	path = strings.TrimPrefix(path, "./")
+	path = strings.TrimPrefix(path, "/")
+	if path == "." {
+		return ""
+	}
+	return path
 }
 
 // FlushIgnored clears all ignored paths. Called at the start of each
