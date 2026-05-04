@@ -210,8 +210,25 @@ Both pushes share the **same `uid`** value, corresponding to the file's
 identity on the server. The client detects the rename by correlating
 deleted and active entries in the push map that share the same UID.
 
-This client-side UID correlation is implemented in
-`applyRemoteRenameFixups()` (see `src/internal/sync/rename.go`).
+In practice, UIDs may not always match. When the Obsidian desktop client
+performs a rename as separate delete and upload operations, the server can
+assign a **new UID** to the uploaded file. The headless client mitigates this
+with **hash-based fallback detection**: when UID matching fails, it compares
+file hashes between deleted and active entries. Because a pure rename leaves
+the file content unchanged, the hashes still match and the rename is detected.
+
+If the deleted record's hash is empty (some server push notifications omit it),
+the client falls back to `previousRemote[path].Hash` to recover the hash. When
+exactly one active entry shares the same hash, the rename is confirmed. If
+multiple candidates match (ambiguous hash), the fallback is skipped with a
+warning and the entries are treated as independent operations.
+
+This client-side UID correlation (with hash fallback) is implemented in
+`applyRemoteRenameFixups()` (see `src/internal/sync/rename.go`). It runs in
+both `RunOnce` and continuous sync modes, before `buildPlan` is called.
+After enacting a rename locally, the filesystem watcher's `AddIgnorePaths`
+mechanism suppresses the resulting fsnotify events to prevent them from being
+misinterpreted as new user changes.
 
 ### Ready Notification (Server → Client)
 

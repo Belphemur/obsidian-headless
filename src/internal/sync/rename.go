@@ -38,11 +38,45 @@ func applyRemoteRenameFixups(
 ) *RemoteRenameResult {
 	result := &RemoteRenameResult{}
 
-	// Step 1: In a single pass, collect deleted UIDs and active UID→newPath mappings.
+	// Debug: log UIDs of all deleted and active records for diagnostics.
+	if logger.Debug().Enabled() {
+		for path, record := range currentRemote {
+			if record.Folder {
+				continue
+			}
+			logger.Debug().
+				Str("path", path).
+				Int64("uid", record.UID).
+				Bool("deleted", record.Deleted).
+				Msg("remote rename fixups: currentRemote record")
+		}
+	}
+
+	// Guard: nothing to do if there are no deleted records.
+	hasDeletedRecords := false
+	for _, record := range currentRemote {
+		if !record.Folder && record.Deleted {
+			hasDeletedRecords = true
+			break
+		}
+	}
+	if !hasDeletedRecords {
+		return result
+	}
+
+	// Step 1: In a single pass, collect deleted UIDs, active UID→newPath
+	// mappings, and a list of deleted paths for the hash fallback.
 	deletedUIDs := make(map[int64]string)  // uid → oldPath
 	uidToNewPath := make(map[int64]string) // uid → newPath
+	var deletedPaths []string
 	for path, record := range currentRemote {
-		if record.Folder || record.UID == 0 {
+		if record.Folder {
+			continue
+		}
+		if record.Deleted {
+			deletedPaths = append(deletedPaths, path)
+		}
+		if record.UID == 0 {
 			continue
 		}
 		if record.Deleted {
@@ -52,10 +86,13 @@ func applyRemoteRenameFixups(
 		}
 	}
 
-	// Guard: nothing to correlate.
-	if len(deletedUIDs) == 0 {
-		return result
-	}
+	// processedPaths tracks deleted records that were examined by UID matching,
+	// so the hash fallback can skip them.
+	processedPaths := make(map[string]struct{})
+
+	// uidMatchedActivePaths tracks active paths that were targeted by
+	// UID-based or hash-based renames, preventing them from being reused.
+	uidMatchedActivePaths := make(map[string]struct{})
 
 	// Step 2: Correlate deleted UIDs with active UIDs to find renames.
 	for uid, oldPath := range deletedUIDs {
@@ -63,113 +100,204 @@ func applyRemoteRenameFixups(
 		if !ok || newPath == oldPath {
 			continue
 		}
+		processedPaths[oldPath] = struct{}{}
 
-		// Remote rename detected: oldPath → newPath
 		logger.Info().
 			Str("oldPath", oldPath).
 			Str("newPath", newPath).
 			Int64("uid", uid).
 			Msg("remote rename detected via UID match")
 
-		// Step 2a: Handle local file at oldPath
-		oldLocal, hasOldLocal := currentLocal[oldPath]
-		renameEnacted := false
-		if hasOldLocal {
-			localPath := filepath.Join(vaultPath, oldPath)
-			newLocalPath := filepath.Join(vaultPath, newPath)
+		uidMatchedActivePaths[newPath] = struct{}{}
+		enacted, conflict := handleRemoteRename(oldPath, newPath, currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger, onBeforeRename)
+		if conflict != "" {
+			result.Conflicts = append(result.Conflicts, conflict)
+			continue
+		}
+		if enacted {
+			result.Enacted = append(result.Enacted, model.RenamePair{OldPath: oldPath, NewPath: newPath})
+		}
+	}
 
-			// Check if local file was modified
-			localModified := false
-			_, hasPrevLocal := previousLocal[oldPath]
-			if hasPrevLocal {
-				localModified = oldLocal.Hash != previousLocal[oldPath].Hash
-			}
+	// Step 3: Hash-based fallback for deleted records not matched by UID.
+	// Build a map of hash → active paths from the remaining active records.
+	hashToActivePaths := make(map[string][]string)
+	for path, record := range currentRemote {
+		if record.Folder || record.Deleted || record.Hash == "" {
+			continue
+		}
+		hashToActivePaths[record.Hash] = append(hashToActivePaths[record.Hash], path)
+	}
 
-			// If neither previousLocal nor previousRemote has oldPath, can't verify
-			// the local file corresponds to the remote file — treat as conflict.
-			if !hasPrevLocal {
-				if _, hasPrevRemote := previousRemote[oldPath]; !hasPrevRemote {
-					logger.Warn().
-						Str("oldPath", oldPath).
-						Msg("remote rename: no previous state for oldPath, preserving local file")
-					result.Conflicts = append(result.Conflicts, oldPath)
-					continue
-				}
-			}
+	for _, path := range deletedPaths {
+		if _, processed := processedPaths[path]; processed {
+			continue
+		}
+		record := currentRemote[path]
 
-			if localModified {
-				// Local file was modified → preserve it, don't rename
-				logger.Warn().
-					Str("oldPath", oldPath).
-					Str("localHash", oldLocal.Hash).
-					Str("prevHash", previousLocal[oldPath].Hash).
-					Msg("remote rename: local file modified, preserving")
-				result.Conflicts = append(result.Conflicts, oldPath)
-			} else if _, exists := currentLocal[newPath]; exists {
-				// Destination already exists locally
-				logger.Warn().
-					Str("oldPath", oldPath).
-					Str("newPath", newPath).
-					Msg("remote rename: destination exists locally, preserving")
-				result.Conflicts = append(result.Conflicts, oldPath)
-			} else {
-			// Local file is unmodified and destination is clear → rename it on disk.
-			// Register the ignore pair before the filesystem rename to prevent
-			// the watcher from seeing our own rename as a user-initiated change.
-			pair := model.RenamePair{OldPath: oldPath, NewPath: newPath}
-			if onBeforeRename != nil {
-				onBeforeRename(pair)
-			}
-			if err := os.MkdirAll(filepath.Dir(newLocalPath), 0o755); err != nil {
-				logger.Error().
-					Err(err).
-					Str("newPath", newPath).
-					Msg("remote rename: os.MkdirAll failed, treating as conflict")
-				result.Conflicts = append(result.Conflicts, oldPath)
-			} else if err := os.Rename(localPath, newLocalPath); err != nil {
-				logger.Error().
-					Err(err).
-					Str("oldPath", oldPath).
-					Str("newPath", newPath).
-					Msg("remote rename: os.Rename failed, treating as conflict")
-				result.Conflicts = append(result.Conflicts, oldPath)
-			} else {
-				// Rename succeeded on disk
-				oldLocal.Path = newPath
-				currentLocal[newPath] = oldLocal
-				delete(currentLocal, oldPath)
-
-				result.Enacted = append(result.Enacted, pair)
-				renameEnacted = true
-				logger.Info().
-					Str("oldPath", oldPath).
-					Str("newPath", newPath).
-					Msg("remote rename: local file renamed on disk")
-			}
+		deletedHash := record.Hash
+		if deletedHash == "" {
+			if prev, ok := previousRemote[path]; ok {
+				deletedHash = prev.Hash
 			}
 		}
-		// else: local file already absent → nothing to rename on disk
-
-		// Step 2b: Update metadata state — only if the rename was enacted on disk
-		// or the local file was already absent (rename happened on another device).
-		if renameEnacted || !hasOldLocal {
-			// Update previousRemote to reflect the rename
-			if oldRemote, exists := previousRemote[oldPath]; exists {
-				oldRemote.PreviousPath = oldPath
-				oldRemote.Path = newPath
-				previousRemote[newPath] = oldRemote
-				delete(previousRemote, oldPath)
-			}
-
-			// Remove the deleted entry from currentRemote so buildPlan
-			// doesn't emit a deleteLocal action for oldPath.
-			delete(currentRemote, oldPath)
+		if deletedHash == "" {
+			continue
 		}
-		// If !renameEnacted && hasOldLocal: local file exists but rename was
-		// blocked (modified, dest exists, or rename failed). Don't mutate
-		// previousRemote or currentRemote — let buildPlan handle both paths
-		// independently.
+
+		activePaths, ok := hashToActivePaths[deletedHash]
+		if !ok {
+			continue
+		}
+
+		var candidates []string
+		for _, activePath := range activePaths {
+			if activePath == path {
+				continue
+			}
+			if _, consumed := uidMatchedActivePaths[activePath]; consumed {
+				continue
+			}
+			candidates = append(candidates, activePath)
+		}
+
+		if len(candidates) == 0 {
+			continue
+		}
+		if len(candidates) > 1 {
+			logger.Warn().
+				Str("oldPath", path).
+				Str("hash", deletedHash).
+				Int("matchCount", len(candidates)).
+				Msg("remote rename: ambiguous hash match, skipping")
+			continue
+		}
+
+		newPath := candidates[0]
+
+		logger.Info().
+			Str("oldPath", path).
+			Str("newPath", newPath).
+			Str("hash", deletedHash).
+			Msg("remote rename detected via hash match")
+
+		uidMatchedActivePaths[newPath] = struct{}{}
+		enacted, conflict := handleRemoteRename(path, newPath, currentRemote, previousRemote, previousLocal, currentLocal, vaultPath, logger, onBeforeRename)
+		if conflict != "" {
+			result.Conflicts = append(result.Conflicts, conflict)
+			continue
+		}
+		if enacted {
+			result.Enacted = append(result.Enacted, model.RenamePair{OldPath: path, NewPath: newPath})
+		}
 	}
 
 	return result
+}
+
+// handleRemoteRename performs the local filesystem rename and metadata updates
+// for a detected remote rename from oldPath to newPath.
+// Returns true if the local file was renamed on disk, and a non-empty conflict
+// path if the rename was blocked (local modified, destination exists, etc.).
+func handleRemoteRename(
+	oldPath, newPath string,
+	currentRemote map[string]model.FileRecord,
+	previousRemote map[string]model.FileRecord,
+	previousLocal map[string]model.FileRecord,
+	currentLocal map[string]model.FileRecord,
+	vaultPath string,
+	logger zerolog.Logger,
+	onBeforeRename func(model.RenamePair),
+) (enacted bool, conflict string) {
+	oldLocal, hasOldLocal := currentLocal[oldPath]
+	renameEnacted := false
+	if hasOldLocal {
+		localPath := filepath.Join(vaultPath, oldPath)
+		newLocalPath := filepath.Join(vaultPath, newPath)
+
+		localModified := false
+		_, hasPrevLocal := previousLocal[oldPath]
+		if hasPrevLocal {
+			localModified = oldLocal.Hash != previousLocal[oldPath].Hash
+		}
+
+		if !hasPrevLocal {
+			if _, hasPrevRemote := previousRemote[oldPath]; !hasPrevRemote {
+				logger.Warn().
+					Str("oldPath", oldPath).
+					Msg("remote rename: no previous state for oldPath, preserving local file")
+				return false, oldPath
+			}
+		}
+
+		if localModified {
+			logger.Warn().
+				Str("oldPath", oldPath).
+				Str("localHash", oldLocal.Hash).
+				Str("prevHash", previousLocal[oldPath].Hash).
+				Msg("remote rename: local file modified, preserving")
+			return false, oldPath
+		}
+
+		if _, exists := currentLocal[newPath]; exists {
+			logger.Warn().
+				Str("oldPath", oldPath).
+				Str("newPath", newPath).
+				Msg("remote rename: destination exists locally, preserving")
+			return false, oldPath
+		}
+
+		pair := model.RenamePair{OldPath: oldPath, NewPath: newPath}
+		if onBeforeRename != nil {
+			onBeforeRename(pair)
+		}
+		if err := os.MkdirAll(filepath.Dir(newLocalPath), 0o755); err != nil {
+			logger.Error().
+				Err(err).
+				Str("newPath", newPath).
+				Msg("remote rename: os.MkdirAll failed, treating as conflict")
+			return false, oldPath
+		}
+		if err := os.Rename(localPath, newLocalPath); err != nil {
+			logger.Error().
+				Err(err).
+				Str("oldPath", oldPath).
+				Str("newPath", newPath).
+				Msg("remote rename: os.Rename failed, treating as conflict")
+			return false, oldPath
+		}
+
+		oldLocal.Path = newPath
+		currentLocal[newPath] = oldLocal
+		delete(currentLocal, oldPath)
+
+		renameEnacted = true
+		logger.Info().
+			Str("oldPath", oldPath).
+			Str("newPath", newPath).
+			Msg("remote rename: local file renamed on disk")
+	}
+
+	if renameEnacted || !hasOldLocal {
+		if oldRemote, exists := previousRemote[oldPath]; exists {
+			oldRemote.PreviousPath = oldPath
+			oldRemote.Path = newPath
+			previousRemote[newPath] = oldRemote
+			delete(previousRemote, oldPath)
+		}
+
+		// When the server assigned a new UID (hash-fallback renames),
+		// sync it into previousRemote so three-way merges can pull
+		// base content by the correct UID.
+		if newRecord, ok := currentRemote[newPath]; ok && newRecord.UID != 0 {
+			if prev, ok := previousRemote[newPath]; ok && prev.UID != newRecord.UID {
+				prev.UID = newRecord.UID
+				previousRemote[newPath] = prev
+			}
+		}
+
+		delete(currentRemote, oldPath)
+	}
+
+	return renameEnacted, ""
 }
