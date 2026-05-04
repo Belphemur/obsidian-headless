@@ -1229,7 +1229,7 @@ export class SyncEngine {
         // Push to server
         await server.push(
           filePath,
-          record.previouspath || null,
+          null,
           record.folder,
           false, // not deleted
           record.ctime,
@@ -1249,9 +1249,6 @@ export class SyncEngine {
         };
         this.serverFiles[filePath] = serverRecord;
         this.stateStore.setServerFileRecord(serverRecord);
-
-        // Clear previouspath after successful push (rename already communicated)
-        delete record.previouspath;
 
         this.log(`[sync] uploaded: ${filePath} (${formatBytes(record.size)})`);
       } catch (err) {
