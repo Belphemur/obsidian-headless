@@ -118,8 +118,14 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		return err
 	}
 
-	dbLocal := previousLocal
-	dbRemote := previousRemote
+	// Clone previous state as the save-state baseline before any mutations.
+	// applyRemoteRenameFixups mutates previousRemote in-place, so dbLocal/dbRemote
+	// must be independent copies — otherwise the baseline used by saveState to
+	// compute deletions would be corrupted.
+	dbLocal := make(map[string]model.FileRecord)
+	maps.Copy(dbLocal, previousLocal)
+	dbRemote := make(map[string]model.FileRecord)
+	maps.Copy(dbRemote, previousRemote)
 
 	initial, _ := store.Initial()
 	if initial {
@@ -204,13 +210,14 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 }
 
 // logRemoteRenameConflicts logs any paths that were preserved as conflicts
-// during remote rename detection (locally modified files, destination collisions, etc.).
+// during remote rename detection (locally modified files, destination collisions,
+// missing previous state, filesystem errors, etc.).
 func (e *Engine) logRemoteRenameConflicts(result *RemoteRenameResult, mode string) {
 	for _, path := range result.Conflicts {
 		e.Logger.Warn().
 			Str("path", path).
 			Str("mode", mode).
-			Msg("local file modified during remote rename, preserving")
+			Msg("remote rename conflict, preserving original path(s)")
 	}
 }
 

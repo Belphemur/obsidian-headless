@@ -335,6 +335,14 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			return
 		}
 		defer cs.syncInProgress.Store(false)
+		// If a sync request arrived while this one was running, re-trigger after completion.
+		// Placed in a defer so it runs on ALL exit paths (plan-empty, errors, success).
+		defer func() {
+			if cs.syncPending.Swap(false) {
+				e.Logger.Debug().Msg("continuous: re-triggering sync for pending changes")
+				scheduleSync()
+			}
+		}()
 
 		lock, err := e.acquireLock()
 		if err != nil {
@@ -367,8 +375,14 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		// Flush stale ignorations from the previous sync cycle
 		watcher.FlushIgnored()
 
-		dbLocal := previousLocal
-		dbRemote := previousRemote
+		// Clone previous state as the save-state baseline before any mutations.
+		// applyRemoteRenameFixups below mutates previousRemote in-place, so
+		// dbLocal/dbRemote must be independent copies — otherwise the baseline
+		// used by saveState to compute deletions would be corrupted.
+		dbLocal := make(map[string]model.FileRecord)
+		maps.Copy(dbLocal, previousLocal)
+		dbRemote := make(map[string]model.FileRecord)
+		maps.Copy(dbRemote, previousRemote)
 
 		initial, _ := store.Initial()
 		if initial {
@@ -474,12 +488,6 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		}
 
 		e.Logger.Info().Msg("continuous: sync complete")
-
-		// If another sync was requested while this one was running, re-trigger
-		if cs.syncPending.Swap(false) {
-			e.Logger.Debug().Msg("continuous: re-triggering sync for pending changes")
-			scheduleSync()
-		}
 	}
 
 	// Always run a full sync on startup to catch local changes made
