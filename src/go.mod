@@ -9,7 +9,7 @@ require (
 	github.com/byteness/keyring v1.9.1
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/djherbis/times v1.6.0
-	github.com/fsnotify/fsnotify v1.10.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/jedisct1/go-aes-siv v1.0.0
