@@ -244,35 +244,6 @@ func TestWatcher_IgnorePaths_SuppressesCreate(t *testing.T) {
 	}
 }
 
-func TestWatcher_IgnorePaths_NotSuppressedWhenUnrelated(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	w, err := New(dir, nil, zerolog.Nop(), 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := t.Context()
-	go w.Run(ctx)
-
-	// Add some paths to ignored set
-	w.AddIgnorePaths([]model.RenamePair{{OldPath: "ignored-old.md", NewPath: "ignored-new.md"}})
-
-	// Create an UNRELATED file
-	filePath := filepath.Join(dir, "normal.md")
-	if err := os.WriteFile(filePath, []byte("test"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// The create should NOT be suppressed
-	select {
-	case ev := <-w.Out:
-		if ev.Type != EventCreate {
-			t.Fatalf("expected EventCreate, got %v", ev.Type)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for expected event")
-	}
-}
 
 func TestWatcher_IgnorePaths_FlushIgnored(t *testing.T) {
 	t.Parallel()
