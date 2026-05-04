@@ -166,6 +166,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		Int("previous_local", len(previousLocal)).
 		Int("previous_remote", len(previousRemote)).
 		Msg("sync plan created")
+	logPlanActions(e.Logger, plan)
 
 	for i, action := range plan {
 		e.Logger.Debug().Int("action", i).Str("kind", action.Kind.String()).Str("path", action.Path).Msg("action")
@@ -262,6 +263,36 @@ func (e *Engine) scanLocal() (map[string]model.FileRecord, error) {
 	return files, nil
 }
 
+// logPlanActions counts and logs a breakdown of sync actions.
+func logPlanActions(logger zerolog.Logger, plan []syncAction) {
+	uploadCount, deleteRemoteCount, deleteLocalCount, mergeCount, downloadCount := 0, 0, 0, 0, 0
+	for _, action := range plan {
+		switch action.Kind {
+		case syncActionUpload:
+			uploadCount++
+		case syncActionDeleteRemote:
+			deleteRemoteCount++
+		case syncActionDeleteLocal:
+			deleteLocalCount++
+		case syncActionMergeText, syncActionMergeJSON:
+			mergeCount++
+		case syncActionDownload:
+			downloadCount++
+		default:
+			logger.Warn().
+				Str("kind", action.Kind.String()).
+				Msg("logPlanActions: unhandled action kind, may indicate a missing case")
+		}
+	}
+	logger.Info().
+		Int("uploads", uploadCount).
+		Int("deleteRemote", deleteRemoteCount).
+		Int("deleteLocal", deleteLocalCount).
+		Int("merges", mergeCount).
+		Int("downloads", downloadCount).
+		Msg("sync plan")
+}
+
 // executePlan executes a list of sync actions.
 // Non-download actions run sequentially on the main connection.
 // Download actions run in parallel using a worker pool of dedicated connections.
@@ -280,26 +311,7 @@ func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLoca
 		}
 	}
 
-	uploadCount, deleteRemoteCount, deleteLocalCount, mergeCount := 0, 0, 0, 0
-	for _, action := range nonDownloads {
-		switch action.Kind {
-		case syncActionUpload:
-			uploadCount++
-		case syncActionDeleteRemote:
-			deleteRemoteCount++
-		case syncActionDeleteLocal:
-			deleteLocalCount++
-		case syncActionMergeText, syncActionMergeJSON:
-			mergeCount++
-		}
-	}
-	e.Logger.Info().
-		Int("uploads", uploadCount).
-		Int("deleteRemote", deleteRemoteCount).
-		Int("deleteLocal", deleteLocalCount).
-		Int("merges", mergeCount).
-		Int("downloads", len(downloads)).
-		Msg("sync plan")
+	logPlanActions(e.Logger, plan)
 
 	for _, action := range nonDownloads {
 		if err := ctx.Err(); err != nil {

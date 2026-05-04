@@ -3,6 +3,10 @@
 Headless Go CLI client for [Obsidian Sync](https://obsidian.md/sync) and [Obsidian Publish](https://obsidian.md/publish).
 Sync and publish your vaults from the command line without the desktop app.
 
+### Efficient rename handling
+
+When files are renamed — either locally or remotely on another device — the sync engine detects the rename and performs an in-place rename instead of deleting and re-downloading the same content. Remote rename detection uses UID matching with a hash-based fallback, a capability not present in the legacy Obsidian desktop sync client. This avoids unnecessary network transfers and CPU usage for large files and bulk reorganizations.
+
 Full documentation: https://belphemur.github.io/obsidian-headless/
 
 Built with Go `1.26`.

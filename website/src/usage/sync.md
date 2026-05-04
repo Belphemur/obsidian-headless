@@ -117,11 +117,25 @@ ob sync [--path <path>] [--continuous]
 | `--path` | `.` | Local vault path |
 | `--continuous` | `false` | Run continuously (watch for changes) |
 
-### Remote rename handling
+### Rename handling
 
-When files are renamed on another device (e.g., via the Obsidian desktop app), the sync engine detects the rename automatically via UID matching:
+The sync engine efficiently handles both **local** and **remote** renames, avoiding unnecessary delete-and-re-download cycles:
 
-- **Unmodified local files** are renamed in-place — no re-download is needed.
-- **Modified local files** are preserved at their original path. The remote version is downloaded to the new path as a separate file, and the conflict is logged.
+- **Local renames** — detected in real time by the filesystem watcher (`fsnotify`). Unmodified files are renamed in-place on the server.
+- **Remote renames** — detected before plan building via a two-phase algorithm:
+  1. **UID matching** — correlates deleted and active server records by shared UID.
+  2. **Hash fallback** — when the server assigns a new UID on rename, the engine matches file content hashes to detect the rename.
+
+In both cases, unmodified local files are renamed in-place via `os.Rename` — no network transfer is needed.
+
+::: tip Unique vs legacy Obsidian sync
+The legacy Obsidian desktop sync client treats remote renames as independent delete + create events, which means the same content is deleted locally and then re-downloaded from the server. The Go client avoids this entirely.
+:::
+
+#### Conflict handling
+
+If a locally modified file is renamed remotely, the local version is preserved at its original path and the remote version is downloaded to the new path as a separate file. The conflict is logged for review.
 
 This works in both one-shot (`ob sync`) and continuous (`ob sync --continuous`) modes without any configuration.
+
+For protocol-level details, see [Sync Protocol](./sync-protocol.md).

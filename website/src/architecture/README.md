@@ -63,7 +63,7 @@ graph TD
     CLI --> Config[Config]
 ```
 
-WebSocket connection, engine.RunOnce/RunContinuous, file watcher (fsnotify), plan builder (upload/download/delete/merge actions), parallel downloads with worker pool, three-way merge for text, JSON key-level merge for configs, 2MB chunks, 200MB max file, 30s interval, 5 concurrent downloads.
+WebSocket connection, engine.RunOnce/RunContinuous, file watcher (fsnotify), remote rename detection (UID matching + hash fallback), plan builder (upload/download/delete/merge actions), parallel downloads with worker pool, three-way merge for text, JSON key-level merge for configs, 2MB chunks, 200MB max file, 30s interval, 5 concurrent downloads.
 
 For details on the sync protocol, see [Sync Protocol](./sync-protocol.md). For encryption specifics, see [Encryption](./encryption.md).
 
