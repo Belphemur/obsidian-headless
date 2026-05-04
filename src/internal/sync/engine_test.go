@@ -17,8 +17,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
+	"github.com/Belphemur/obsidian-headless/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/storage"
 )
 
 func testLogger() zerolog.Logger {

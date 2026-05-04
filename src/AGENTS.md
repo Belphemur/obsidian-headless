@@ -145,7 +145,7 @@ Sync uses WebSocket at the vault host for real-time file transfer.
 ## Running Locally
 
 ```bash
-cd src-go
+cd src
 GOTOOLCHAIN=go1.26.0 go run ./cmd/ob-go --help
 ```
 
@@ -198,7 +198,7 @@ func TestMain(m *testing.M) {
 
 This is already in place for:
 - `src/internal/config` package tests
-- `src-go` integration tests
+- `src` integration tests
 
 ## Testing
 
@@ -240,7 +240,7 @@ CI also runs `golangci-lint run` to enforce style, bug, and complexity checks au
 Run the following commands before committing:
 
 ```bash
-cd src-go
+cd src
 go fmt ./...
 go vet ./...
 go fix ./...

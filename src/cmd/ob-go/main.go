@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/cli"
+	"github.com/Belphemur/obsidian-headless/internal/cli"
 )
 
 func main() {

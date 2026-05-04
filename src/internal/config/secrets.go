@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
+	"github.com/Belphemur/obsidian-headless/internal/storage"
 	"github.com/byteness/keyring"
 	"github.com/rs/zerolog"
 )

@@ -37,7 +37,7 @@ Download the `.zip` from [GitHub Releases](https://github.com/Belphemur/obsidian
 ### Go Install
 
 ```bash
-go install github.com/Belphemur/obsidian-headless/src-go/cmd/ob-go@latest
+go install github.com/Belphemur/obsidian-headless/cmd/ob-go@latest
 ```
 
 ### Build from Source

@@ -3,8 +3,8 @@ package sync
 import (
 	"sort"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/util"
+	"github.com/Belphemur/obsidian-headless/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/util"
 )
 
 type syncActionKind int

@@ -14,7 +14,7 @@ import (
 	"github.com/cenkalti/backoff/v5"
 	"github.com/sony/gobreaker/v2"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
+	"github.com/Belphemur/obsidian-headless/internal/circuitbreaker"
 )
 
 func (c *Client) postJSON(ctx context.Context, endpoint string, body any, target any, opts ...*RequestOptions) error {

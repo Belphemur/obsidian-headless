@@ -10,7 +10,7 @@ The `sync.log` for each vault uses **lumberjack** for automatic rotation:
 
 ### Implementation
 
-Located in `src-go/internal/logging/logger.go`:
+Located in `src/internal/logging/logger.go`:
 
 - `NewFileLogger` creates a `zerolog.Logger` that writes to both console (`stderr`) and a `lumberjack.Logger`.
 - The returned cleanup function closes the lumberjack writer.

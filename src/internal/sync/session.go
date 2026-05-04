@@ -13,8 +13,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/encryption"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/encryption"
+	"github.com/Belphemur/obsidian-headless/internal/model"
 )
 
 type remoteSession struct {

@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/logging"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	syncpkg "github.com/Belphemur/obsidian-headless/src-go/internal/sync"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/util"
+	configpkg "github.com/Belphemur/obsidian-headless/internal/config"
+	"github.com/Belphemur/obsidian-headless/internal/logging"
+	"github.com/Belphemur/obsidian-headless/internal/model"
+	syncpkg "github.com/Belphemur/obsidian-headless/internal/sync"
+	"github.com/Belphemur/obsidian-headless/internal/util"
 )
 
 func addSyncCommands(root *cobra.Command, app *App) {

@@ -34,10 +34,33 @@ docs(readme): update installation instructions
 chore: update go.mod to use Go 1.26
 ```
 
+## Documentation
+
+When changing sync logic or protocol behavior, the following files MUST be kept in sync:
+
+- `docs/architecture.md` — architecture overview
+- `docs/sync-protocol.md` — protocol specification
+- `website/src/architecture/sync-protocol.md` — mirrored VuePress docs
+- `website/src/usage/sync.md` — user-facing usage docs
+
+Changes to protocol, architecture, or user behavior require updates in all four locations.
+
+## Commit Frequency
+
+Always commit along the way. Make multiple small, focused commits rather than one large monolithic commit. Each logical change gets its own commit. Commit messages follow Conventional Commits format with a clear scope.
+
+- Commit after each bug fix, new feature, documentation update, or refactor step
+- Keep commits small and reviewable — each commit should tell a clean story
+- Never leave uncommitted changes at the end of a session
+
 ## Project Structure
 
 - `legacy/` - TypeScript implementation (legacy)
 - `src/` - Go implementation (active development)
+
+### Source Code Location
+
+All active source code lives in the `src/` directory. The Go module root is at `src/go.mod` and the main entry point is `src/cmd/ob-go/main.go`. See `src/AGENTS.md` for Go-specific agent configuration.
 
 ## Memory Management
 

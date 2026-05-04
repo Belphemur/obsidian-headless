@@ -12,10 +12,10 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/api"
-	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/util"
+	"github.com/Belphemur/obsidian-headless/internal/api"
+	configpkg "github.com/Belphemur/obsidian-headless/internal/config"
+	"github.com/Belphemur/obsidian-headless/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/util"
 )
 
 type Engine struct {

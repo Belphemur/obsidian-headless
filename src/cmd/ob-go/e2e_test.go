@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/cli"
+	"github.com/Belphemur/obsidian-headless/internal/cli"
 )
 
 const apiBase = "http://127.0.0.1:3000"

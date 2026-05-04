@@ -28,8 +28,8 @@ Implemented clean shutdown on SIGINT/SIGTERM for the sync command to prevent dat
 - Websocket connections are closed to unblock I/O immediately
 
 ## Files Modified
-- `src-go/cmd/ob-go/main.go`
-- `src-go/internal/cli/sync.go`
-- `src-go/internal/sync/engine.go`
-- `src-go/internal/sync/continuous.go`
-- `src-go/internal/sync/engine_test.go`
+- `src/cmd/ob-go/main.go`
+- `src/internal/cli/sync.go`
+- `src/internal/sync/engine.go`
+- `src/internal/sync/continuous.go`
+- `src/internal/sync/engine_test.go`

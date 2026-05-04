@@ -8,7 +8,7 @@ import (
 )
 
 func NewConsoleLogger(output io.Writer) zerolog.Logger {
-	writer := zerolog.ConsoleWriter{Out: output}
+	writer := zerolog.ConsoleWriter{Out: output, TimeFormat: "15:04:05.000"}
 	return zerolog.New(writer).With().Timestamp().Logger()
 }
 
@@ -21,7 +21,7 @@ func NewFileLogger(stdout io.Writer, path string) (zerolog.Logger, func(), error
 		LocalTime:  true,
 		Compress:   true,
 	}
-	console := zerolog.ConsoleWriter{Out: stdout}
+	console := zerolog.ConsoleWriter{Out: stdout, TimeFormat: "15:04:05.000"}
 	logger := zerolog.New(io.MultiWriter(console, file)).With().Timestamp().Logger()
 	cleanup := func() {
 		_ = file.Close()

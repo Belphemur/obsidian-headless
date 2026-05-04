@@ -13,12 +13,12 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/sony/gobreaker/v2"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
-	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/encryption"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/util"
+	"github.com/Belphemur/obsidian-headless/internal/circuitbreaker"
+	configpkg "github.com/Belphemur/obsidian-headless/internal/config"
+	"github.com/Belphemur/obsidian-headless/internal/encryption"
+	"github.com/Belphemur/obsidian-headless/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/storage"
+	"github.com/Belphemur/obsidian-headless/internal/util"
 )
 
 const (
@@ -118,8 +118,14 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		return err
 	}
 
-	dbLocal := previousLocal
-	dbRemote := previousRemote
+	// Clone previous state as the save-state baseline before any mutations.
+	// applyRemoteRenameFixups mutates previousRemote in-place, so dbLocal/dbRemote
+	// must be independent copies — otherwise the baseline used by saveState to
+	// compute deletions would be corrupted.
+	dbLocal := make(map[string]model.FileRecord)
+	maps.Copy(dbLocal, previousLocal)
+	dbRemote := make(map[string]model.FileRecord)
+	maps.Copy(dbRemote, previousRemote)
 
 	initial, _ := store.Initial()
 	if initial {
@@ -146,6 +152,11 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	}
 	version := e.version
 	e.mu.Unlock()
+
+	// Detect and apply remote renames before building the plan.
+	// No watcher in RunOnce mode, so no pre-rename callback needed.
+	remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger, nil)
+	e.logRemoteRenameConflicts(remoteRenameResult, "once")
 
 	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir())
 	e.Logger.Info().
@@ -197,6 +208,18 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 
 	e.Logger.Info().Str("vault", e.Config.VaultID).Msg("sync complete")
 	return nil
+}
+
+// logRemoteRenameConflicts logs any paths that were preserved as conflicts
+// during remote rename detection (locally modified files, destination collisions,
+// missing previous state, filesystem errors, etc.).
+func (e *Engine) logRemoteRenameConflicts(result *RemoteRenameResult, mode string) {
+	for _, path := range result.Conflicts {
+		e.Logger.Warn().
+			Str("path", path).
+			Str("mode", mode).
+			Msg("remote rename conflict, preserving original path(s)")
+	}
 }
 
 func (e *Engine) Close() error {

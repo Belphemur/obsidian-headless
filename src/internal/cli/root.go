@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/viper"
 	"golang.org/x/term"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/buildinfo"
-	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
+	"github.com/Belphemur/obsidian-headless/internal/buildinfo"
+	configpkg "github.com/Belphemur/obsidian-headless/internal/config"
 )
 
 type rootCommand struct {

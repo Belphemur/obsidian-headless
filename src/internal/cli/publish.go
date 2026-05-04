@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	publishpkg "github.com/Belphemur/obsidian-headless/src-go/internal/publish"
+	configpkg "github.com/Belphemur/obsidian-headless/internal/config"
+	"github.com/Belphemur/obsidian-headless/internal/model"
+	publishpkg "github.com/Belphemur/obsidian-headless/internal/publish"
 )
 
 func addPublishCommands(root *cobra.Command, app *App) {

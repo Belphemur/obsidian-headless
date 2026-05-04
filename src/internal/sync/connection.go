@@ -11,11 +11,11 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sony/gobreaker/v2"
 
-	"github.com/Belphemur/obsidian-headless/src-go/internal/circuitbreaker"
-	configpkg "github.com/Belphemur/obsidian-headless/src-go/internal/config"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/encryption"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/model"
-	"github.com/Belphemur/obsidian-headless/src-go/internal/storage"
+	"github.com/Belphemur/obsidian-headless/internal/circuitbreaker"
+	configpkg "github.com/Belphemur/obsidian-headless/internal/config"
+	"github.com/Belphemur/obsidian-headless/internal/encryption"
+	"github.com/Belphemur/obsidian-headless/internal/model"
+	"github.com/Belphemur/obsidian-headless/internal/storage"
 )
 
 func (e *Engine) ensureConnected(ctx context.Context) error {
