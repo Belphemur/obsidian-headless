@@ -176,7 +176,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	}
 
 	session := newRemoteSession(e.conn, currentRemote, version, ctx, e.enc, e.Logger, e.rawKey)
-	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, session); err != nil {
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session); err != nil {
 		return err
 	}
 
@@ -296,7 +296,7 @@ func logPlanActions(logger zerolog.Logger, plan []syncAction) {
 // executePlan executes a list of sync actions.
 // Non-download actions run sequentially on the main connection.
 // Download actions run in parallel using a worker pool of dedicated connections.
-func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLocal map[string]model.FileRecord, previousRemote map[string]model.FileRecord, session *remoteSession) error {
+func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLocal map[string]model.FileRecord, previousRemote, previousLocal map[string]model.FileRecord, session *remoteSession) error {
 	var nonDownloads []syncAction
 	var downloads []syncAction
 	for _, action := range plan {
@@ -322,6 +322,11 @@ func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLoca
 		switch action.Kind {
 		case syncActionUpload:
 			record := currentLocal[action.Path]
+			// Propagate rename source from previous state so session.push()
+			// can include relatedpath in the WebSocket message.
+			if prev, ok := previousLocal[action.Path]; ok && prev.PreviousPath != "" {
+				record.PreviousPath = prev.PreviousPath
+			}
 			if !filepath.IsLocal(filepath.FromSlash(action.Path)) {
 				return fmt.Errorf("invalid local file path %q", action.Path)
 			}
@@ -336,6 +341,15 @@ func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLoca
 			if err := session.push(record, data); err != nil {
 				return err
 			}
+			// Clear PreviousPath as a safety net so the record doesn't
+			// carry rename state into later processing within this cycle.
+			// currentLocal is re-scanned from disk after executePlan returns
+			// (RunOnce and RunContinuous both call scanLocal() post-execution),
+			// which creates fresh FileRecords without PreviousPath. The real
+			// prevention of re-sending relatedpath comes from that re-scan;
+			// this in-memory clear is a belt-and-suspenders measure.
+			record.PreviousPath = ""
+			currentLocal[action.Path] = record
 			e.Logger.Info().Str("path", action.Path).Msg("uploaded local file")
 		case syncActionDeleteRemote:
 			if err := session.delete(action.Path); err != nil {

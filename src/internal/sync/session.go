@@ -218,6 +218,11 @@ func (s *remoteSession) push(record model.FileRecord, data []byte) error {
 		"size":      len(encryptedContent),
 		"pieces":    pieces,
 	}
+	// Signal rename source when the file was renamed locally so the server
+	// can treat this as a rename rather than a delete+create.
+	if record.PreviousPath != "" && len(record.PreviousPath) > 0 && record.PreviousPath[0] != '/' && !strings.Contains(record.PreviousPath, "..") {
+		message["relatedpath"] = s.encryptPath(record.PreviousPath)
+	}
 	if err := s.writeJSON(message); err != nil {
 		return err
 	}

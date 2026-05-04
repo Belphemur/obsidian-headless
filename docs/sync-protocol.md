@@ -198,6 +198,23 @@ client must detect and ignore these self-echoes to avoid infinite sync loops.
 A common approach is to compare the `device` and `mtime` fields with the most
 recently pushed file.
 
+### Local Rename Signaling (Client → Server)
+
+When a file is renamed locally (`old.md` → `new.md`), the client sends two
+independent push notifications to the server:
+
+1. A push for the **old path** with `deleted: true`
+2. A push for the **new path** with `deleted: false` and `relatedpath` set to
+   the encrypted old path
+
+The `relatedpath` field in the UPLOAD push enables the server to recognize
+this as a rename rather than a separate delete-and-create operation. This
+allows the server to preserve version history and update internal links
+accordingly.
+
+The rename source path is encrypted using the same per-segment encryption
+scheme as the `path` field (V0: AES-GCM; V2/V3: AES-SIV).
+
 ### Rename Semantics
 
 The server does **not** communicate renames natively. When a file is renamed

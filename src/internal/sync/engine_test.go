@@ -234,6 +234,7 @@ type mockSyncServer struct {
 	recordsByUID   map[int64]model.FileRecord
 	recordsByPath  map[string]model.FileRecord
 	contentByUID   map[int64][]byte
+	pushMsgs       []map[string]any
 	upgrader       websocket.Upgrader
 	pingCount      int
 	closeAfterPing bool
@@ -359,6 +360,9 @@ func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		case "push":
+			s.mu.Lock()
+			s.pushMsgs = append(s.pushMsgs, msg)
+			s.mu.Unlock()
 			path := stringValue(msg["path"])
 			size := int(int64Value(msg["size"]))
 			pieces := int(int64Value(msg["pieces"]))
@@ -498,7 +502,7 @@ func TestExecutePlan(t *testing.T) {
 
 	ctx := context.Background()
 	session := newRemoteSession(conn, remote, 1, ctx, nil, testLogger(), nil)
-	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, session); err != nil {
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session); err != nil {
 		t.Fatal(err)
 	}
 
@@ -587,7 +591,7 @@ func TestExecutePlanParallelDownloads(t *testing.T) {
 
 	ctx := context.Background()
 	session := newRemoteSession(mainConn, currentRemote, 1, ctx, nil, testLogger(), nil)
-	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, session); err != nil {
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session); err != nil {
 		t.Fatal(err)
 	}
 
@@ -658,7 +662,7 @@ func TestExecutePlanParallelSmallSync(t *testing.T) {
 	ctx := context.Background()
 	session := newRemoteSession(mainConn, currentRemote, 1, ctx, nil, testLogger(), nil)
 
-	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, session); err != nil {
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session); err != nil {
 		t.Fatal(err)
 	}
 
@@ -674,6 +678,133 @@ func TestExecutePlanParallelSmallSync(t *testing.T) {
 		if string(data) != expected {
 			t.Fatalf("file %s content mismatch: got %q, want %q", name, string(data), expected)
 		}
+	}
+}
+
+func TestPushRelatedPath(t *testing.T) {
+	t.Parallel()
+	mock := newMockSyncServer(t)
+
+	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
+	defer server.Close()
+
+	wsURL := "ws" + server.URL[4:]
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	if err := conn.WriteJSON(map[string]any{"op": "init"}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		var msg map[string]any
+		if err := conn.ReadJSON(&msg); err != nil {
+			t.Fatal(err)
+		}
+		if msg["op"] == "ready" {
+			break
+		}
+	}
+
+	ctx := context.Background()
+	session := newRemoteSession(conn, make(map[string]model.FileRecord), 1, ctx, nil, testLogger(), nil)
+
+	// Push with PreviousPath set → relatedpath should be present.
+	record := model.FileRecord{
+		Path:         "new.md",
+		Hash:         "abc",
+		Size:         0,
+		MTime:        1000,
+		PreviousPath: "old.md",
+	}
+	if err := session.push(record, []byte{}); err != nil {
+		t.Fatalf("push with PreviousPath failed: %v", err)
+	}
+
+	mock.mu.Lock()
+	if len(mock.pushMsgs) != 1 {
+		t.Fatalf("expected 1 push message, got %d", len(mock.pushMsgs))
+	}
+	msg := mock.pushMsgs[0]
+	mock.mu.Unlock()
+
+	rp, ok := msg["relatedpath"]
+	if !ok {
+		t.Fatal("expected relatedpath in push message when PreviousPath is set")
+	}
+	if rp != "old.md" {
+		t.Fatalf("expected relatedpath='old.md', got %v", rp)
+	}
+
+	// Push with empty PreviousPath → relatedpath should NOT be present.
+	record2 := model.FileRecord{
+		Path:         "other.md",
+		Hash:         "def",
+		Size:         0,
+		MTime:        2000,
+		PreviousPath: "",
+	}
+	if err := session.push(record2, []byte{}); err != nil {
+		t.Fatalf("push with empty PreviousPath failed: %v", err)
+	}
+
+	mock.mu.Lock()
+	if len(mock.pushMsgs) != 2 {
+		t.Fatalf("expected 2 push messages, got %d", len(mock.pushMsgs))
+	}
+	msg2 := mock.pushMsgs[1]
+	mock.mu.Unlock()
+
+	if _, exists := msg2["relatedpath"]; exists {
+		t.Fatal("expected no relatedpath in push message when PreviousPath is empty")
+	}
+
+	// Push with invalid PreviousPath (starts with /) → relatedpath should NOT be present.
+	record3 := model.FileRecord{
+		Path:         "third.md",
+		Hash:         "ghi",
+		Size:         0,
+		MTime:        3000,
+		PreviousPath: "/absolute/path.md",
+	}
+	if err := session.push(record3, []byte{}); err != nil {
+		t.Fatalf("push with absolute PreviousPath failed: %v", err)
+	}
+
+	mock.mu.Lock()
+	if len(mock.pushMsgs) != 3 {
+		t.Fatalf("expected 3 push messages, got %d", len(mock.pushMsgs))
+	}
+	msg3 := mock.pushMsgs[2]
+	mock.mu.Unlock()
+
+	if _, exists := msg3["relatedpath"]; exists {
+		t.Fatal("expected no relatedpath in push message when PreviousPath starts with /")
+	}
+
+	// Push with invalid PreviousPath (contains ..) → relatedpath should NOT be present.
+	record4 := model.FileRecord{
+		Path:         "fourth.md",
+		Hash:         "jkl",
+		Size:         0,
+		MTime:        4000,
+		PreviousPath: "../escape.md",
+	}
+	if err := session.push(record4, []byte{}); err != nil {
+		t.Fatalf("push with PreviousPath containing .. failed: %v", err)
+	}
+
+	mock.mu.Lock()
+	if len(mock.pushMsgs) != 4 {
+		t.Fatalf("expected 4 push messages, got %d", len(mock.pushMsgs))
+	}
+	msg4 := mock.pushMsgs[3]
+	mock.mu.Unlock()
+
+	if _, exists := msg4["relatedpath"]; exists {
+		t.Fatal("expected no relatedpath in push message when PreviousPath contains ..")
 	}
 }
 
