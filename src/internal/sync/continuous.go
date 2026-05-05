@@ -487,18 +487,23 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			return
 		}
 
-		// Merge results back into cs state under the lock.
-		// Only delete paths that were in the pre-execution snapshot but
-		// are no longer in updatedRemote — this preserves paths added
-		// by readPump during execution.
 		cs.mu.Lock()
-		cs.version = version
+		// Only advance the version if our sync cycle moved it forward.
+		// The readPump goroutine may have already set a newer version
+		// from server pushes received during plan execution.
+		if version > cs.version {
+			cs.version = version
+		}
+		// Only touch paths that were in the pre-execution snapshot.
+		// Paths added or updated by readPump during execution are NOT in
+		// remoteSnapshot, so they are preserved untouched.
 		for path := range remoteSnapshot {
-			if _, ok := updatedRemote[path]; !ok {
+			if record, ok := updatedRemote[path]; ok {
+				cs.remote[path] = record
+			} else {
 				delete(cs.remote, path)
 			}
 		}
-		maps.Copy(cs.remote, updatedRemote)
 		cs.mu.Unlock()
 
 		e.Logger.Info().Msg("continuous: sync complete")

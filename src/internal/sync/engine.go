@@ -105,6 +105,16 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 
 	lock, err := e.acquireLock()
 	if err != nil {
+		e.mu.Lock()
+		if e.stopClose != nil {
+			e.stopClose()
+			e.stopClose = nil
+		}
+		if e.conn != nil {
+			_ = e.conn.Close()
+			e.conn = nil
+		}
+		e.mu.Unlock()
 		return err
 	}
 	defer lock()

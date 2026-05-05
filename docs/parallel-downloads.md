@@ -85,9 +85,12 @@ Each worker calls `dialWorker()` which:
 2. Computes the key hash (if encryption is enabled)
 3. Sends an `init` message with `"initial": false` (workers are not the primary
    initiator; they join an existing session). The sync version in this message is
-   passed as an explicit parameter — in continuous mode this is `cs.version` (the
-   same version the main connection negotiates with the server); in RunOnce mode
-   this is `e.version`.
+   passed as an explicit parameter through the call chain (`runSyncCycle` →
+   `executePlan` → `executeDownloadsParallel` → `dialWorker`). The source of the
+   version depends on the mode:
+   - **RunOnce**: `e.version` (set by `ensureConnected` after the primary handshake)
+   - **Continuous**: the negotiated version from the execution connection handshake
+     (which the server returns after receiving `cs.version` as the handshake base)
 4. Reads the init response
 5. Reads and discards push messages (file listings) until `"ready"`
 6. Returns the connected WebSocket
