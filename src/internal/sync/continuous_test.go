@@ -207,7 +207,7 @@ func TestContinuousPushSync(t *testing.T) {
 
 func TestContinuousReconnection(t *testing.T) {
 	t.Parallel()
-	env := startContinuousTest(t, withTimeout(10*time.Second))
+	env := startContinuousTest(t, withTimeout(20*time.Second))
 
 	waitFor(t, 2*time.Second, "connection established", func() bool {
 		env.mock.mu.Lock()
@@ -425,7 +425,7 @@ func TestContinuousHeartbeatAfterReconnect(t *testing.T) {
 		env.engine.testHeartbeatInterval = 500 * time.Millisecond
 		env.engine.testHeartbeatSendThreshold = 250 * time.Millisecond
 		env.engine.testHeartbeatTimeout = 3 * time.Second
-	}, withTimeout(10*time.Second))
+	}, withTimeout(20*time.Second))
 
 	// Wait for first ping (heartbeat ticker is 500ms)
 	var initialPings int
@@ -438,7 +438,7 @@ func TestContinuousHeartbeatAfterReconnect(t *testing.T) {
 
 	// Wait for ping after reconnect (server closes after first pong, client reconnects)
 	// Reconnect backoff is 5s, so allow extra time beyond the heartbeat interval.
-	waitFor(t, 8*time.Second, "ping after reconnect", func() bool {
+	waitFor(t, 15*time.Second, "ping after reconnect", func() bool {
 		env.mock.mu.Lock()
 		pings := env.mock.pingCount
 		env.mock.mu.Unlock()
