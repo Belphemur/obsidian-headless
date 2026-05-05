@@ -350,38 +350,19 @@ When writing new tests, keep `waitFor` timeouts as tight as possible. A 5-second
 
 ---
 
-## CI Matrix
+## CI Configuration
 
-The `.github/workflows/go-ci.yml` splits tests across a matrix of packages for parallelism and faster feedback:
+The `.github/workflows/go-ci.yml` runs the full test suite as a single monolithic job:
 
 ```yaml
-strategy:
-  matrix:
-    package:
-      - ./internal/sync/...
-      - ./internal/api/...
-      - ./internal/storage/...
-      - ./internal/config/...
-      - ./internal/circuitbreaker/...
-      - ./internal/util/...
-      - ./internal/publish/...
-      - ./internal/model/...
-      - ./internal/encryption/...
-      - ./internal/logging/...
-      - ./internal/buildinfo/...
-      - ./internal/1passwordstub/...
-```
-
-Each matrix job runs:
-
-```bash
-go test -race -count=1 -timeout=5m -shuffle=on ${{ matrix.package }}
+- run: go test -race -count=1 -timeout=10m -shuffle=on ./...
+  working-directory: src
 ```
 
 **Implications for developers:**
-- Keep package test times under ~5 minutes or the CI job will time out.
-- The matrix means a failure in one package does not block others, but you must check all matrix cells.
-- New packages must be added to the matrix or they will not run in CI.
+- Keep individual package tests under ~10 minutes (`go test -timeout=10m`), and ensure the overall suite finishes within any CI job-level limits (e.g. workflow `timeout-minutes`).
+- New packages are automatically included by `./...` — no CI config changes needed.
+- Any test failure blocks the entire job.
 
 ---
 
@@ -420,6 +401,6 @@ Disables Go's test cache. Without this, `go test` may skip running tests if the 
 ### Retry Policy for CI
 
 If CI flakes on a specific test:
-1. Re-run the failed job (GitHub Actions matrix cell).
+1. Re-run the failed test job.
 2. If it fails again, reproduce locally with the same flags: `go test -race -count=1 -shuffle=on -run=TestName ./package`.
 3. If it only fails under race/shuffle, it is likely a concurrency or isolation bug — fix it, do not disable the flag.
