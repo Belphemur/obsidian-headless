@@ -360,7 +360,7 @@ The `.github/workflows/go-ci.yml` runs the full test suite as a single monolithi
 ```
 
 **Implications for developers:**
-- Keep the full suite under ~10 minutes or the CI job will time out.
+- Keep individual package tests under ~10 minutes (`go test -timeout=10m`), and ensure the overall suite finishes within any CI job-level limits (e.g. workflow `timeout-minutes`).
 - New packages are automatically included by `./...` — no CI config changes needed.
 - Any test failure blocks the entire job.
 
