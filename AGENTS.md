@@ -36,14 +36,42 @@ chore: update go.mod to use Go 1.26
 
 ## Documentation
 
+### `docs/` — Technical Reference
+
+The `docs/` directory is the **canonical source of truth** for deep technical documentation — protocol specs, architecture design, and implementation details. These are plain Markdown files aimed at developers. They are exhaustive and authoritative.
+
+### `website/` — User-Facing Documentation
+
+The `website/src/architecture/` and `website/src/usage/` directories contain **curated, user-facing versions** that mirror or complement `docs/`. They use VuePress conventions (frontmatter, Mermaid diagrams, callout containers) and target both users and developers. See `website/AGENTS.md` for detailed VuePress conventions.
+
+### Relationship Between `docs/` and `website/`
+
+- `docs/` is the **authoritative technical reference**
+- `website/` pages are **curated subsets** with diagrams, tables, and callouts
+- **Do NOT duplicate large text blocks** between them — link or summarize instead
+- When `docs/` changes, check if corresponding `website/` pages need updating
+
+### Using the `scribe` Agent for Documentation
+
+Delegate documentation work to the `scribe` agent for **any** updates to `docs/` or `website/`:
+
+- Use `task` to delegate (scribe is write-capable)
+- Scribe understands both plain Markdown and VuePress conventions (frontmatter, Mermaid, callouts)
+- Use scribe for: creating new doc pages, updating existing docs, ensuring cross-file consistency
+
+### Files to Keep in Sync
+
 When changing sync logic or protocol behavior, the following files MUST be kept in sync:
 
-- `docs/architecture.md` — architecture overview
-- `docs/sync-protocol.md` — protocol specification
-- `website/src/architecture/sync-protocol.md` — mirrored VuePress docs
+- `docs/architecture.md` — canonical architecture overview
+- `docs/sync-protocol.md` — canonical protocol specification
+- `docs/encryption-protocol.md` — canonical encryption details
+- `docs/circuit-breaker.md` — circuit breaker implementation docs
+- `docs/parallel-downloads.md` — parallel download internals; update when sync execution internals change
+- `website/src/architecture/sync-protocol.md` — curated VuePress version
 - `website/src/usage/sync.md` — user-facing usage docs
 
-Changes to protocol, architecture, or user behavior require updates in all four locations.
+Changes to protocol, architecture, or user behavior require updates in all relevant `docs/` files and their corresponding `website/` pages.
 
 ## Commit Frequency
 
