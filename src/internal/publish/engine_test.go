@@ -232,7 +232,9 @@ func TestScanLocal(t *testing.T) {
 		// Create a symlink
 		symlinkTarget := filepath.Join(vaultDir, "publish_true.md")
 		symlinkPath := filepath.Join(vaultDir, "symlink.md")
-		require.NoError(t, os.Symlink(symlinkTarget, symlinkPath))
+		if err := os.Symlink(symlinkTarget, symlinkPath); err != nil {
+			t.Skipf("symlinks not supported in this environment: %v", err)
+		}
 
 		engine := &Engine{
 			Config: model.PublishConfig{

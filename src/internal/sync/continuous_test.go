@@ -75,10 +75,9 @@ func startContinuousTest(t *testing.T, opts ...func(*continuousTestEnv)) *contin
 	}
 	env.engine = e
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	env.ctx = ctx
 	env.cancel = cancel
-	t.Cleanup(cancel)
 
 	errCh := make(chan error, 1)
 	env.errCh = errCh
@@ -86,6 +85,9 @@ func startContinuousTest(t *testing.T, opts ...func(*continuousTestEnv)) *contin
 	for _, opt := range opts {
 		opt(env)
 	}
+
+	// Register cleanup after opts so withTimeout's replacement cancel is captured.
+	t.Cleanup(func() { env.cancel() })
 
 	go func() {
 		errCh <- env.engine.RunContinuous(env.ctx)
@@ -96,10 +98,10 @@ func startContinuousTest(t *testing.T, opts ...func(*continuousTestEnv)) *contin
 
 func withTimeout(d time.Duration) func(*continuousTestEnv) {
 	return func(env *continuousTestEnv) {
-		env.cancel()
-		ctx, cancel := context.WithTimeout(context.Background(), d)
-		env.ctx = ctx
-		env.cancel = cancel
+		if env.cancel != nil {
+			env.cancel()
+		}
+		env.ctx, env.cancel = context.WithTimeout(context.Background(), d)
 	}
 }
 
@@ -132,8 +134,12 @@ func TestContinuousWatcherSync(t *testing.T) {
 	t.Parallel()
 	env := startContinuousTest(t)
 
-	// Wait briefly for connection establishment (the server needs a moment to accept)
-	time.Sleep(200 * time.Millisecond)
+	// Wait for connection establishment
+	waitFor(t, 2*time.Second, "connection established", func() bool {
+		env.mock.mu.Lock()
+		defer env.mock.mu.Unlock()
+		return len(env.mock.initMsgs) > 0
+	})
 
 	// Create local file
 	mustWriteFile(t, filepath.Join(env.vault, "new.md"), []byte("new content"))
@@ -163,7 +169,11 @@ func TestContinuousPushSync(t *testing.T) {
 		env.mock.addRecord("remote.md", 1, []byte("remote content"))
 	})
 
-	time.Sleep(200 * time.Millisecond)
+	waitFor(t, 2*time.Second, "connection established", func() bool {
+		env.mock.mu.Lock()
+		defer env.mock.mu.Unlock()
+		return len(env.mock.initMsgs) > 0
+	})
 
 	mustWriteFile(t, filepath.Join(env.vault, "local.md"), []byte("local content"))
 
@@ -199,7 +209,11 @@ func TestContinuousReconnection(t *testing.T) {
 	t.Parallel()
 	env := startContinuousTest(t, withTimeout(10*time.Second))
 
-	time.Sleep(200 * time.Millisecond)
+	waitFor(t, 2*time.Second, "connection established", func() bool {
+		env.mock.mu.Lock()
+		defer env.mock.mu.Unlock()
+		return len(env.mock.initMsgs) > 0
+	})
 
 	// Force close all connections on the server side
 	env.server.CloseClientConnections()
@@ -249,7 +263,11 @@ func TestRunContinuousPeriodicScanZero(t *testing.T) {
 		env.engine.Config.PeriodicScan = "0"
 	})
 
-	time.Sleep(200 * time.Millisecond)
+	waitFor(t, 2*time.Second, "connection established", func() bool {
+		env.mock.mu.Lock()
+		defer env.mock.mu.Unlock()
+		return len(env.mock.initMsgs) > 0
+	})
 	env.cancel()
 
 	if err := <-env.errCh; err != nil && err != context.Canceled &&
@@ -264,7 +282,11 @@ func TestRunContinuousPeriodicScanEmptyDefault(t *testing.T) {
 		env.engine.Config.PeriodicScan = ""
 	})
 
-	time.Sleep(200 * time.Millisecond)
+	waitFor(t, 2*time.Second, "connection established", func() bool {
+		env.mock.mu.Lock()
+		defer env.mock.mu.Unlock()
+		return len(env.mock.initMsgs) > 0
+	})
 	env.cancel()
 
 	if err := <-env.errCh; err != nil && err != context.Canceled &&
@@ -281,7 +303,7 @@ func TestContinuousInitialSyncWithStaleState(t *testing.T) {
 		// Pre-populate state DB with stale local state (simulating a vault move)
 		store, err := storage.Open(env.statePath)
 		if err != nil {
-			panic(err)
+			t.Fatalf("failed to open state DB: %v", err)
 		}
 		staleLocal := map[string]model.FileRecord{
 			"remote.md": {Path: "remote.md", Hash: "stalehash", Size: 13, MTime: 1000},
@@ -290,14 +312,14 @@ func TestContinuousInitialSyncWithStaleState(t *testing.T) {
 			"remote.md": {Path: "remote.md", Hash: "stalehash", Size: 13, MTime: 1000},
 		}
 		if err := store.ReplaceLocalFiles(staleLocal); err != nil {
-			panic(err)
+			t.Fatalf("failed to replace local files: %v", err)
 		}
 		if err := store.ReplaceServerFiles(staleRemote); err != nil {
-			panic(err)
+			t.Fatalf("failed to replace server files: %v", err)
 		}
 		// Keep initial=true so the engine resets state and downloads
 		if err := store.SetInitial(true); err != nil {
-			panic(err)
+			t.Fatalf("failed to set initial flag: %v", err)
 		}
 		store.Close()
 	})

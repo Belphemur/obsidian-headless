@@ -20,12 +20,6 @@ Run a single package:
 go test -race -count=1 -timeout=5m -shuffle=on ./internal/sync/...
 ```
 
-Run integration tests (requires Node.js mock server):
-
-```bash
-go test -race -count=1 -timeout=5m -shuffle=on -tags=integration ./cmd/ob-go/
-```
-
 **Key flags explained:**
 
 | Flag | Purpose |
@@ -34,7 +28,6 @@ go test -race -count=1 -timeout=5m -shuffle=on -tags=integration ./cmd/ob-go/
 | `-count=1` | Disables test caching. Essential for catching timing-dependent failures. |
 | `-timeout=10m` | Per-package timeout. Increase for slow packages (`./internal/sync/...`). |
 | `-shuffle=on` | Randomizes test execution order within a package. Catches hidden inter-test dependencies. |
-| `-tags=integration` | Includes `e2e_test.go` which exercises the real CLI against a Node.js mock server. |
 | `-run=TestName` | Filters to a specific test or sub-test. |
 | `-v` | Verbose output (useful for debugging a single test). |
 
@@ -340,13 +333,13 @@ When writing new tests, keep `waitFor` timeouts as tight as possible. A 5-second
 | `internal/config` | Medium | Config manager round-trips, secret storage isolation |
 | `internal/util` | Medium | File utilities |
 | `internal/circuitbreaker` | Medium | Circuit breaker config |
-| `cmd/ob-go` | Medium | E2E tests via `-tags=integration` and Node.js mock server |
+| `internal/publish` | Medium | Publish flag detection, glob matching, probe reading, scanLocal |
+| `internal/1passwordstub` | Medium | WASM core and imported stub tests |
 
 ### Untested / Low Coverage
 
 | Package | Why Untested |
 |---------|-------------|
-| `internal/publish` | No `*_test.go` files. Publish engine is structurally similar to sync; tests should follow the `mockSyncServer` pattern once a publish mock server exists. |
 | `internal/encryption` | No tests. Key derivation and AES-GCM are thin wrappers over `golang.org/x/crypto`; integration tests exercise them indirectly. Unit tests would require large fixture data. |
 | `internal/model` | Pure types / structs. No logic to test. |
 | `internal/logging` | Thin zerolog wrapper. No business logic. |
@@ -366,7 +359,6 @@ strategy:
   matrix:
     package:
       - ./internal/sync/...
-      - ./internal/sync/watch/...
       - ./internal/api/...
       - ./internal/storage/...
       - ./internal/config/...
@@ -377,18 +369,13 @@ strategy:
       - ./internal/encryption/...
       - ./internal/logging/...
       - ./internal/buildinfo/...
+      - ./internal/1passwordstub/...
 ```
 
 Each matrix job runs:
 
 ```bash
 go test -race -count=1 -timeout=5m -shuffle=on ${{ matrix.package }}
-```
-
-Integration tests run in a separate job:
-
-```bash
-go test -race -count=1 -timeout=5m -shuffle=on -tags=integration ./cmd/ob-go/
 ```
 
 **Implications for developers:**
