@@ -356,6 +356,7 @@ The `.github/workflows/go-ci.yml` runs the full test suite as a single monolithi
 
 ```yaml
 - run: go test -race -count=1 -timeout=10m -shuffle=on ./...
+  working-directory: src
 ```
 
 **Implications for developers:**
