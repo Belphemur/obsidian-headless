@@ -37,8 +37,12 @@ type Engine struct {
 	enc    encryption.EncryptionProvider
 	rawKey []byte
 
-	conn      *websocket.Conn
-	remote    map[string]model.FileRecord
+	conn    *websocket.Conn
+	remote  map[string]model.FileRecord
+	// version stores the connection version negotiated by ensureConnected in
+	// RunOnce mode. Continuous mode uses continuousState.version instead.
+	// It is read only by RunOnce/ensureConnected; all other paths receive
+	// version as an explicit parameter (see runSyncCycle).
 	version   int64
 	stopClose func() bool
 	wsCB      *gobreaker.CircuitBreaker[struct{}]
@@ -85,21 +89,51 @@ func (e *Engine) executeWithBreaker(fn func() (struct{}, error)) (struct{}, erro
 
 func (e *Engine) RunOnce(ctx context.Context) error {
 	e.Logger.Info().Str("vault", e.Config.VaultID).Msg("sync start")
+
 	e.mu.Lock()
 	if e.conn == nil {
 		e.mu.Unlock()
-		if err := e.ensureConnected(ctx); err != nil {
+		version, err := e.ensureConnected(ctx)
+		if err != nil {
 			return fmt.Errorf("failed to connect: %w", err)
 		}
-	} else {
-		e.mu.Unlock()
+		e.mu.Lock()
+		e.version = version
 	}
+	version := e.version
+	e.mu.Unlock()
 
 	lock, err := e.acquireLock()
 	if err != nil {
+		e.mu.Lock()
+		if e.stopClose != nil {
+			e.stopClose()
+			e.stopClose = nil
+		}
+		if e.conn != nil {
+			_ = e.conn.Close()
+			e.conn = nil
+		}
+		e.mu.Unlock()
 		return err
 	}
 	defer lock()
+
+	// Wrap e.conn shutdown: after RunOnce returns we want to close the
+	// connection since it's not reused across runs. ensureConnected set
+	// stopClose already; this defers the actual close for cleanup.
+	defer func() {
+		e.mu.Lock()
+		if e.stopClose != nil {
+			e.stopClose()
+			e.stopClose = nil
+		}
+		if e.conn != nil {
+			_ = e.conn.Close()
+			e.conn = nil
+		}
+		e.mu.Unlock()
+	}()
 
 	statePath, err := configpkg.StatePath(e.Config.VaultID, e.Config.StatePath)
 	if err != nil {
@@ -109,15 +143,78 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		_ = store.Close()
-	}()
+	defer func() { _ = store.Close() }()
 
 	previousLocal, previousRemote, err := e.loadState(store)
 	if err != nil {
 		return err
 	}
 
+	// Snapshot current Engine state for the cycle. The snapshot is
+	// read-only inside runSyncCycle; the caller updates Engine fields
+	// under the lock after it returns.
+	e.mu.Lock()
+	remoteSnapshot := make(map[string]model.FileRecord)
+	maps.Copy(remoteSnapshot, e.remote)
+	conn := e.conn
+	e.mu.Unlock()
+
+	version, updatedRemote, err := e.runSyncCycle(ctx, store, conn, version, remoteSnapshot, previousLocal, previousRemote, nil, nil, "once")
+	if err != nil {
+		return err
+	}
+
+	e.mu.Lock()
+	e.version = version
+	clear(e.remote)
+	maps.Copy(e.remote, updatedRemote)
+	e.mu.Unlock()
+
+	e.Logger.Info().Str("vault", e.Config.VaultID).Msg("sync complete")
+	return nil
+}
+
+// logRemoteRenameConflicts logs any paths that were preserved as conflicts
+// during remote rename detection (locally modified files, destination collisions,
+// missing previous state, filesystem errors, etc.).
+func (e *Engine) logRemoteRenameConflicts(result *RemoteRenameResult, mode string) {
+	for _, path := range result.Conflicts {
+		e.Logger.Warn().
+			Str("path", path).
+			Str("mode", mode).
+			Msg("remote rename conflict, preserving original path(s)")
+	}
+}
+
+// runSyncCycle executes the core sync cycle shared by RunOnce and RunContinuous.
+// It scans local files, merges remote state, detects renames, builds and executes
+// a sync plan, then saves the resulting state.
+//
+// Parameters:
+//   - conn: the WebSocket connection used for plan execution (may be nil if no
+//     execution is needed; the function handles nil gracefully)
+//   - version: the current negotiated version for this cycle
+//   - remoteSnapshot: a read-only snapshot of the live remote map (e.remote or cs.remote)
+//   - previousLocal/previousRemote: state loaded from the DB (may be pre-mutated by
+//     the caller, e.g. local rename fixups in continuous mode)
+//   - localRenames: optional map of oldPath→newPath for local renames (nil for RunOnce)
+//   - onBeforeRename: optional callback called before filesystem rename (nil for RunOnce)
+//   - mode: log label ("once" or "continuous")
+//
+// Returns the updated version (from session.version) and the filtered remote map
+// suitable for saveState. Both callers then merge these back into their own
+// version/remote tracking under their own locks.
+func (e *Engine) runSyncCycle(
+	ctx context.Context,
+	store *storage.StateStore,
+	conn *websocket.Conn,
+	version int64,
+	remoteSnapshot map[string]model.FileRecord,
+	previousLocal, previousRemote map[string]model.FileRecord,
+	localRenames map[string]string,
+	onBeforeRename func(model.RenamePair),
+	mode string,
+) (int64, map[string]model.FileRecord, error) {
 	// Clone previous state as the save-state baseline before any mutations.
 	// applyRemoteRenameFixups mutates previousRemote in-place, so dbLocal/dbRemote
 	// must be independent copies — otherwise the baseline used by saveState to
@@ -137,28 +234,24 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 
 	currentLocal, err := e.scanLocal()
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 
-	e.mu.Lock()
 	currentRemote := make(map[string]model.FileRecord)
 	maps.Copy(currentRemote, previousRemote)
-	for path, record := range e.remote {
+	for path, record := range remoteSnapshot {
 		if !isValidPath(path) {
 			e.Logger.Warn().Str("path", path).Msg("removing invalid path from remote")
 			continue
 		}
 		currentRemote[path] = record
 	}
-	version := e.version
-	e.mu.Unlock()
 
 	// Detect and apply remote renames before building the plan.
-	// No watcher in RunOnce mode, so no pre-rename callback needed.
-	remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger, nil)
-	e.logRemoteRenameConflicts(remoteRenameResult, "once")
+	remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger, onBeforeRename)
+	e.logRemoteRenameConflicts(remoteRenameResult, mode)
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir(), nil)
+	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir(), localRenames)
 	e.Logger.Info().
 		Int("planned_actions", len(plan)).
 		Int("local_files", len(currentLocal)).
@@ -175,25 +268,15 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		}
 	}
 
-	session := newRemoteSession(e.conn, currentRemote, version, ctx, e.enc, e.Logger, e.rawKey)
-	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session); err != nil {
-		return err
+	session := newRemoteSession(conn, currentRemote, version, ctx, e.enc, e.Logger, e.rawKey)
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session, version); err != nil {
+		return 0, nil, err
 	}
-
-	e.mu.Lock()
-	e.version = session.version
-	for path := range e.remote {
-		if _, ok := session.remote[path]; !ok {
-			delete(e.remote, path)
-		}
-	}
-	maps.Copy(e.remote, session.remote)
-	e.mu.Unlock()
 
 	// Rescan local after executing the plan so state reflects downloaded files
 	currentLocal, err = e.scanLocal()
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 
 	updatedRemote := make(map[string]model.FileRecord)
@@ -203,24 +286,12 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		}
 	}
 
-	if err := e.saveState(store, currentLocal, updatedRemote, dbLocal, dbRemote, session.version); err != nil {
-		return err
+	version = session.version
+	if err := e.saveState(store, currentLocal, updatedRemote, dbLocal, dbRemote, version); err != nil {
+		return 0, nil, err
 	}
 
-	e.Logger.Info().Str("vault", e.Config.VaultID).Msg("sync complete")
-	return nil
-}
-
-// logRemoteRenameConflicts logs any paths that were preserved as conflicts
-// during remote rename detection (locally modified files, destination collisions,
-// missing previous state, filesystem errors, etc.).
-func (e *Engine) logRemoteRenameConflicts(result *RemoteRenameResult, mode string) {
-	for _, path := range result.Conflicts {
-		e.Logger.Warn().
-			Str("path", path).
-			Str("mode", mode).
-			Msg("remote rename conflict, preserving original path(s)")
-	}
+	return version, updatedRemote, nil
 }
 
 func (e *Engine) Close() error {
@@ -296,7 +367,7 @@ func logPlanActions(logger zerolog.Logger, plan []syncAction) {
 // executePlan executes a list of sync actions.
 // Non-download actions run sequentially on the main connection.
 // Download actions run in parallel using a worker pool of dedicated connections.
-func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLocal map[string]model.FileRecord, previousRemote, previousLocal map[string]model.FileRecord, session *remoteSession) error {
+func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLocal map[string]model.FileRecord, previousRemote, previousLocal map[string]model.FileRecord, session *remoteSession, version int64) error {
 	var nonDownloads []syncAction
 	var downloads []syncAction
 	for _, action := range plan {
@@ -431,7 +502,7 @@ func (e *Engine) executePlan(ctx context.Context, plan []syncAction, currentLoca
 		return nil
 	}
 
-	return e.executeDownloadsParallel(ctx, downloadJobs, session)
+	return e.executeDownloadsParallel(ctx, downloadJobs, session, version)
 }
 
 type downloadJob struct {
@@ -443,7 +514,7 @@ type downloadJob struct {
 // goroutines, each with its own WebSocket connection. The number of workers
 // is min(len(jobs), configured download concurrency), so small syncs
 // don't create idle connections.
-func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJob, session *remoteSession) error {
+func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJob, session *remoteSession, version int64) error {
 	concurrency := e.Config.DownloadConcurrency
 	if concurrency <= 0 {
 		concurrency = defaultDownloadConcurrency
@@ -468,7 +539,7 @@ func (e *Engine) executeDownloadsParallel(ctx context.Context, jobs []downloadJo
 		go func() {
 			defer wg.Done()
 
-			conn, err := e.dialWorker(ctx)
+			conn, err := e.dialWorker(ctx, version)
 			if err != nil {
 				e.Logger.Warn().Int("workerID", workerID).Err(err).Msg("worker dial failed")
 				varmu.mu.Lock()

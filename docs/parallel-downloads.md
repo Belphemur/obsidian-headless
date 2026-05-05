@@ -73,7 +73,9 @@ Workers are created as `min(number_of_download_actions, configured_concurrency)`
 | Small update | 1 | 10 | 1 |
 
 No idle connections for small syncs. Each worker creates its connection on first
-use via `dialWorker()` which performs a full init handshake.
+use via `dialWorker()` which performs a full init handshake. The sync version is
+threaded through the call chain (`executePlan` → `executeDownloadsParallel` →
+`dialWorker`) as an explicit parameter rather than read from the Engine struct.
 
 ## Worker Handshake
 
@@ -82,10 +84,21 @@ Each worker calls `dialWorker()` which:
 1. Dials a new WebSocket connection to the vault host
 2. Computes the key hash (if encryption is enabled)
 3. Sends an `init` message with `"initial": false` (workers are not the primary
-   initiator; they join an existing session)
+   initiator; they join an existing session). The sync version in this message is
+   passed as an explicit parameter through the call chain (`runSyncCycle` →
+   `executePlan` → `executeDownloadsParallel` → `dialWorker`). The source of the
+   version depends on the mode:
+   - **RunOnce**: `e.version` (set by `ensureConnected` after the primary handshake)
+   - **Continuous**: the negotiated version from the execution connection handshake
+     (which the server returns after receiving `cs.version` as the handshake base)
 4. Reads the init response
 5. Reads and discards push messages (file listings) until `"ready"`
 6. Returns the connected WebSocket
+
+The version is threaded as a parameter to prevent a bug where continuous mode
+workers would send `version=0` because `e.version` is only set in RunOnce mode.
+By passing the version explicitly from the caller, workers always negotiate with
+the correct sync version regardless of which mode initiated them.
 
 The worker's `remoteSession` shares the main session's `remote` map, which is
 read-only during the parallel download phase.
