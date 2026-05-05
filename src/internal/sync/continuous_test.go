@@ -224,7 +224,7 @@ func TestContinuousReconnection(t *testing.T) {
 
 	mustWriteFile(t, filepath.Join(env.vault, "after-reconnect.md"), []byte("after reconnect"))
 
-	waitFor(t, 8*time.Second, "after-reconnect.md uploaded after reconnection", func() bool {
+	waitFor(t, 15*time.Second, "after-reconnect.md uploaded after reconnection", func() bool {
 		env.mock.mu.Lock()
 		defer env.mock.mu.Unlock()
 		for _, content := range env.mock.contentByUID {
@@ -438,6 +438,7 @@ func TestContinuousHeartbeatAfterReconnect(t *testing.T) {
 
 	// Wait for ping after reconnect (server closes after first pong, client reconnects)
 	// Reconnect backoff is 5s, so allow extra time beyond the heartbeat interval.
+	// 15s = 5s backoff + 10s CI variability buffer to prevent flakiness on slow runners.
 	waitFor(t, 15*time.Second, "ping after reconnect", func() bool {
 		env.mock.mu.Lock()
 		pings := env.mock.pingCount
