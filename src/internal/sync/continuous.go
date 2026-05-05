@@ -439,69 +439,25 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 		// Flush stale ignorations from the previous sync cycle
 		watcher.FlushIgnored()
 
-		// Clone previous state as the save-state baseline before any mutations.
-		// applyRemoteRenameFixups below mutates previousRemote in-place, so
-		// dbLocal/dbRemote must be independent copies — otherwise the baseline
-		// used by saveState to compute deletions would be corrupted.
-		dbLocal := make(map[string]model.FileRecord)
-		maps.Copy(dbLocal, previousLocal)
-		dbRemote := make(map[string]model.FileRecord)
-		maps.Copy(dbRemote, previousRemote)
+		// Build local rename map for buildPlan (passed through to runSyncCycle)
+		localRenames := convertRenameSnapshot(snapshot, e.Config.VaultPath, e.Logger)
 
-		initial, _ := store.Initial()
-		if initial {
-			// During initial sync, ignore previous local and remote state
-			// so we download remote files instead of deleting them.
-			previousLocal = map[string]model.FileRecord{}
-			previousRemote = map[string]model.FileRecord{}
-		}
-
-		currentLocal, err := e.scanLocal()
-		if err != nil {
-			e.Logger.Error().Err(err).Msg("continuous: failed to scan local")
-			return
-		}
-
+		// Snapshot cs state for the cycle (read-only inside runSyncCycle).
 		cs.mu.Lock()
-		currentRemote := make(map[string]model.FileRecord)
-		maps.Copy(currentRemote, previousRemote)
-		for path, record := range cs.remote {
-			if !isValidPath(path) {
-				continue
-			}
-			currentRemote[path] = record
-		}
+		remoteSnapshot := make(map[string]model.FileRecord)
+		maps.Copy(remoteSnapshot, cs.remote)
 		version := cs.version
 		cs.mu.Unlock()
 
-		// Detect and apply remote renames before building the plan.
-		// Pass a callback to register watcher ignore paths before os.Rename
-		// so fsnotify events for our own rename are suppressed.
-		remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger,
-			func(pair model.RenamePair) {
-				watcher.AddIgnorePaths([]model.RenamePair{pair})
-			})
-		e.logRemoteRenameConflicts(remoteRenameResult, "continuous")
-
-		// Build a local rename map from the watcher snapshot for buildPlan.
-		// convertRenameSnapshot converts watcher events to a vault-relative oldPath→newPath map.
-		localRenames := convertRenameSnapshot(snapshot, e.Config.VaultPath, e.Logger)
-
-		plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir(), localRenames)
-		e.Logger.Info().Int("planned_actions", len(plan)).Msg("continuous: sync plan created")
-		logPlanActions(e.Logger, plan)
-
-		if len(plan) == 0 {
-			return
-		}
-
-		// Open a dedicated connection for plan execution
+		// Open a dedicated connection for plan execution.
+		// Always open it — the runSyncCycle function handles empty plans
+		// gracefully (no I/O on the connection).
 		var connB *websocket.Conn
 		_, cbErr := e.executeWithBreaker(func() (struct{}, error) {
-			var err error
-			connB, _, err = websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
-			if err != nil {
-				return struct{}{}, fmt.Errorf("continuous: failed to dial execution connection: %w", err)
+			var dialErr error
+			connB, _, dialErr = websocket.DefaultDialer.DialContext(ctx, normalizeWSURL(e.Config.Host), nil)
+			if dialErr != nil {
+				return struct{}{}, fmt.Errorf("continuous: failed to dial execution connection: %w", dialErr)
 			}
 			return struct{}{}, nil
 		})
@@ -521,41 +477,29 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 			return
 		}
 
-		session := newRemoteSession(connB, currentRemote, execVersion, ctx, e.enc, e.Logger, e.rawKey)
-		if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session); err != nil {
-			e.Logger.Error().Err(err).Msg("continuous: failed to execute plan")
-			return
+		onBeforeRename := func(pair model.RenamePair) {
+			watcher.AddIgnorePaths([]model.RenamePair{pair})
 		}
 
-		// Rescan local after executing the plan so state reflects downloaded files
-		currentLocal, err = e.scanLocal()
+		version, updatedRemote, err := e.runSyncCycle(ctx, store, connB, execVersion, remoteSnapshot, previousLocal, previousRemote, localRenames, onBeforeRename, "continuous")
 		if err != nil {
-			e.Logger.Error().Err(err).Msg("continuous: failed to rescan local after sync")
+			e.Logger.Error().Err(err).Msg("continuous: failed to execute sync cycle")
 			return
 		}
 
+		// Merge results back into cs state under the lock.
+		// Only delete paths that were in the pre-execution snapshot but
+		// are no longer in updatedRemote — this preserves paths added
+		// by readPump during execution.
 		cs.mu.Lock()
-		// Merge changes made by executePlan (uploads/deletions) back into cs.remote
-		// so that saveState captures the true post-sync remote state.
-		for path := range currentRemote {
-			if _, ok := session.remote[path]; !ok {
+		cs.version = version
+		for path := range remoteSnapshot {
+			if _, ok := updatedRemote[path]; !ok {
 				delete(cs.remote, path)
 			}
 		}
-		maps.Copy(cs.remote, session.remote)
-		versionForSave := cs.version
-		remoteForSave := make(map[string]model.FileRecord)
-		for path, record := range cs.remote {
-			if isValidPath(path) {
-				remoteForSave[path] = record
-			}
-		}
+		maps.Copy(cs.remote, updatedRemote)
 		cs.mu.Unlock()
-
-		if err := e.saveState(store, currentLocal, remoteForSave, dbLocal, dbRemote, versionForSave); err != nil {
-			e.Logger.Error().Err(err).Msg("continuous: failed to save state")
-			return
-		}
 
 		e.Logger.Info().Msg("continuous: sync complete")
 	}

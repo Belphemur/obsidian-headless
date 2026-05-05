@@ -502,7 +502,7 @@ func TestExecutePlan(t *testing.T) {
 
 	ctx := context.Background()
 	session := newRemoteSession(conn, remote, 1, ctx, nil, testLogger(), nil)
-	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session); err != nil {
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session, session.version); err != nil {
 		t.Fatal(err)
 	}
 
@@ -591,7 +591,7 @@ func TestExecutePlanParallelDownloads(t *testing.T) {
 
 	ctx := context.Background()
 	session := newRemoteSession(mainConn, currentRemote, 1, ctx, nil, testLogger(), nil)
-	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session); err != nil {
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session, session.version); err != nil {
 		t.Fatal(err)
 	}
 
@@ -662,7 +662,7 @@ func TestExecutePlanParallelSmallSync(t *testing.T) {
 	ctx := context.Background()
 	session := newRemoteSession(mainConn, currentRemote, 1, ctx, nil, testLogger(), nil)
 
-	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session); err != nil {
+	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session, session.version); err != nil {
 		t.Fatal(err)
 	}
 

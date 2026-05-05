@@ -18,21 +18,25 @@ import (
 	"github.com/Belphemur/obsidian-headless/internal/storage"
 )
 
-func (e *Engine) ensureConnected(ctx context.Context) error {
+// ensureConnected establishes the main WebSocket connection and returns
+// the negotiated version. The version is also stored on e.version for the
+// RunOnce caller to capture after the call.
+func (e *Engine) ensureConnected(ctx context.Context) (int64, error) {
 	e.mu.Lock()
 	if e.conn != nil {
+		version := e.version
 		e.mu.Unlock()
-		return nil
+		return version, nil
 	}
 	e.mu.Unlock()
 
 	statePath, err := configpkg.StatePath(e.Config.VaultID, e.Config.StatePath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	store, err := storage.Open(statePath)
 	if err != nil {
-		return fmt.Errorf("failed to open state db: %w", err)
+		return 0, fmt.Errorf("failed to open state db: %w", err)
 	}
 	initial, _ := store.Initial()
 	_ = store.Close()
@@ -67,14 +71,18 @@ func (e *Engine) ensureConnected(ctx context.Context) error {
 
 	if cbErr != nil {
 		if errors.Is(cbErr, gobreaker.ErrOpenState) || errors.Is(cbErr, gobreaker.ErrTooManyRequests) {
-			return &circuitbreaker.BreakerError{
+			return 0, &circuitbreaker.BreakerError{
 				Message: fmt.Sprintf("Vault %s sync is temporarily unavailable (circuit open); retry in ~60s", e.Config.VaultID),
 				Err:     cbErr,
 			}
 		}
-		return cbErr
+		return 0, cbErr
 	}
-	return nil
+
+	e.mu.Lock()
+	v := e.version
+	e.mu.Unlock()
+	return v, nil
 }
 
 func (e *Engine) handshake(ctx context.Context, conn *websocket.Conn, version int64, initial bool) (int64, map[string]model.FileRecord, error) {
@@ -139,7 +147,7 @@ func (e *Engine) handshake(ctx context.Context, conn *websocket.Conn, version in
 	return version, remote, nil
 }
 
-func (e *Engine) dialWorker(ctx context.Context) (*websocket.Conn, error) {
+func (e *Engine) dialWorker(ctx context.Context, version int64) (*websocket.Conn, error) {
 	const (
 		baseDelay  = 200 * time.Millisecond
 		maxDelay   = 8 * time.Second
@@ -182,7 +190,6 @@ func (e *Engine) dialWorker(ctx context.Context) (*websocket.Conn, error) {
 			}
 
 			e.mu.Lock()
-			version := e.version
 			vaultID := e.Config.VaultID
 			token := e.Token
 			encVersion := e.Config.EncryptionVersion
