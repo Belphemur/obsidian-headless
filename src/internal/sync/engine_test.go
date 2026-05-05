@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +21,7 @@ import (
 )
 
 func testLogger() zerolog.Logger {
-	return zerolog.New(io.Discard)
+	return zerolog.Nop()
 }
 
 func TestLoadState(t *testing.T) {
@@ -235,6 +234,7 @@ type mockSyncServer struct {
 	recordsByPath  map[string]model.FileRecord
 	contentByUID   map[int64][]byte
 	pushMsgs       []map[string]any
+	initMsgs       []map[string]any
 	upgrader       websocket.Upgrader
 	pingCount      int
 	closeAfterPing bool
@@ -299,6 +299,9 @@ func (s *mockSyncServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		op, _ := msg["op"].(string)
 		switch op {
 		case "init":
+			s.mu.Lock()
+			s.initMsgs = append(s.initMsgs, msg)
+			s.mu.Unlock()
 			if err := conn.WriteJSON(map[string]any{"res": "ok"}); err != nil {
 				return
 			}

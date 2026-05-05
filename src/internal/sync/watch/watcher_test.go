@@ -13,10 +13,6 @@ import (
 	"github.com/Belphemur/obsidian-headless/internal/model"
 )
 
-func testLogger(t *testing.T) zerolog.Logger {
-	return zerolog.New(zerolog.NewConsoleWriter()).Level(zerolog.Disabled)
-}
-
 // waitForEvent reads from the watcher channel until the predicate matches or timeout expires.
 func waitForEvent(t *testing.T, ch <-chan ScanEvent, timeout time.Duration, desc string, pred func(ScanEvent) bool) ScanEvent {
 	t.Helper()
@@ -43,7 +39,7 @@ func TestWatcher_RenameDetection(t *testing.T) {
 		t.Skip("inode tracking not available on Windows")
 	}
 
-	logger := testLogger(t)
+	logger := zerolog.Nop()
 	root := t.TempDir()
 
 	w, err := New(root, nil, logger, 0)
@@ -91,7 +87,7 @@ func TestWatcher_RealDeletion_NoMatchingCreate(t *testing.T) {
 		t.Skip("inode tracking not available on Windows")
 	}
 
-	logger := testLogger(t)
+	logger := zerolog.Nop()
 	root := t.TempDir()
 
 	w, err := New(root, nil, logger, 0)
@@ -135,7 +131,7 @@ func TestWatcher_Shutdown_FlushesPendingRenames(t *testing.T) {
 		t.Skip("inode tracking not available on Windows")
 	}
 
-	logger := testLogger(t)
+	logger := zerolog.Nop()
 	root := t.TempDir()
 
 	w, err := New(root, nil, logger, 0)
