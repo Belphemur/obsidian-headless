@@ -38,20 +38,6 @@ func applyRemoteRenameFixups(
 ) *RemoteRenameResult {
 	result := &RemoteRenameResult{}
 
-	// Debug: log UIDs of all deleted and active records for diagnostics.
-	if logger.Debug().Enabled() {
-		for path, record := range currentRemote {
-			if record.Folder {
-				continue
-			}
-			logger.Debug().
-				Str("path", path).
-				Int64("uid", record.UID).
-				Bool("deleted", record.Deleted).
-				Msg("remote rename fixups: currentRemote record")
-		}
-	}
-
 	// Guard: nothing to do if there are no deleted records.
 	hasDeletedRecords := false
 	for _, record := range currentRemote {
