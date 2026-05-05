@@ -33,53 +33,96 @@ func waitFor(t *testing.T, timeout time.Duration, desc string, cond func() bool)
 	}
 }
 
-func TestContinuousInitialSync(t *testing.T) {
-	t.Parallel()
+type continuousTestEnv struct {
+	mock      *mockSyncServer
+	server    *httptest.Server
+	wsURL     string
+	vault     string
+	statePath string
+	engine    *Engine
+	ctx       context.Context
+	cancel    context.CancelFunc
+	errCh     chan error
+}
+
+func startContinuousTest(t *testing.T, opts ...func(*continuousTestEnv)) *continuousTestEnv {
+	t.Helper()
+
+	env := &continuousTestEnv{}
+
 	mock := newMockSyncServer(t)
-	mock.addRecord("remote.md", 1, []byte("remote content"))
+	env.mock = mock
 
 	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
-	defer server.Close()
+	env.server = server
+	t.Cleanup(server.Close)
 
 	u, _ := url.Parse(server.URL)
-	wsURL := "ws://" + u.Host
+	env.wsURL = "ws://" + u.Host
 
-	vault := t.TempDir()
-	statePath := filepath.Join(t.TempDir(), "state.db")
+	env.vault = t.TempDir()
+	env.statePath = filepath.Join(t.TempDir(), "state.db")
 
 	e := &Engine{
 		Config: model.SyncConfig{
-			VaultID:   "test-continuous-initial-vault",
-			VaultPath: vault,
-			Host:      wsURL,
-			StatePath: statePath,
+			VaultID:   "test-continuous-vault",
+			VaultPath: env.vault,
+			Host:      env.wsURL,
+			StatePath: env.statePath,
 			ConfigDir: ".obsidian",
 		},
 		Logger: testLogger(),
 	}
+	env.engine = e
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	env.ctx = ctx
+	env.cancel = cancel
+	t.Cleanup(cancel)
 
 	errCh := make(chan error, 1)
+	env.errCh = errCh
+
+	for _, opt := range opts {
+		opt(env)
+	}
+
 	go func() {
-		errCh <- e.RunContinuous(ctx)
+		errCh <- env.engine.RunContinuous(env.ctx)
 	}()
 
+	return env
+}
+
+func withTimeout(d time.Duration) func(*continuousTestEnv) {
+	return func(env *continuousTestEnv) {
+		env.cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), d)
+		env.ctx = ctx
+		env.cancel = cancel
+	}
+}
+
+func TestContinuousInitialSync(t *testing.T) {
+	t.Parallel()
+	env := startContinuousTest(t, func(env *continuousTestEnv) {
+		env.mock.addRecord("remote.md", 1, []byte("remote content"))
+	})
+
 	// Wait for initial connection, handshake, debounce (500ms) and sync
-	waitFor(t, 10*time.Second, "remote.md downloaded", func() bool {
-		_, err := os.ReadFile(filepath.Join(vault, "remote.md"))
+	waitFor(t, 5*time.Second, "remote.md downloaded", func() bool {
+		_, err := os.ReadFile(filepath.Join(env.vault, "remote.md"))
 		return err == nil
 	})
 
 	// Verify remote file was downloaded without any local changes
-	data, _ := os.ReadFile(filepath.Join(vault, "remote.md"))
+	data, _ := os.ReadFile(filepath.Join(env.vault, "remote.md"))
 	if string(data) != "remote content" {
 		t.Fatalf("unexpected content: %q", string(data))
 	}
 
-	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled &&
+	env.cancel()
+	if err := <-env.errCh; err != nil && err != context.Canceled &&
 		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
@@ -87,47 +130,19 @@ func TestContinuousInitialSync(t *testing.T) {
 
 func TestContinuousWatcherSync(t *testing.T) {
 	t.Parallel()
-	mock := newMockSyncServer(t)
-
-	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
-	defer server.Close()
-
-	u, _ := url.Parse(server.URL)
-	wsURL := "ws://" + u.Host
-
-	vault := t.TempDir()
-	statePath := filepath.Join(t.TempDir(), "state.db")
-
-	e := &Engine{
-		Config: model.SyncConfig{
-			VaultID:   "test-continuous-vault",
-			VaultPath: vault,
-			Host:      wsURL,
-			StatePath: statePath,
-			ConfigDir: ".obsidian",
-		},
-		Logger: testLogger(),
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- e.RunContinuous(ctx)
-	}()
+	env := startContinuousTest(t)
 
 	// Wait briefly for connection establishment (the server needs a moment to accept)
 	time.Sleep(200 * time.Millisecond)
 
 	// Create local file
-	mustWriteFile(t, filepath.Join(vault, "new.md"), []byte("new content"))
+	mustWriteFile(t, filepath.Join(env.vault, "new.md"), []byte("new content"))
 
 	// Wait for watcher quiescence + debounce + sync
-	waitFor(t, 10*time.Second, "new.md uploaded to mock server", func() bool {
-		mock.mu.Lock()
-		defer mock.mu.Unlock()
-		for _, content := range mock.contentByUID {
+	waitFor(t, 5*time.Second, "new.md uploaded to mock server", func() bool {
+		env.mock.mu.Lock()
+		defer env.mock.mu.Unlock()
+		for _, content := range env.mock.contentByUID {
 			if string(content) == "new content" {
 				return true
 			}
@@ -135,8 +150,8 @@ func TestContinuousWatcherSync(t *testing.T) {
 		return false
 	})
 
-	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled &&
+	env.cancel()
+	if err := <-env.errCh; err != nil && err != context.Canceled &&
 		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
@@ -144,45 +159,18 @@ func TestContinuousWatcherSync(t *testing.T) {
 
 func TestContinuousPushSync(t *testing.T) {
 	t.Parallel()
-	mock := newMockSyncServer(t)
-	mock.addRecord("remote.md", 1, []byte("remote content"))
-
-	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
-	defer server.Close()
-
-	u, _ := url.Parse(server.URL)
-	wsURL := "ws://" + u.Host
-
-	vault := t.TempDir()
-	statePath := filepath.Join(t.TempDir(), "state.db")
-
-	e := &Engine{
-		Config: model.SyncConfig{
-			VaultID:   "test-continuous-push-vault",
-			VaultPath: vault,
-			Host:      wsURL,
-			StatePath: statePath,
-			ConfigDir: ".obsidian",
-		},
-		Logger: testLogger(),
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- e.RunContinuous(ctx)
-	}()
+	env := startContinuousTest(t, func(env *continuousTestEnv) {
+		env.mock.addRecord("remote.md", 1, []byte("remote content"))
+	})
 
 	time.Sleep(200 * time.Millisecond)
 
-	mustWriteFile(t, filepath.Join(vault, "local.md"), []byte("local content"))
+	mustWriteFile(t, filepath.Join(env.vault, "local.md"), []byte("local content"))
 
-	waitFor(t, 10*time.Second, "local.md uploaded to mock server", func() bool {
-		mock.mu.Lock()
-		defer mock.mu.Unlock()
-		for _, content := range mock.contentByUID {
+	waitFor(t, 5*time.Second, "local.md uploaded to mock server", func() bool {
+		env.mock.mu.Lock()
+		defer env.mock.mu.Unlock()
+		for _, content := range env.mock.contentByUID {
 			if string(content) == "local content" {
 				return true
 			}
@@ -191,17 +179,17 @@ func TestContinuousPushSync(t *testing.T) {
 	})
 
 	// Verify remote file was downloaded
-	waitFor(t, 10*time.Second, "remote.md downloaded", func() bool {
-		_, err := os.ReadFile(filepath.Join(vault, "remote.md"))
+	waitFor(t, 5*time.Second, "remote.md downloaded", func() bool {
+		_, err := os.ReadFile(filepath.Join(env.vault, "remote.md"))
 		return err == nil
 	})
-	data, _ := os.ReadFile(filepath.Join(vault, "remote.md"))
+	data, _ := os.ReadFile(filepath.Join(env.vault, "remote.md"))
 	if string(data) != "remote content" {
 		t.Fatalf("unexpected content: %q", string(data))
 	}
 
-	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled &&
+	env.cancel()
+	if err := <-env.errCh; err != nil && err != context.Canceled &&
 		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
@@ -209,51 +197,23 @@ func TestContinuousPushSync(t *testing.T) {
 
 func TestContinuousReconnection(t *testing.T) {
 	t.Parallel()
-	mock := newMockSyncServer(t)
-
-	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
-	defer server.Close()
-
-	u, _ := url.Parse(server.URL)
-	wsURL := "ws://" + u.Host
-
-	vault := t.TempDir()
-	statePath := filepath.Join(t.TempDir(), "state.db")
-
-	e := &Engine{
-		Config: model.SyncConfig{
-			VaultID:   "test-continuous-reconnect-vault",
-			VaultPath: vault,
-			Host:      wsURL,
-			StatePath: statePath,
-			ConfigDir: ".obsidian",
-		},
-		Logger: testLogger(),
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- e.RunContinuous(ctx)
-	}()
+	env := startContinuousTest(t, withTimeout(10*time.Second))
 
 	time.Sleep(200 * time.Millisecond)
 
 	// Force close all connections on the server side
-	server.CloseClientConnections()
+	env.server.CloseClientConnections()
 
 	// Wait for reconnection - use waitFor to detect when reconnect happens
 	// by checking if we can upload a file successfully
 	time.Sleep(500 * time.Millisecond) // brief wait for disconnect to propagate
 
-	mustWriteFile(t, filepath.Join(vault, "after-reconnect.md"), []byte("after reconnect"))
+	mustWriteFile(t, filepath.Join(env.vault, "after-reconnect.md"), []byte("after reconnect"))
 
-	waitFor(t, 15*time.Second, "after-reconnect.md uploaded after reconnection", func() bool {
-		mock.mu.Lock()
-		defer mock.mu.Unlock()
-		for _, content := range mock.contentByUID {
+	waitFor(t, 8*time.Second, "after-reconnect.md uploaded after reconnection", func() bool {
+		env.mock.mu.Lock()
+		defer env.mock.mu.Unlock()
+		for _, content := range env.mock.contentByUID {
 			if string(content) == "after reconnect" {
 				return true
 			}
@@ -261,8 +221,8 @@ func TestContinuousReconnection(t *testing.T) {
 		return false
 	})
 
-	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled &&
+	env.cancel()
+	if err := <-env.errCh; err != nil && err != context.Canceled &&
 		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
@@ -270,18 +230,11 @@ func TestContinuousReconnection(t *testing.T) {
 
 func TestRunContinuousInvalidPeriodicScan(t *testing.T) {
 	t.Parallel()
-	e := &Engine{
-		Config: model.SyncConfig{
-			VaultID:      "test-invalid-periodic",
-			VaultPath:    t.TempDir(),
-			PeriodicScan: "not-a-duration",
-		},
-		Logger: testLogger(),
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	env := startContinuousTest(t, func(env *continuousTestEnv) {
+		env.engine.Config.PeriodicScan = "not-a-duration"
+	})
 
-	err := e.RunContinuous(ctx)
+	err := <-env.errCh
 	if err == nil {
 		t.Fatal("expected error for invalid periodic-scan duration, got nil")
 	}
@@ -292,40 +245,14 @@ func TestRunContinuousInvalidPeriodicScan(t *testing.T) {
 
 func TestRunContinuousPeriodicScanZero(t *testing.T) {
 	t.Parallel()
-	mock := newMockSyncServer(t)
-	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
-	defer server.Close()
-
-	u, _ := url.Parse(server.URL)
-	wsURL := "ws://" + u.Host
-
-	vault := t.TempDir()
-	statePath := filepath.Join(t.TempDir(), "state.db")
-
-	e := &Engine{
-		Config: model.SyncConfig{
-			VaultID:      "test-periodic-zero",
-			VaultPath:    vault,
-			Host:         wsURL,
-			StatePath:    statePath,
-			ConfigDir:    ".obsidian",
-			PeriodicScan: "0",
-		},
-		Logger: testLogger(),
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- e.RunContinuous(ctx)
-	}()
+	env := startContinuousTest(t, func(env *continuousTestEnv) {
+		env.engine.Config.PeriodicScan = "0"
+	})
 
 	time.Sleep(200 * time.Millisecond)
-	cancel()
+	env.cancel()
 
-	if err := <-errCh; err != nil && err != context.Canceled &&
+	if err := <-env.errCh; err != nil && err != context.Canceled &&
 		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
@@ -333,40 +260,14 @@ func TestRunContinuousPeriodicScanZero(t *testing.T) {
 
 func TestRunContinuousPeriodicScanEmptyDefault(t *testing.T) {
 	t.Parallel()
-	mock := newMockSyncServer(t)
-	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
-	defer server.Close()
-
-	u, _ := url.Parse(server.URL)
-	wsURL := "ws://" + u.Host
-
-	vault := t.TempDir()
-	statePath := filepath.Join(t.TempDir(), "state.db")
-
-	e := &Engine{
-		Config: model.SyncConfig{
-			VaultID:      "test-periodic-empty",
-			VaultPath:    vault,
-			Host:         wsURL,
-			StatePath:    statePath,
-			ConfigDir:    ".obsidian",
-			PeriodicScan: "",
-		},
-		Logger: testLogger(),
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- e.RunContinuous(ctx)
-	}()
+	env := startContinuousTest(t, func(env *continuousTestEnv) {
+		env.engine.Config.PeriodicScan = ""
+	})
 
 	time.Sleep(200 * time.Millisecond)
-	cancel()
+	env.cancel()
 
-	if err := <-errCh; err != nil && err != context.Canceled &&
+	if err := <-env.errCh; err != nil && err != context.Canceled &&
 		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
@@ -374,142 +275,156 @@ func TestRunContinuousPeriodicScanEmptyDefault(t *testing.T) {
 
 func TestContinuousInitialSyncWithStaleState(t *testing.T) {
 	t.Parallel()
-	mock := newMockSyncServer(t)
-	mock.addRecord("remote.md", 1, []byte("remote content"))
+	env := startContinuousTest(t, func(env *continuousTestEnv) {
+		env.mock.addRecord("remote.md", 1, []byte("remote content"))
 
-	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
-	defer server.Close()
-
-	u, _ := url.Parse(server.URL)
-	wsURL := "ws://" + u.Host
-
-	vault := t.TempDir()
-	statePath := filepath.Join(t.TempDir(), "state.db")
-
-	// Pre-populate state DB with stale local state (simulating a vault move)
-	store, err := storage.Open(statePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	staleLocal := map[string]model.FileRecord{
-		"remote.md": {Path: "remote.md", Hash: "stalehash", Size: 13, MTime: 1000},
-	}
-	staleRemote := map[string]model.FileRecord{
-		"remote.md": {Path: "remote.md", Hash: "stalehash", Size: 13, MTime: 1000},
-	}
-	if err := store.ReplaceLocalFiles(staleLocal); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.ReplaceServerFiles(staleRemote); err != nil {
-		t.Fatal(err)
-	}
-	// Keep initial=true so the engine resets state and downloads
-	if err := store.SetInitial(true); err != nil {
-		t.Fatal(err)
-	}
-	store.Close()
-
-	e := &Engine{
-		Config: model.SyncConfig{
-			VaultID:   "test-continuous-stale-state-vault",
-			VaultPath: vault,
-			Host:      wsURL,
-			StatePath: statePath,
-			ConfigDir: ".obsidian",
-		},
-		Logger: testLogger(),
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- e.RunContinuous(ctx)
-	}()
+		// Pre-populate state DB with stale local state (simulating a vault move)
+		store, err := storage.Open(env.statePath)
+		if err != nil {
+			panic(err)
+		}
+		staleLocal := map[string]model.FileRecord{
+			"remote.md": {Path: "remote.md", Hash: "stalehash", Size: 13, MTime: 1000},
+		}
+		staleRemote := map[string]model.FileRecord{
+			"remote.md": {Path: "remote.md", Hash: "stalehash", Size: 13, MTime: 1000},
+		}
+		if err := store.ReplaceLocalFiles(staleLocal); err != nil {
+			panic(err)
+		}
+		if err := store.ReplaceServerFiles(staleRemote); err != nil {
+			panic(err)
+		}
+		// Keep initial=true so the engine resets state and downloads
+		if err := store.SetInitial(true); err != nil {
+			panic(err)
+		}
+		store.Close()
+	})
 
 	// Wait for initial connection, handshake, debounce (500ms) and sync
-	waitFor(t, 10*time.Second, "remote.md downloaded (stale state)", func() bool {
-		_, err := os.ReadFile(filepath.Join(vault, "remote.md"))
+	waitFor(t, 5*time.Second, "remote.md downloaded (stale state)", func() bool {
+		_, err := os.ReadFile(filepath.Join(env.vault, "remote.md"))
 		return err == nil
 	})
 
 	// Verify remote file was downloaded (not deleted from remote)
-	data, _ := os.ReadFile(filepath.Join(vault, "remote.md"))
+	data, _ := os.ReadFile(filepath.Join(env.vault, "remote.md"))
 	if string(data) != "remote content" {
 		t.Fatalf("unexpected content: %q", string(data))
 	}
 
 	// Verify the mock server still has the remote file
-	mock.mu.Lock()
-	recordCount := len(mock.recordsByPath)
-	mock.mu.Unlock()
+	env.mock.mu.Lock()
+	recordCount := len(env.mock.recordsByPath)
+	env.mock.mu.Unlock()
 	if recordCount != 1 {
 		t.Fatalf("remote file was incorrectly deleted from server; expected 1 record, got %d", recordCount)
 	}
 
-	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled &&
+	env.cancel()
+	if err := <-env.errCh; err != nil && err != context.Canceled &&
 		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}
 }
 
-func TestContinuousHeartbeatAfterReconnect(t *testing.T) {
+func TestContinuousWorkerHandshakeVersion(t *testing.T) {
 	t.Parallel()
-	mock := newMockSyncServer(t)
+	env := startContinuousTest(t, func(env *continuousTestEnv) {
+		env.mock.addRecord("remote1.md", 1, []byte("remote content 1"))
+		env.mock.addRecord("remote2.md", 2, []byte("remote content 2"))
+		// Set concurrency to > 1 so workers are definitely used
+		env.engine.Config.DownloadConcurrency = 2
+	})
 
-	server := httptest.NewServer(http.HandlerFunc(mock.serveHTTP))
-	defer server.Close()
+	// Wait for files to be downloaded
+	waitFor(t, 5*time.Second, "remote files downloaded", func() bool {
+		_, err1 := os.ReadFile(filepath.Join(env.vault, "remote1.md"))
+		_, err2 := os.ReadFile(filepath.Join(env.vault, "remote2.md"))
+		return err1 == nil && err2 == nil
+	})
 
-	u, _ := url.Parse(server.URL)
-	wsURL := "ws://" + u.Host
+	// Wait for init messages to settle before cancelling
+	waitFor(t, 5*time.Second, "worker init messages received", func() bool {
+		env.mock.mu.Lock()
+		defer env.mock.mu.Unlock()
+		for _, msg := range env.mock.initMsgs {
+			if initial, _ := msg["initial"].(bool); !initial {
+				return true
+			}
+		}
+		return false
+	})
 
-	vault := t.TempDir()
-	statePath := filepath.Join(t.TempDir(), "state.db")
-
-	e := &Engine{
-		Config: model.SyncConfig{
-			VaultID:   "test-heartbeat-reconnect-vault",
-			VaultPath: vault,
-			Host:      wsURL,
-			StatePath: statePath,
-			ConfigDir: ".obsidian",
-		},
-		Logger: testLogger(),
+	env.cancel()
+	if err := <-env.errCh; err != nil && err != context.Canceled &&
+		!strings.Contains(err.Error(), "operation was canceled") {
+		t.Fatalf("RunContinuous error: %v", err)
 	}
 
-	// The server will close the WebSocket after responding to the first ping.
-	// This forces a reconnect so we can verify the heartbeat restarts.
-	mock.closeAfterPing = true
+	env.mock.mu.Lock()
+	defer env.mock.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
+	// We expect at least one init for the main connection (initial=true)
+	// and at least one for a worker connection (initial=false)
+	var workerInits []map[string]any
+	for _, msg := range env.mock.initMsgs {
+		initial, _ := msg["initial"].(bool)
+		if !initial {
+			workerInits = append(workerInits, msg)
+		}
+	}
 
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- e.RunContinuous(ctx)
-	}()
+	if len(workerInits) == 0 {
+		t.Fatalf("no worker init messages received")
+	}
 
-	// Wait for first ping (heartbeat ticker is 20s, first ping sent at ~20s)
+	// Protocol version 1 as defined by the server's ready response
+	const expectedVersion int64 = 1
+
+	for _, msg := range workerInits {
+		versionVal, ok := msg["version"].(float64)
+		if !ok {
+			t.Fatalf("worker init missing or invalid version: %v", msg)
+		}
+		if int64(versionVal) != expectedVersion {
+			t.Fatalf("expected worker init version %d, got %v", expectedVersion, versionVal)
+		}
+	}
+}
+
+func TestContinuousHeartbeatAfterReconnect(t *testing.T) {
+	t.Parallel()
+	env := startContinuousTest(t, func(env *continuousTestEnv) {
+		// The server will close the WebSocket after responding to the first ping.
+		// This forces a reconnect so we can verify the heartbeat restarts.
+		env.mock.closeAfterPing = true
+		env.engine.testHeartbeatInterval = 500 * time.Millisecond
+		env.engine.testHeartbeatSendThreshold = 250 * time.Millisecond
+		env.engine.testHeartbeatTimeout = 3 * time.Second
+	}, withTimeout(10*time.Second))
+
+	// Wait for first ping (heartbeat ticker is 500ms)
 	var initialPings int
-	waitFor(t, 30*time.Second, "first ping received", func() bool {
-		mock.mu.Lock()
-		initialPings = mock.pingCount
-		mock.mu.Unlock()
+	waitFor(t, 5*time.Second, "first ping received", func() bool {
+		env.mock.mu.Lock()
+		initialPings = env.mock.pingCount
+		env.mock.mu.Unlock()
 		return initialPings > 0
 	})
 
 	// Wait for ping after reconnect (server closes after first pong, client reconnects)
-	waitFor(t, 30*time.Second, "ping after reconnect", func() bool {
-		mock.mu.Lock()
-		pings := mock.pingCount
-		mock.mu.Unlock()
+	// Reconnect backoff is 5s, so allow extra time beyond the heartbeat interval.
+	waitFor(t, 8*time.Second, "ping after reconnect", func() bool {
+		env.mock.mu.Lock()
+		pings := env.mock.pingCount
+		env.mock.mu.Unlock()
 		return pings > initialPings
 	})
 
-	cancel()
-	if err := <-errCh; err != nil && err != context.Canceled &&
+	env.cancel()
+	if err := <-env.errCh; err != nil && err != context.Canceled &&
 		!strings.Contains(err.Error(), "operation was canceled") {
 		t.Fatalf("RunContinuous error: %v", err)
 	}

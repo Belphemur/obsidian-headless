@@ -37,8 +37,8 @@ type Engine struct {
 	enc    encryption.EncryptionProvider
 	rawKey []byte
 
-	conn    *websocket.Conn
-	remote  map[string]model.FileRecord
+	conn   *websocket.Conn
+	remote map[string]model.FileRecord
 	// version stores the connection version negotiated by ensureConnected in
 	// RunOnce mode. Continuous mode uses continuousState.version instead.
 	// It is read only by RunOnce/ensureConnected; all other paths receive
@@ -46,6 +46,11 @@ type Engine struct {
 	version   int64
 	stopClose func() bool
 	wsCB      *gobreaker.CircuitBreaker[struct{}]
+
+	// test-only overrides for heartbeat timing (zero = use defaults)
+	testHeartbeatInterval      time.Duration
+	testHeartbeatSendThreshold time.Duration
+	testHeartbeatTimeout       time.Duration
 
 	mu sync.Mutex
 }

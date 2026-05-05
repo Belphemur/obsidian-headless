@@ -315,7 +315,20 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 
 	startHeartbeat := func() {
 		go func() {
-			ticker := time.NewTicker(heartbeatInterval)
+			interval := heartbeatInterval
+			if e.testHeartbeatInterval > 0 {
+				interval = e.testHeartbeatInterval
+			}
+			sendThreshold := heartbeatSendThreshold
+			if e.testHeartbeatSendThreshold > 0 {
+				sendThreshold = e.testHeartbeatSendThreshold
+			}
+			timeout := heartbeatTimeout
+			if e.testHeartbeatTimeout > 0 {
+				timeout = e.testHeartbeatTimeout
+			}
+
+			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 			for {
 				select {
@@ -333,7 +346,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 
 					elapsed := time.Since(lastMsg)
 					e.Logger.Debug().Dur("elapsed", elapsed).Msg("continuous: heartbeat check")
-					if elapsed >= heartbeatTimeout {
+					if elapsed >= timeout {
 						e.Logger.Warn().Dur("elapsed", elapsed).Msg("continuous: heartbeat timeout, closing connection")
 						_ = conn.Close()
 						cs.mu.Lock()
@@ -343,7 +356,7 @@ func (e *Engine) RunContinuous(ctx context.Context) error {
 						cs.mu.Unlock()
 						continue
 					}
-					if elapsed >= heartbeatSendThreshold {
+					if elapsed >= sendThreshold {
 						if err := conn.WriteJSON(map[string]any{"op": "ping"}); err != nil {
 							e.Logger.Warn().Err(err).Msg("continuous: failed to send ping, closing connection")
 							_ = conn.Close()
