@@ -12,6 +12,8 @@ github.com/byteness/keyring v1.9.1 h1:aWKEPoATzyZvVa641HhVhjUjHf35dl7DmCmr65+p+p
 github.com/byteness/keyring v1.9.1/go.mod h1:ar16WdPrkf9/TarCWbLoyf6HtRymFO/kFdnGBHrL95A=
 github.com/byteness/keyring v1.9.2 h1:aegE7LSA9H9jNO/t37RIwLj1rnpYqnzLt0e6hxVD0M8=
 github.com/byteness/keyring v1.9.2/go.mod h1:aybQecyggeneB9Dh7XhtDymO7GDzZb/ZRmukKEO8png=
+github.com/byteness/keyring v1.9.3 h1:8ZnsYFdLiyAil2cIttxUVSRbNj5u+UG7AR7jH18tWkE=
+github.com/byteness/keyring v1.9.3/go.mod h1:fHz0D2UQARryadc45oHOmgo/v4F7JheVi2Mt/1GpH7Q=
 github.com/byteness/percent v0.2.2 h1:vnIFh8WBR1xoC+U2etz0EMB1cgp+vsK6vynqTCeDziU=
 github.com/byteness/percent v0.2.2/go.mod h1:nwavge92FhIyfnldz4YWZD8uxPVvdh8NlzLRd1VYRDs=
 github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=
@@ -142,6 +144,8 @@ go.yaml.in/yaml/v3 v3.0.4 h1:tfq32ie2Jv2UxXFdLJdh3jXuOzWiL1fo0bu/FbuKpbc=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
 golang.org/x/crypto v0.50.0 h1:zO47/JPrL6vsNkINmLoo/PH1gcxpls50DNogFvB5ZGI=
 golang.org/x/crypto v0.50.0/go.mod h1:3muZ7vA7PBCE6xgPX7nkzzjiUq87kRItoJQM1Yo8S+Q=
+golang.org/x/crypto v0.51.0 h1:IBPXwPfKxY7cWQZ38ZCIRPI50YLeevDLlLnyC5wRGTI=
+golang.org/x/crypto v0.51.0/go.mod h1:8AdwkbraGNABw2kOX6YFPs3WM22XqI4EXEd8g+x7Oc8=
 golang.org/x/mod v0.34.0 h1:xIHgNUUnW6sYkcM5Jleh05DvLOtwc6RitGHbDk4akRI=
 golang.org/x/mod v0.34.0/go.mod h1:ykgH52iCZe79kzLLMhyCUzhMci+nQj+0XkbXpNYtVjY=
 golang.org/x/sync v0.20.0 h1:e0PTpb7pjO8GAtTs2dQ6jYa5BWYlMuX047Dco/pItO4=
