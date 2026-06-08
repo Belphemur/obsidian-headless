@@ -6,7 +6,7 @@ replace github.com/1password/onepassword-sdk-go => ./internal/1passwordstub
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
-	github.com/byteness/keyring v1.10.0
+	github.com/byteness/keyring v1.10.1
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/djherbis/times v1.6.0
 	github.com/fsnotify/fsnotify v1.10.1
@@ -20,7 +20,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.52.0
-	golang.org/x/sys v0.45.0
+	golang.org/x/sys v0.46.0
 	golang.org/x/term v0.43.0
 	golang.org/x/text v0.37.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
