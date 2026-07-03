@@ -20,6 +20,6 @@
   "dependencies": {
     "@vuepress/plugin-icon": "^2.0.0-rc.68",
     "@vuepress/plugin-markdown-chart": "^2.0.0-rc.109",
-    "mermaid": "^11.14.0"
+    "mermaid": "^11.15.0"
   }
 }
