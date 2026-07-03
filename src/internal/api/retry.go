@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/cenkalti/backoff/v5"
+	"github.com/cenkalti/backoff/v7"
 )
 
 func (c *Client) withRetry(ctx context.Context, operation func() error) error {
@@ -17,5 +17,13 @@ func (c *Client) withRetry(ctx context.Context, operation func() error) error {
 	_, err := backoff.Retry[struct{}](ctx, func() (struct{}, error) {
 		return struct{}{}, operation()
 	}, backoff.WithBackOff(b), backoff.WithMaxElapsedTime(5*time.Minute))
+	if err == nil {
+		return nil
+	}
+	// backoff v6+ wraps every failure in a *RetryError. Unwrap it so callers
+	// keep seeing the original operation error, preserving prior behavior.
+	if retryErr := backoff.AsRetryError(err); retryErr != nil {
+		return retryErr.LastErr
+	}
 	return err
 }

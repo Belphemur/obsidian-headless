@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/cenkalti/backoff/v5"
+	"github.com/cenkalti/backoff/v7"
 	"github.com/sony/gobreaker/v2"
 
 	"github.com/Belphemur/obsidian-headless/internal/circuitbreaker"
