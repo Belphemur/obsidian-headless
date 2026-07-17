@@ -6,7 +6,7 @@ replace github.com/1password/onepassword-sdk-go => ./internal/1passwordstub
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
-	github.com/byteness/keyring v1.11.0
+	github.com/byteness/keyring v1.12.0
 	github.com/cenkalti/backoff/v7 v7.0.0
 	github.com/djherbis/times v1.6.0
 	github.com/fsnotify/fsnotify v1.10.1
