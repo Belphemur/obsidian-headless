@@ -10,7 +10,7 @@ require (
 	github.com/cenkalti/backoff/v7 v7.0.0
 	github.com/djherbis/times v1.6.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/golang-migrate/migrate/v4 v4.19.1
+	github.com/golang-migrate/migrate/v4 v4.20.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/jedisct1/go-aes-siv v1.0.0
 	github.com/rs/zerolog v1.35.1
