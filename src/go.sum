@@ -4,6 +4,8 @@ github.com/HdrHistogram/hdrhistogram-go v1.1.2 h1:5IcZpTvzydCQeHzK4Ef/D5rrSqwxob
 github.com/HdrHistogram/hdrhistogram-go v1.1.2/go.mod h1:yDgFjdqOqDEKOvasDdhWNXYg9BVp4O+o5f6V/ehm6Oo=
 github.com/bmatcuk/doublestar/v4 v4.10.0 h1:zU9WiOla1YA122oLM6i4EXvGW62DvKZVxIe6TYWexEs=
 github.com/bmatcuk/doublestar/v4 v4.10.0/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
+github.com/bmatcuk/doublestar/v4 v4.10.1 h1:WmIq9zirOet2IiLta/lAAdb7amMCKO+BP4FZXcgU3qY=
+github.com/bmatcuk/doublestar/v4 v4.10.1/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
 github.com/byteness/go-keychain v0.0.0-20260108220220-c96c38f7f906 h1:6I69EsMJulw9bfwwsOIoOVzN27/UJgHKHPRqsACeloQ=
 github.com/byteness/go-keychain v0.0.0-20260108220220-c96c38f7f906/go.mod h1:jgADfGMmAo24Ct+IHSywQ1qOpeXZtjk8WY6LZQftZ5w=
 github.com/byteness/go-libsecret v0.0.0-20260108215642-107379d3dee0 h1:j59wGsxaBk6aFBuuYofk2oznMGZYyzFovjDqavlJHM8=
