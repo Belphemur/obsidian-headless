@@ -6,7 +6,7 @@ replace github.com/1password/onepassword-sdk-go => ./internal/1passwordstub
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.3
-	github.com/byteness/keyring v1.13.2
+	github.com/byteness/keyring v1.13.3
 	github.com/cenkalti/backoff/v7 v7.0.1
 	github.com/djherbis/times v1.6.0
 	github.com/fsnotify/fsnotify v1.10.1
@@ -43,7 +43,7 @@ require (
 	github.com/extism/go-sdk v1.7.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
-	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	github.com/godbus/dbus/v5 v5.2.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/ianlancetaylor/demangle v0.0.0-20251118225945-96ee0021ea0f // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
