@@ -256,7 +256,7 @@ func (e *Engine) runSyncCycle(
 	remoteRenameResult := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, e.Config.VaultPath, e.Logger, onBeforeRename)
 	e.logRemoteRenameConflicts(remoteRenameResult, mode)
 
-	plan := buildPlan(currentLocal, previousLocal, currentRemote, previousRemote, e.configDir(), localRenames)
+	plan := buildPlanForMode(e.Config.SyncMode, currentLocal, previousLocal, currentRemote, previousRemote, e.configDir(), localRenames)
 	e.Logger.Info().
 		Int("planned_actions", len(plan)).
 		Int("local_files", len(currentLocal)).
@@ -274,6 +274,9 @@ func (e *Engine) runSyncCycle(
 	}
 
 	session := newRemoteSession(conn, currentRemote, version, ctx, e.enc, e.Logger, e.rawKey)
+	// Second barrier for pull and mirror: even if a write were planned, the
+	// session refuses to send it.
+	session.readOnly = isReadOnlyMode(e.Config.SyncMode)
 	if err := e.executePlan(ctx, plan, currentLocal, previousRemote, previousLocal, session, version); err != nil {
 		return 0, nil, err
 	}

@@ -43,12 +43,50 @@ type syncAction struct {
 	RelatedPath string // old path for rename uploads; empty for other actions
 }
 
+// Sync modes, as stored in model.SyncConfig.SyncMode. The empty string and
+// "bidirectional" both mean two-way sync.
+const (
+	syncModePull   = "pull"
+	syncModeMirror = "mirror"
+)
+
+// isReadOnlyMode reports whether a sync mode must never change the remote vault.
+func isReadOnlyMode(mode string) bool {
+	return mode == syncModePull || mode == syncModeMirror
+}
+
+// buildPlan plans a bidirectional sync.
 func buildPlan(
 	currentLocal, previousLocal,
 	currentRemote, previousRemote map[string]model.FileRecord,
 	configDir string,
 	localRenames map[string]string, // oldPath → newPath from watcher snapshot
 ) []syncAction {
+	return buildPlanForMode("", currentLocal, previousLocal, currentRemote, previousRemote, configDir, localRenames)
+}
+
+// buildPlanForMode plans a sync for the given mode.
+//
+// In the read-only modes the plan only ever contains downloads and local
+// deletions, so the remote vault is never modified:
+//
+//   - pull: remote changes are downloaded and local changes are ignored (kept
+//     on disk, never uploaded). When both sides changed, the server wins.
+//   - mirror: as pull, and local changes are reverted: a locally modified or
+//     deleted file is downloaded again and a file that is not on the server is
+//     deleted locally.
+func buildPlanForMode(
+	mode string,
+	currentLocal, previousLocal,
+	currentRemote, previousRemote map[string]model.FileRecord,
+	configDir string,
+	localRenames map[string]string, // oldPath → newPath from watcher snapshot
+) []syncAction {
+	readOnly := isReadOnlyMode(mode)
+	if readOnly {
+		// A local rename is a local change like any other: it is never sent.
+		localRenames = nil
+	}
 	pathsSet := map[string]struct{}{}
 	for _, collection := range []map[string]model.FileRecord{currentLocal, previousLocal, currentRemote, previousRemote} {
 		for path := range collection {
@@ -111,6 +149,25 @@ func buildPlan(
 		serverHasDeletedRecord := hasCurrentR && currentR.Deleted
 
 		switch {
+		case remoteChanged && localChanged && readOnly:
+			// Pull and mirror: the server always wins.
+			if serverHasActiveFile {
+				actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
+			} else if serverHasDeletedRecord && hasCurrentL {
+				actions = append(actions, syncAction{Path: path, Kind: syncActionDeleteLocal})
+			}
+		case localChanged && !remoteChanged && readOnly:
+			// Pull ignores local changes. Mirror reverts them.
+			if mode == syncModeMirror {
+				if serverHasActiveFile {
+					// Modified or deleted locally: take the server's version again.
+					actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
+				} else if hasCurrentL && !currentL.Folder {
+					// Not on the server: remove it. Folders are left alone, as
+					// they may still hold files this cycle.
+					actions = append(actions, syncAction{Path: path, Kind: syncActionDeleteLocal})
+				}
+			}
 		case remoteChanged && localChanged:
 			if serverHasDeletedRecord {
 				// Server deleted, local changed - let local win (upload)
