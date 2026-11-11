@@ -202,8 +202,9 @@ modified, in one-shot and in continuous sync alike:
 | Change | `pull` | `mirror` |
 |--------|--------|----------|
 | Changed on the server | Download | Download |
-| Deleted on the server | Delete the local copy | Delete the local copy |
+| Deleted on the server (unchanged locally) | Delete the local copy | Delete the local copy |
 | Changed on both sides | Server wins | Server wins |
+| Deleted on the server, changed locally | Local file kept | Delete the local copy |
 | Modified or deleted locally | Ignored | Downloaded again |
 | Created or renamed locally | Ignored | Deleted locally (files only; the server's copy of a renamed file is downloaded again) |
 

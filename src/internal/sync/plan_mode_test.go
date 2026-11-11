@@ -98,8 +98,7 @@ func TestBuildPlanForMode(t *testing.T) {
 			currentRemote:  planRecords(deleted("a.md")),
 			previousRemote: planRecords(planRecord("a.md", "h1", 10)),
 			bidirectional:  []syncAction{up("a.md")},
-			pull:           []syncAction{delLocal("a.md")},
-			mirror:         []syncAction{delLocal("a.md")},
+			mirror:         []syncAction{delLocal("a.md")}, // pull keeps the local edit
 		},
 		{
 			name:           "changed on the server, deleted locally",
@@ -253,6 +252,53 @@ func TestReadOnlyBaselineRecordsReconciledFiles(t *testing.T) {
 	}
 	if next := buildPlan(currentLocal, baseline, remote, remote, ".obsidian", nil); len(next) != 0 {
 		t.Fatalf("a later bidirectional sync planned %+v although everything is in sync", next)
+	}
+}
+
+// The server renames a note that was edited locally. The rename is refused to
+// preserve the edit (see handleRemoteRename), leaving a tombstone for the old
+// path. Pull must not then delete the preserved file; mirror does.
+func TestReadOnlyModesAndRefusedRemoteRename(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{syncModePull, syncModeMirror} {
+		mode := mode
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			vault := t.TempDir()
+			uid := int64(42)
+			currentRemote := map[string]model.FileRecord{
+				"new.md": {Path: "new.md", Hash: "abc", UID: uid},
+				"old.md": {Path: "old.md", UID: uid, Deleted: true},
+			}
+			previousRemote := map[string]model.FileRecord{"old.md": {Path: "old.md", Hash: "abc", UID: uid}}
+			previousLocal := map[string]model.FileRecord{"old.md": {Path: "old.md", Hash: "abc"}}
+			currentLocal := map[string]model.FileRecord{"old.md": {Path: "old.md", Hash: "edited"}}
+			mustWriteFile(t, filepath.Join(vault, "old.md"), []byte("edited locally"))
+
+			result := applyRemoteRenameFixups(currentRemote, previousRemote, previousLocal, currentLocal, vault, testLogger(), nil)
+			if len(result.Conflicts) != 1 || len(result.Enacted) != 0 {
+				t.Fatalf("the rename of an edited note should be refused: %+v", result)
+			}
+
+			plan := buildPlanForMode(mode, currentLocal, previousLocal, currentRemote, previousRemote, ".obsidian", nil)
+			want := []syncAction{{Path: "new.md", Kind: syncActionDownload}}
+			if mode == syncModeMirror {
+				want = []syncAction{{Path: "new.md", Kind: syncActionDownload}, {Path: "old.md", Kind: syncActionDeleteLocal}}
+			}
+			if !reflect.DeepEqual(plan, want) {
+				t.Fatalf("plan: got %+v, want %+v", plan, want)
+			}
+			if mode != syncModePull {
+				return
+			}
+			// The preserved edit stays pending: bidirectional sync sends it later.
+			onDisk := map[string]model.FileRecord{"old.md": currentLocal["old.md"], "new.md": {Path: "new.md", Hash: "abc"}}
+			baseline := localBaselineAfterReadOnlySync(plan, previousLocal, onDisk, currentRemote)
+			later := buildPlan(onDisk, baseline, currentRemote, currentRemote, ".obsidian", nil)
+			if !reflect.DeepEqual(later, []syncAction{{Path: "old.md", Kind: syncActionUpload}}) {
+				t.Fatalf("after switching to bidirectional: got %+v, want the preserved edit to be uploaded", later)
+			}
+		})
 	}
 }
 

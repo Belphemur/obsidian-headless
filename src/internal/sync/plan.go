@@ -71,10 +71,12 @@ func buildPlan(
 // deletions, so the remote vault is never modified:
 //
 //   - pull: remote changes are downloaded and local changes are ignored (kept
-//     on disk, never uploaded). When both sides changed, the server wins.
+//     on disk, never uploaded). When both sides changed, the server's version
+//     is downloaded; if the server deleted a file that was changed locally,
+//     the local file is kept.
 //   - mirror: as pull, and local changes are reverted: a locally modified or
-//     deleted file is downloaded again and a file that is not on the server is
-//     deleted locally.
+//     deleted file is downloaded again, and a file that is not on the server
+//     (never there, or deleted there) is deleted locally.
 func buildPlanForMode(
 	mode string,
 	currentLocal, previousLocal,
@@ -150,10 +152,13 @@ func buildPlanForMode(
 
 		switch {
 		case remoteChanged && localChanged && readOnly:
-			// Pull and mirror: the server always wins.
+			// Pull and mirror: the server's version wins.
 			if serverHasActiveFile {
 				actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
-			} else if serverHasDeletedRecord && hasCurrentL {
+			} else if serverHasDeletedRecord && hasCurrentL && mode == syncModeMirror {
+				// Deleted on the server, changed locally. Mirror removes it. Pull
+				// keeps it: pull ignores local changes, it does not destroy them
+				// (this is also the copy a refused remote rename preserves).
 				actions = append(actions, syncAction{Path: path, Kind: syncActionDeleteLocal})
 			}
 		case localChanged && !remoteChanged && readOnly:
