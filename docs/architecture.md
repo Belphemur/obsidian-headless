@@ -193,6 +193,23 @@ uploaded. The adapter's `watch()` call is skipped entirely; only an initial
 `listAll()` scan is performed. This eliminates inotify/FSEvents overhead on
 machines that only download.
 
+### Planning in read-only modes
+
+`buildPlanForMode` restricts the plan in the `pull` and `mirror` modes so that
+it only contains downloads and local deletions. The remote vault is never
+modified, in one-shot and in continuous sync alike:
+
+| Change | `pull` | `mirror` |
+|--------|--------|----------|
+| Changed on the server | Download | Download |
+| Deleted on the server | Delete the local copy | Delete the local copy |
+| Changed on both sides | Server wins | Server wins |
+| Modified or deleted locally | Ignored | Downloaded again |
+| Created or renamed locally | Ignored | Deleted locally (files only; the server's copy of a renamed file is downloaded again) |
+
+As a second barrier, the remote session refuses `push` and `delete` in these
+modes, so a planning bug cannot turn into a remote write.
+
 ## Configuration Storage
 
 All configuration is stored under a platform-specific base directory:
