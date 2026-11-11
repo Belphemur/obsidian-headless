@@ -294,8 +294,15 @@ func (e *Engine) runSyncCycle(
 		}
 	}
 
+	// In the read-only modes, local changes the plan ignored stay pending
+	// instead of becoming the new baseline (see localBaselineAfterReadOnlySync).
+	localState := currentLocal
+	if isReadOnlyMode(e.Config.SyncMode) {
+		localState = localBaselineAfterReadOnlySync(plan, previousLocal, currentLocal, updatedRemote)
+	}
+
 	version = session.version
-	if err := e.saveState(store, currentLocal, updatedRemote, dbLocal, dbRemote, version); err != nil {
+	if err := e.saveState(store, localState, updatedRemote, dbLocal, dbRemote, version); err != nil {
 		return 0, nil, err
 	}
 

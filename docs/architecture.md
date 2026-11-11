@@ -210,6 +210,10 @@ modified, in one-shot and in continuous sync alike:
 As a second barrier, the remote session refuses `push` and `delete` in these
 modes, so a planning bug cannot turn into a remote write.
 
+A local change that a read-only plan ignores is not saved as the new local
+baseline (`localBaselineAfterReadOnlySync`): it stays pending, so it is still
+detected, and synced, once the mode is set back to `bidirectional`.
+
 ## Configuration Storage
 
 All configuration is stored under a platform-specific base directory:

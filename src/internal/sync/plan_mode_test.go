@@ -186,6 +186,76 @@ func TestBuildPlanForMode(t *testing.T) {
 	}
 }
 
+// TestReadOnlyModesKeepIgnoredLocalChangesPending runs two cycles: one in a
+// read-only mode, where a local change is ignored, and one after switching to
+// bidirectional, where that change must still be seen and sent.
+func TestReadOnlyModesKeepIgnoredLocalChangesPending(t *testing.T) {
+	t.Parallel()
+	up := func(p string) syncAction { return syncAction{Path: p, Kind: syncActionUpload} }
+	delRemote := func(p string) syncAction { return syncAction{Path: p, Kind: syncActionDeleteRemote} }
+	synced := planRecords(planRecord("a.md", "h1", 10), planRecord("b.md", "hb", 10))
+
+	cases := []struct {
+		name         string
+		currentLocal map[string]model.FileRecord
+		later        []syncAction // what bidirectional sync does afterwards
+	}{
+		{"edited locally", planRecords(planRecord("a.md", "h2", 20), planRecord("b.md", "hb", 10)), []syncAction{up("a.md")}},
+		{"deleted locally", planRecords(planRecord("b.md", "hb", 10)), []syncAction{delRemote("a.md")}},
+		{"created locally", planRecords(planRecord("a.md", "h1", 10), planRecord("b.md", "hb", 10), planRecord("new.md", "hn", 20)), []syncAction{up("new.md")}},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			// Cycle 1, pull: the local change is ignored, nothing is planned.
+			plan := buildPlanForMode(syncModePull, c.currentLocal, synced, synced, synced, ".obsidian", nil)
+			if len(plan) != 0 {
+				t.Fatalf("pull planned %+v for a local-only change", plan)
+			}
+			baseline := localBaselineAfterReadOnlySync(plan, synced, c.currentLocal, synced)
+
+			// Further pull cycles keep ignoring it, and keep it pending.
+			if again := buildPlanForMode(syncModePull, c.currentLocal, baseline, synced, synced, ".obsidian", nil); len(again) != 0 {
+				t.Fatalf("a later pull cycle planned %+v", again)
+			}
+			baseline = localBaselineAfterReadOnlySync(nil, baseline, c.currentLocal, synced)
+
+			// Cycle 2, bidirectional: the change is still there to be synced.
+			got := buildPlan(c.currentLocal, baseline, synced, synced, ".obsidian", nil)
+			if !reflect.DeepEqual(got, c.later) {
+				t.Fatalf("after switching to bidirectional: got %+v, want %+v", got, c.later)
+			}
+		})
+	}
+}
+
+// What the plan reconciled with the server does enter the baseline, so it is
+// not taken for a local change afterwards.
+func TestReadOnlyBaselineRecordsReconciledFiles(t *testing.T) {
+	t.Parallel()
+	previousLocal := planRecords(planRecord("edited.md", "h1", 10), planRecord("gone.md", "hg", 10), planRecord("same.md", "hs", 10))
+	remote := planRecords(planRecord("edited.md", "h3", 30), planRecord("fresh.md", "hf", 30), planRecord("same.md", "hs", 10), planRecord("matches.md", "hm", 10))
+	goneOnServer := planRecord("gone.md", "", 40)
+	goneOnServer.Deleted = true
+	remote["gone.md"] = goneOnServer
+	plan := []syncAction{
+		{Path: "edited.md", Kind: syncActionDownload}, // changed on both sides: the server won
+		{Path: "fresh.md", Kind: syncActionDownload},
+		{Path: "gone.md", Kind: syncActionDeleteLocal},
+	}
+	// On disk after executing the plan. matches.md was already there, identical to the server's.
+	currentLocal := planRecords(planRecord("edited.md", "h3", 31), planRecord("fresh.md", "hf", 31), planRecord("same.md", "hs", 10), planRecord("matches.md", "hm", 5))
+
+	baseline := localBaselineAfterReadOnlySync(plan, previousLocal, currentLocal, remote)
+	if !reflect.DeepEqual(baseline, currentLocal) {
+		t.Fatalf("baseline: got %+v, want the files on disk %+v", baseline, currentLocal)
+	}
+	if next := buildPlan(currentLocal, baseline, remote, remote, ".obsidian", nil); len(next) != 0 {
+		t.Fatalf("a later bidirectional sync planned %+v although everything is in sync", next)
+	}
+}
+
 func TestIsReadOnlyMode(t *testing.T) {
 	t.Parallel()
 	for mode, want := range map[string]bool{"pull": true, "mirror": true, "bidirectional": false, "": false} {

@@ -218,6 +218,52 @@ func buildPlanForMode(
 	return actions
 }
 
+// localBaselineAfterReadOnlySync returns the local state to remember after a
+// sync in a read-only mode.
+//
+// The planner compares the files on disk with this baseline to tell what
+// changed locally. A local change that a read-only plan ignored (an edit, a
+// deletion or a new file in pull mode) must therefore not enter the baseline:
+// it stays pending, so that it is still seen as a local change in later
+// cycles and is synced once the mode is set back to bidirectional.
+//
+// plan is the plan that was just executed, previousLocal the baseline it was
+// built against, currentLocal the files on disk after executing it and remote
+// the remote records after it.
+func localBaselineAfterReadOnlySync(plan []syncAction, previousLocal, currentLocal, remote map[string]model.FileRecord) map[string]model.FileRecord {
+	// Paths the plan brought in line with the server (downloaded or deleted locally).
+	reconciled := make(map[string]struct{}, len(plan))
+	for _, action := range plan {
+		reconciled[action.Path] = struct{}{}
+	}
+	baseline := make(map[string]model.FileRecord, len(currentLocal))
+	for path, current := range currentLocal {
+		previous, hadPrevious := previousLocal[path]
+		_, wasReconciled := reconciled[path]
+		remoteRecord, hasRemote := remote[path]
+		matchesServer := hasRemote && !remoteRecord.Deleted && !current.Folder && current.Hash == remoteRecord.Hash
+		if wasReconciled || matchesServer || !recordChanged(hadPrevious, previous, true, current) {
+			baseline[path] = current
+			continue
+		}
+		// An ignored local edit keeps its old record; an ignored new file gets none.
+		if hadPrevious {
+			baseline[path] = previous
+		}
+	}
+	// An ignored local deletion keeps its old record.
+	for path, previous := range previousLocal {
+		if _, onDisk := currentLocal[path]; onDisk {
+			continue
+		}
+		if _, wasReconciled := reconciled[path]; wasReconciled {
+			continue
+		}
+		baseline[path] = previous
+	}
+	return baseline
+}
+
 func recordChanged(hadBefore bool, before model.FileRecord, hasNow bool, now model.FileRecord) bool {
 	if hadBefore != hasNow {
 		return true
