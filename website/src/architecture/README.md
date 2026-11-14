@@ -90,7 +90,7 @@ The sync engine uses `fsnotify` (cross-platform Go file system notifications), w
 
 ### Watch disabled for read-only modes
 
-In pull-only and mirror sync modes, local file changes are never uploaded. The fsnotify watcher is not started; only an initial scan is performed. This eliminates filesystem event overhead on machines that only download.
+In pull-only and mirror sync modes, local file changes are never uploaded. The fsnotify watcher is not started; only an initial scan is performed. The sync plan is restricted to downloads and local deletions (pull ignores local changes, mirror reverts them), and the remote session refuses to push or delete. This eliminates filesystem event overhead on machines that only download.
 
 ## Configuration Storage
 
