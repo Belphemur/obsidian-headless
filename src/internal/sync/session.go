@@ -27,6 +27,8 @@ type remoteSession struct {
 	rawKey     []byte
 	justPushed *model.FileRecord
 	mu         sync.Mutex
+	// readOnly is set in the pull and mirror sync modes: push and delete are refused.
+	readOnly bool
 }
 
 func newRemoteSession(conn *websocket.Conn, remote map[string]model.FileRecord, version int64, ctx context.Context, enc encryption.EncryptionProvider, logger zerolog.Logger, rawKey []byte) *remoteSession {
@@ -185,6 +187,9 @@ func (s *remoteSession) pull(uid int64) ([]byte, error) {
 }
 
 func (s *remoteSession) push(record model.FileRecord, data []byte) error {
+	if s.readOnly {
+		return fmt.Errorf("read-only sync mode: refusing to push %q", record.Path)
+	}
 	var pieces int
 	if len(data) > 0 {
 		pieces = (len(data) + chunkSize - 1) / chunkSize
@@ -296,6 +301,9 @@ func (s *remoteSession) push(record model.FileRecord, data []byte) error {
 }
 
 func (s *remoteSession) delete(path string) error {
+	if s.readOnly {
+		return fmt.Errorf("read-only sync mode: refusing to delete remote %q", path)
+	}
 	s.Logger.Debug().Str("path", path).Msg("delete start")
 	encryptedPath := s.encryptPath(path)
 	if err := s.writeJSON(map[string]any{"op": "push", "path": encryptedPath, "extension": filepath.Ext(path), "hash": "", "ctime": time.Now().UnixMilli(), "mtime": time.Now().UnixMilli(), "folder": false, "deleted": true, "size": 0, "pieces": 0}); err != nil {
