@@ -43,12 +43,52 @@ type syncAction struct {
 	RelatedPath string // old path for rename uploads; empty for other actions
 }
 
+// Sync modes, as stored in model.SyncConfig.SyncMode. The empty string and
+// "bidirectional" both mean two-way sync.
+const (
+	syncModePull   = "pull"
+	syncModeMirror = "mirror"
+)
+
+// isReadOnlyMode reports whether a sync mode must never change the remote vault.
+func isReadOnlyMode(mode string) bool {
+	return mode == syncModePull || mode == syncModeMirror
+}
+
+// buildPlan plans a bidirectional sync.
 func buildPlan(
 	currentLocal, previousLocal,
 	currentRemote, previousRemote map[string]model.FileRecord,
 	configDir string,
 	localRenames map[string]string, // oldPath → newPath from watcher snapshot
 ) []syncAction {
+	return buildPlanForMode("", currentLocal, previousLocal, currentRemote, previousRemote, configDir, localRenames)
+}
+
+// buildPlanForMode plans a sync for the given mode.
+//
+// In the read-only modes the plan only ever contains downloads and local
+// deletions, so the remote vault is never modified:
+//
+//   - pull: remote changes are downloaded and local changes are ignored (kept
+//     on disk, never uploaded). When both sides changed, the server's version
+//     is downloaded; if the server deleted a file that was changed locally,
+//     the local file is kept.
+//   - mirror: as pull, and local changes are reverted: a locally modified or
+//     deleted file is downloaded again, and a file that is not on the server
+//     (never there, or deleted there) is deleted locally.
+func buildPlanForMode(
+	mode string,
+	currentLocal, previousLocal,
+	currentRemote, previousRemote map[string]model.FileRecord,
+	configDir string,
+	localRenames map[string]string, // oldPath → newPath from watcher snapshot
+) []syncAction {
+	readOnly := isReadOnlyMode(mode)
+	if readOnly {
+		// A local rename is a local change like any other: it is never sent.
+		localRenames = nil
+	}
 	pathsSet := map[string]struct{}{}
 	for _, collection := range []map[string]model.FileRecord{currentLocal, previousLocal, currentRemote, previousRemote} {
 		for path := range collection {
@@ -111,6 +151,28 @@ func buildPlan(
 		serverHasDeletedRecord := hasCurrentR && currentR.Deleted
 
 		switch {
+		case remoteChanged && localChanged && readOnly:
+			// Pull and mirror: the server's version wins.
+			if serverHasActiveFile {
+				actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
+			} else if serverHasDeletedRecord && hasCurrentL && mode == syncModeMirror {
+				// Deleted on the server, changed locally. Mirror removes it. Pull
+				// keeps it: pull ignores local changes, it does not destroy them
+				// (this is also the copy a refused remote rename preserves).
+				actions = append(actions, syncAction{Path: path, Kind: syncActionDeleteLocal})
+			}
+		case localChanged && !remoteChanged && readOnly:
+			// Pull ignores local changes. Mirror reverts them.
+			if mode == syncModeMirror {
+				if serverHasActiveFile {
+					// Modified or deleted locally: take the server's version again.
+					actions = append(actions, syncAction{Path: path, Kind: syncActionDownload})
+				} else if hasCurrentL && !currentL.Folder {
+					// Not on the server: remove it. Folders are left alone, as
+					// they may still hold files this cycle.
+					actions = append(actions, syncAction{Path: path, Kind: syncActionDeleteLocal})
+				}
+			}
 		case remoteChanged && localChanged:
 			if serverHasDeletedRecord {
 				// Server deleted, local changed - let local win (upload)
@@ -159,6 +221,52 @@ func buildPlan(
 		}
 	}
 	return actions
+}
+
+// localBaselineAfterReadOnlySync returns the local state to remember after a
+// sync in a read-only mode.
+//
+// The planner compares the files on disk with this baseline to tell what
+// changed locally. A local change that a read-only plan ignored (an edit, a
+// deletion or a new file in pull mode) must therefore not enter the baseline:
+// it stays pending, so that it is still seen as a local change in later
+// cycles and is synced once the mode is set back to bidirectional.
+//
+// plan is the plan that was just executed, previousLocal the baseline it was
+// built against, currentLocal the files on disk after executing it and remote
+// the remote records after it.
+func localBaselineAfterReadOnlySync(plan []syncAction, previousLocal, currentLocal, remote map[string]model.FileRecord) map[string]model.FileRecord {
+	// Paths the plan brought in line with the server (downloaded or deleted locally).
+	reconciled := make(map[string]struct{}, len(plan))
+	for _, action := range plan {
+		reconciled[action.Path] = struct{}{}
+	}
+	baseline := make(map[string]model.FileRecord, len(currentLocal))
+	for path, current := range currentLocal {
+		previous, hadPrevious := previousLocal[path]
+		_, wasReconciled := reconciled[path]
+		remoteRecord, hasRemote := remote[path]
+		matchesServer := hasRemote && !remoteRecord.Deleted && !current.Folder && current.Hash == remoteRecord.Hash
+		if wasReconciled || matchesServer || !recordChanged(hadPrevious, previous, true, current) {
+			baseline[path] = current
+			continue
+		}
+		// An ignored local edit keeps its old record; an ignored new file gets none.
+		if hadPrevious {
+			baseline[path] = previous
+		}
+	}
+	// An ignored local deletion keeps its old record.
+	for path, previous := range previousLocal {
+		if _, onDisk := currentLocal[path]; onDisk {
+			continue
+		}
+		if _, wasReconciled := reconciled[path]; wasReconciled {
+			continue
+		}
+		baseline[path] = previous
+	}
+	return baseline
 }
 
 func recordChanged(hadBefore bool, before model.FileRecord, hasNow bool, now model.FileRecord) bool {
