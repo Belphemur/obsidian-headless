@@ -12,6 +12,8 @@ github.com/bmatcuk/doublestar/v4 v4.10.3 h1:1UIv1+fqH3++ViVkpnaPTB+Pi1UHycnPFAq1
 github.com/bmatcuk/doublestar/v4 v4.10.3/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
 github.com/bmatcuk/doublestar/v4 v4.10.4 h1:oTKkRmRuOsKMqFe1AQazd9gGBFNEpOmgKp/xzB97dnA=
 github.com/bmatcuk/doublestar/v4 v4.10.4/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
+github.com/bmatcuk/doublestar/v4 v4.10.7 h1:zcFCzVP2tosKRCXLXISX2dQ9YWXAvB3u7bhc1CDLc64=
+github.com/bmatcuk/doublestar/v4 v4.10.7/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
 github.com/byteness/go-keychain v0.0.0-20260108220220-c96c38f7f906 h1:6I69EsMJulw9bfwwsOIoOVzN27/UJgHKHPRqsACeloQ=
 github.com/byteness/go-keychain v0.0.0-20260108220220-c96c38f7f906/go.mod h1:jgADfGMmAo24Ct+IHSywQ1qOpeXZtjk8WY6LZQftZ5w=
 github.com/byteness/go-keychain v0.1.0 h1:3FRgLkl9Tm6apbRrBNnEmsrRpumd7XY9oQnG7h/sZTE=
